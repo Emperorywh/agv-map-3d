@@ -10,7 +10,6 @@ import {
   PATH_FORWARD_Y,
   buildPathBatches,
   classifyStripJoin,
-  createChevronGeometryXZ,
   sampleEdgePolyline,
 } from './buildPathBatches'
 import type { PathBuildOptions } from './buildPathBatches'
@@ -489,28 +488,5 @@ describe('buildPathBatches 标签锚点基座（SPEC §8.2）', () => {
     expect(anchor.y).toBeCloseTo(4, 10)
     expect(anchor.leftNormalX).toBeCloseTo(-1, 10)
     expect(anchor.leftNormalY).toBeCloseTo(0, 10)
-  })
-})
-
-describe('createChevronGeometryXZ（SPEC §7.2 实例局部几何）', () => {
-  it('两片 quad：8 顶点 4 三角形，顶点 (+0.18,0)、翼端 (-0.10,±0.14)、条宽 0.06m', () => {
-    const geometry = createChevronGeometryXZ()
-    expect(geometry.positions).toHaveLength(8 * 3)
-    expect(geometry.indices).toHaveLength(4 * 3)
-    const verts = verticesOf(geometry)
-    // 叶片顶点集合（数据坐标 (x, y) → 本地世界 (x, 0, -y)）
-    const expected: Array<[number, number]> = [
-      [0.1665836, 0.0268328], [0.1934164, -0.0268328], [-0.1134164, -0.1131672], [-0.0865836, -0.1668328],
-      [0.1934164, 0.0268328], [0.1665836, -0.0268328], [-0.0865836, 0.1668328], [-0.1134164, 0.1131672],
-    ]
-    for (const [x, z] of expected) {
-      expectVertexNear(verts, x, 0, z, 1e-6)
-    }
-    // +X 前向：最前点 x > 0.18（顶点附近），最后点 x < -0.08
-    const xs = verts.map((v) => v.x)
-    expect(Math.max(...xs)).toBeCloseTo(0.1934164, 5)
-    expect(Math.min(...xs)).toBeCloseTo(-0.1134164, 5)
-    expectAllFinite(geometry)
-    expectUpwardFacing(geometry)
   })
 })

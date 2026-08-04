@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 
-import type { WebGLUnavailableError } from '../domain/errors'
+import type { SceneBuildError, WebGLUnavailableError } from '../domain/errors'
 import { FactoryScene } from '../rendering/scene/FactoryScene'
 import { createBrowserFactoryMapPageController } from './FactoryMapPageController'
 import { EmptyMapOverlay, PageStateView } from './PageStateView'
@@ -40,6 +40,10 @@ export function FactoryMapPage(): ReactElement {
     (error: WebGLUnavailableError): void => controller.reportWebGLUnavailable(error),
     [controller],
   )
+  const handleSceneBuildError = useCallback(
+    (error: SceneBuildError): void => controller.reportSceneBuildError(error),
+    [controller],
+  )
   const handleRetry = useCallback((): void => controller.retry(), [controller])
   const handleReloadPage = useCallback((): void => {
     window.location.reload()
@@ -49,7 +53,11 @@ export function FactoryMapPage(): ReactElement {
     <div className="factory-map-page">
       {state.status === 'ready' || state.status === 'empty' ? (
         <>
-          <FactoryScene model={state.model} onWebGLUnavailable={handleWebGLUnavailable} />
+          <FactoryScene
+            model={state.model}
+            onWebGLUnavailable={handleWebGLUnavailable}
+            onSceneBuildError={handleSceneBuildError}
+          />
           {state.status === 'empty' ? <EmptyMapOverlay /> : null}
         </>
       ) : (

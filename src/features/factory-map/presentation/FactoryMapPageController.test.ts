@@ -13,7 +13,7 @@ import type { FactoryMapPageState } from '../application/factoryMapPageState'
 import type { FactorySceneModel, GeometryBatchDto } from '../application/factorySceneModel'
 import type { MapRepository } from '../application/ports/MapRepository'
 import type { FactoryScenePreparer } from '../application/ports/FactoryScenePreparer'
-import { MapHttpError, WebGLUnavailableError } from '../domain/errors'
+import { MapHttpError, SceneBuildError, WebGLUnavailableError } from '../domain/errors'
 import { createFactoryMapPageController } from './FactoryMapPageController'
 
 // ---------------------------------------------------------------------------
@@ -341,5 +341,105 @@ describe('WebGL 终态错误（§11）', () => {
     )
     expect(controller.getState()).toEqual({ status: 'idle' })
     expect(states).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 场景绑定错误通道（§11 SceneBuildError 行：主线程绑定资源失败）
+// ---------------------------------------------------------------------------
+
+describe('场景绑定错误（§11）', () => {
+  it('reportSceneBuildError：ready 后进入 error（携带错误与 URL），终止状态机不自动重试', async () => {
+    const harness = makeHarness()
+    await driveToPreparing(harness)
+    harness.preparers[0].decodeDeferred.resolve(makeSceneModel(1))
+    await flush()
+    expect(harness.controller.getState().status).toBe('ready')
+
+    const bindError = new SceneBuildError('SCENE_MODEL_BIND_INVALID', '场景模型绑定校验失败：测试')
+    harness.controller.reportSceneBuildError(bindError)
+
+    const state = harness.controller.getState()
+    expect(state.status).toBe('error')
+    if (state.status !== 'error') return
+    expect(state.error).toBe(bindError)
+    expect(state.url).toBe(TEST_URL)
+    expect(Object.isFrozen(state)).toBe(true)
+    expect(harness.states.at(-1)).toBe(state)
+    // 不自动重试：没有发起新请求
+    expect(harness.fetchCalls).toHaveLength(1)
+  })
+
+  it('retry 以全新状态机重新开始（创建新 Worker），加载可再度成功', async () => {
+    const harness = makeHarness()
+    await driveToPreparing(harness)
+    harness.preparers[0].decodeDeferred.resolve(makeSceneModel(1))
+    await flush()
+    harness.controller.reportSceneBuildError(
+      new SceneBuildError('SCENE_MODEL_BIND_INVALID', '场景模型绑定校验失败：测试'),
+    )
+
+    harness.controller.retry()
+    expect(harness.fetchCalls).toHaveLength(2)
+    expect(harness.fetchCalls[1].url).toBe(TEST_URL)
+    expect(harness.controller.getState()).toEqual({ status: 'loading', requestId: 1 })
+
+    harness.fetchCalls[1].deferred.resolve(new ArrayBuffer(8))
+    await flush()
+    expect(harness.preparers).toHaveLength(2)
+    harness.preparers[1].decodeDeferred.resolve(makeSceneModel(5))
+    await flush()
+    expect(harness.controller.getState().status).toBe('ready')
+  })
+
+  it('首个错误优先（幂等）；WebGL 终态优先于绑定错误且不可被覆盖', async () => {
+    const harness = makeHarness()
+    await driveToPreparing(harness)
+
+    const first = new SceneBuildError('SCENE_MODEL_BIND_INVALID', '首个绑定错误')
+    const second = new SceneBuildError('SCENE_MODEL_BIND_INVALID', '第二个绑定错误')
+    harness.controller.reportSceneBuildError(first)
+    harness.controller.reportSceneBuildError(second)
+
+    const state = harness.controller.getState()
+    expect(state.status).toBe('error')
+    if (state.status !== 'error') return
+    expect(state.error).toBe(first)
+
+    // WebGL 终态优先：终态后绑定错误被忽略（首个优先），retry 仍无效
+    const webglHarness = makeHarness()
+    const webglError = new WebGLUnavailableError('WEBGL_CONTEXT_LOST', 'WebGL 渲染上下文已丢失')
+    webglHarness.controller.reportWebGLUnavailable(webglError)
+    webglHarness.controller.reportSceneBuildError(second)
+    const terminalState = webglHarness.controller.getState()
+    expect(terminalState.status).toBe('error')
+    if (terminalState.status !== 'error') return
+    expect(terminalState.error).toBe(webglError)
+    webglHarness.controller.retry()
+    expect(webglHarness.fetchCalls).toHaveLength(0)
+  })
+
+  it('dispose 后 reportSceneBuildError 被忽略；新挂载周期 start 清除绑定错误并重新加载', async () => {
+    const harness = makeHarness()
+    harness.controller.dispose()
+    harness.controller.reportSceneBuildError(
+      new SceneBuildError('SCENE_MODEL_BIND_INVALID', '场景模型绑定校验失败：测试'),
+    )
+    expect(harness.controller.getState()).toEqual({ status: 'idle' })
+    expect(harness.states).toHaveLength(0)
+
+    // 绑定错误后的新挂载周期：start 重建状态机并清除上一周期错误呈现
+    const second = makeHarness()
+    await driveToPreparing(second)
+    second.preparers[0].decodeDeferred.resolve(makeSceneModel(1))
+    await flush()
+    second.controller.reportSceneBuildError(
+      new SceneBuildError('SCENE_MODEL_BIND_INVALID', '场景模型绑定校验失败：测试'),
+    )
+    expect(second.controller.getState().status).toBe('error')
+
+    second.controller.start()
+    expect(second.controller.getState().status).toBe('loading')
+    expect(second.fetchCalls).toHaveLength(2)
   })
 })

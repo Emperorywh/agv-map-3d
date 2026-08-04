@@ -8,9 +8,12 @@
  *
  * 层依赖说明：§13.1 的度量常量（PATH_WIDTH / CURVE_MAX_ERROR / CURVE_MAX_SEGMENT /
  * MITER_LIMIT / CHEVRON_SPACING / CHEVRON_MIN_PATH_LEN）由组合根经 options 注入
- * （infrastructure 不反向依赖 config 层，§12）；§4.3 高度层 y 偏移与 §7.2
- * chevron 几何尺寸未列入 §13 配置表，作为构建期固定常量定义在本文件并烘焙进
- * 顶点/矩阵。z 取反唯一定义在 domain/coordinates.ts（mapToWorld）。
+ * （infrastructure 不反向依赖 config 层，§12）；§4.3 高度层 y 偏移未列入 §13
+ * 配置表，作为构建期固定常量定义在本文件并烘焙进顶点/矩阵。z 取反唯一定义在
+ * domain/coordinates.ts（mapToWorld）。
+ *
+ * chevron 箭头局部几何不进 SceneModel transfer 契约（Worker 只输出箭头实例
+ * 矩阵），其构建由主线程唯一消费者持有：rendering/scene/map/instanceGeometry.ts。
  */
 
 import { mapToWorld } from '../../../domain/coordinates'
@@ -43,12 +46,6 @@ export const SAMPLE_DEDUP_EPSILON = 1e-6
 
 /** 路径标签锚点弧长比例 s = 0.4L（§8.2） */
 export const PATH_LABEL_ARC_FRACTION = 0.4
-
-/** chevron 箭头几何（§7.2）：顶点 (+0.18, 0)，两翼端点 (-0.10, ±0.14)，条宽 0.06m */
-export const CHEVRON_TIP_X = 0.18
-export const CHEVRON_WING_X = -0.1
-export const CHEVRON_WING_SPREAD = 0.14
-export const CHEVRON_STRIP_WIDTH = 0.06
 
 /** miter 向量长度平方下限：低于该值视为 180° 折返，直接 bevel（防止无限尖角/NaN） */
 const MITER_MIN_LEN2 = 1e-12
@@ -468,44 +465,6 @@ function pushInstanceMatrix(
   const sin = Math.sin(yaw)
   // 列主序：makeRotationY → [c,0,-s,0, 0,1,0,0, s,0,c,0]，末列为平移
   staging.push(cos, 0, -sin, 0, 0, 1, 0, 0, sin, 0, cos, 0, worldX, layerY, worldZ, 1)
-}
-
-// ---------------------------------------------------------------------------
-// chevron 箭头实例局部几何（§7.2：两片 quad，本地 XZ 平面、法线 +Y、+X 前向）
-// ---------------------------------------------------------------------------
-
-/**
- * 方向箭头 chevron 几何：顶点 (+0.18, 0)，两翼端点 (-0.10, ±0.14)，条宽 0.06m。
- * 两片 quad = 8 顶点 4 三角形；直接在本地 XZ 平面构建（法线 +Y、+X 前向），
- * 不使用 CircleGeometry 一类默认 XY 平面再叠加旋转的做法（§4.2）。
- * 翼形关于 +X 对称，条带 quad 以「顶点 → 翼端」为中线、两侧各扩条宽一半。
- */
-export function createChevronGeometryXZ(): GeometryBatchDto {
-  const staging = createGeometryStaging()
-  const halfStrip = CHEVRON_STRIP_WIDTH / 2
-  for (const side of [1, -1] as const) {
-    // 叶片中线：顶点 → 翼端（数据坐标；关于 x 轴对称，z 取反后形状不变）
-    const tipX = CHEVRON_TIP_X
-    const tipY = 0
-    const wingX = CHEVRON_WING_X
-    const wingY = side * CHEVRON_WING_SPREAD
-    const dx = wingX - tipX
-    const dy = wingY - tipY
-    const len = Math.hypot(dx, dy)
-    const nx = (-dy / len) * halfStrip
-    const ny = (dx / len) * halfStrip
-    const v0 = pushVertex(staging, tipX + nx, tipY + ny, 0)
-    const v1 = pushVertex(staging, tipX - nx, tipY - ny, 0)
-    const v2 = pushVertex(staging, wingX + nx, wingY + ny, 0)
-    const v3 = pushVertex(staging, wingX - nx, wingY - ny, 0)
-    pushTriangleIndices(staging, v0, v2, v1)
-    pushTriangleIndices(staging, v1, v2, v3)
-  }
-  return {
-    positions: Float32Array.from(staging.positions),
-    normals: Float32Array.from(staging.normals),
-    indices: Uint32Array.from(staging.indices),
-  }
 }
 
 // ---------------------------------------------------------------------------

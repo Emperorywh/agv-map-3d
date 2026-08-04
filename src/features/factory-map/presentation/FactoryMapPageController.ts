@@ -14,6 +14,9 @@
  *   context lost，§11）时进入 error 状态并 dispose 状态机——context lost 后不
  *   自动恢复旧场景、不自动重试，页面只提供「刷新页面」；该终态跨挂载周期保持，
  *   仅整页刷新可恢复。
+ * - 场景绑定错误通道：FactoryScene 上抛 SceneBuildError（主线程 SceneModel 绑定
+ *   校验失败，§11）时进入 error 状态并 dispose 状态机（终止当前 Worker）——不
+ *   自动重试；「重新加载」以全新状态机重新开始（创建新 Worker）。
  *
  * 对外暴露的页面状态始终是 application 的单一显式判别联合
  * （idle|loading|preparing|ready|empty|error，§5.1），WebGL 终态错误以最高
@@ -45,7 +48,7 @@ import {
   STATION_PARK_COLOR,
   STATION_WORK_COLOR,
 } from '../config/visualTheme'
-import type { WebGLUnavailableError } from '../domain/errors'
+import type { SceneBuildError, WebGLUnavailableError } from '../domain/errors'
 import { createHttpMapRepository, resolveDefaultMapUrl } from '../infrastructure/HttpMapRepository'
 import { createMapBuildWorker, createWorkerScenePreparer } from '../infrastructure/worker/WorkerScenePreparer'
 import type { SceneBuildOptions } from '../infrastructure/worker/builders/buildFactorySceneModel'
@@ -71,6 +74,12 @@ export interface FactoryMapPageController {
    */
   reportWebGLUnavailable(error: WebGLUnavailableError): void
   /**
+   * 主线程 SceneModel 绑定校验失败（§11 SceneBuildError 行）：进入 error 状态
+   * 并 dispose 状态机（终止当前 Worker）；幂等，首个错误优先；不自动重试——
+   * retry 以全新状态机重新开始（创建新 Worker）。
+   */
+  reportSceneBuildError(error: SceneBuildError): void
+  /**
    * 结束当前挂载周期（页面卸载/StrictMode 模拟卸载）：abort 请求、
    * terminate Worker、状态复位 idle；幂等（§10.3）。之后的 start 重建状态机。
    */
@@ -94,10 +103,12 @@ export function createFactoryMapPageController(
   let machineState = machine.getState()
   /** WebGL 终态错误状态（§11）：非 null 时以最高优先级呈现，仅整页刷新可恢复 */
   let webglErrorState: FactoryMapPageState | null = null
+  /** 场景绑定错误状态（§11 SceneBuildError 行）：不自动重试，retry 重建状态机 */
+  let sceneBuildErrorState: FactoryMapPageState | null = null
   /** 当前挂载周期是否活跃：dispose 结束周期，start 重建状态机开启新周期 */
   let active = true
 
-  const getState = (): FactoryMapPageState => webglErrorState ?? machineState
+  const getState = (): FactoryMapPageState => webglErrorState ?? sceneBuildErrorState ?? machineState
 
   const notify = (): void => {
     const state = getState()
@@ -127,7 +138,9 @@ export function createFactoryMapPageController(
       if (webglErrorState !== null) return
       if (!active) {
         // StrictMode 重复挂载：上一周期的状态机已随 dispose 释放全部资源，
-        // 以全新状态机重新开始——任一时刻至多一个状态机持有请求/Worker（§10.3）
+        // 以全新状态机重新开始——任一时刻至多一个状态机持有请求/Worker（§10.3）；
+        // 上一周期的绑定错误呈现随新挂载周期清除（等同于重新进入页面）
+        sceneBuildErrorState = null
         machine = createFactoryMapPageStateMachine(ports)
         active = true
         attachMachine()
@@ -136,7 +149,17 @@ export function createFactoryMapPageController(
     },
 
     retry() {
-      if (!active || webglErrorState !== null) return
+      if (webglErrorState !== null) return
+      if (sceneBuildErrorState !== null) {
+        // §11：绑定失败不自动重试；「重新加载」以全新状态机重新开始（创建新 Worker）
+        sceneBuildErrorState = null
+        machine = createFactoryMapPageStateMachine(ports)
+        active = true
+        attachMachine()
+        machine.startLoad(url)
+        return
+      }
+      if (!active) return
       machine.retry()
     },
 
@@ -144,6 +167,16 @@ export function createFactoryMapPageController(
       if (!active || webglErrorState !== null) return
       webglErrorState = Object.freeze({ status: 'error', error, url })
       // §11：context lost 后不自动恢复、不自动重试——状态机就此终止并释放资源
+      active = false
+      machine.dispose()
+      notify()
+    },
+
+    reportSceneBuildError(error) {
+      // 首个错误优先：WebGL 终态或已上报的绑定错误不被覆盖；非活跃周期忽略
+      if (!active || webglErrorState !== null || sceneBuildErrorState !== null) return
+      sceneBuildErrorState = Object.freeze({ status: 'error', error, url })
+      // §11：终止当前 Worker（请求结束后 Worker 单次使用已 settle，dispose 幂等）
       active = false
       machine.dispose()
       notify()
