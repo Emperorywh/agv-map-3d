@@ -1,0 +1,141 @@
+/*
+ * PageStateView / EmptyMapOverlay 样式（SPEC §1.4：Canvas 上方的普通 DOM overlay；
+ * §11：重试/刷新按钮可键盘聚焦并带明确中文文本）。
+ * 页面为明亮工业写实单主题（color-scheme: light，见 index.css），不响应系统深色。
+ */
+
+.page-state-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  background: #ecebe7;
+  color: #2b2f33;
+}
+
+.page-state-view__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 640px;
+  box-sizing: border-box;
+  padding: 40px 48px;
+  background: #ffffff;
+  border: 1px solid #d9d6cf;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(43, 47, 51, 0.08);
+  text-align: center;
+}
+
+.page-state-view__status {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.page-state-view__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.page-state-view__code {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #f4f3ec;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.page-state-view__summary {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.page-state-view__details {
+  margin: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.page-state-view__detail-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.page-state-view__detail-label {
+  flex: none;
+  min-width: 96px;
+  color: #6b7280;
+}
+
+.page-state-view__detail-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 动作按钮：原生 button 默认可键盘聚焦；:focus-visible 提供明确聚焦高亮（§11） */
+.page-state-view__button {
+  min-width: 128px;
+  padding: 10px 24px;
+  border: 1px solid #2f6fed;
+  border-radius: 6px;
+  background: #2f6fed;
+  color: #ffffff;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.page-state-view__button:hover:not(:disabled) {
+  background: #255ed0;
+}
+
+.page-state-view__button:focus-visible {
+  outline: 3px solid rgba(47, 111, 237, 0.45);
+  outline-offset: 2px;
+}
+
+/* §11：loading/preparing 状态禁用 */
+.page-state-view__button:disabled {
+  border-color: #b6bcc4;
+  background: #c9ced4;
+  cursor: not-allowed;
+}
+
+/*
+ * EmptyMapOverlay：empty 状态「暂无地图数据」叠加层（§11）。
+ * pointer-events:none——不遮挡 OrbitControls 相机漫游（§9）。
+ */
+.empty-map-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.empty-map-overlay__text {
+  margin: 0;
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #d9d6cf;
+  color: #2b2f33;
+  font-size: 18px;
+  letter-spacing: 0.05em;
+}
