@@ -8,10 +8,11 @@
  *   ├── FactoryCanvas   — WebGL renderer、质量策略、灯光、天空/雾宿主（TASK-009）
  *   │   ├── CameraRig   — 初始 fit + OrbitControls（TASK-009）
  *   │   └── FactorySceneContent
- *   │       └── FactoryLayer — 厂房环境（TASK-008；地坪/围墙/桁架/外景）
+ *   │       ├── FactoryLayer — 厂房环境（TASK-008；地坪/围墙/桁架/外景）
+ *   │       └── LabelLayer   — 标签（TASK-012；§8 迟滞/名额/遮挡 + CSS2D 适配器，
+ *   │                          借用厂房快照的 labelOccluders 引用，§9.3）
  *   └── （Canvas 内）MapSceneContent
  *       └── MapLayer     — 地图（TASK-011；PathLayer/NodeLayer，§7.5 七批次）
- *   └── LabelLayer      — TASK-012 插入
  *
  * 资源所有权（§10.3）：FactorySceneContent / MapSceneContent 分别是
  * FactorySceneResources / MapSceneResources 的唯一 React owner——挂载时 setup、
@@ -29,6 +30,7 @@ import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 
 import type { FactoryBoundsDto, FactorySceneModel } from '../../application/factorySceneModel'
+import type { LabelMetadataDto } from '../../application/factorySceneModel'
 import type { SceneBuildError, WebGLUnavailableError } from '../../domain/errors'
 import { createFactorySceneResources } from '../resources/FactorySceneResources'
 import type { FactorySceneSnapshot } from '../resources/FactorySceneResources'
@@ -37,6 +39,7 @@ import type { MapSceneSnapshot } from '../resources/MapSceneResources'
 import { CameraRig } from './CameraRig'
 import { FactoryCanvas } from './FactoryCanvas'
 import { FactoryLayer } from './FactoryLayer'
+import { LabelLayer } from './labels/LabelLayer'
 import { MapLayer } from './map/MapLayer'
 
 export interface FactorySceneProps {
@@ -50,13 +53,17 @@ export interface FactorySceneProps {
 
 interface FactorySceneContentProps {
   readonly bounds: FactoryBoundsDto
+  /** 全量标签元数据（§5.1）；LabelLayer 借用厂房快照 labelOccluders（§9.3） */
+  readonly labels: readonly LabelMetadataDto[]
 }
 
 /**
  * 厂房环境资源 owner：setup 返回快照后经 FactoryLayer 挂载；卸载 dispose。
- * 首帧渲染前快照为 null（不挂载任何环境 mesh），effect 建立快照后重渲染。
+ * 首帧渲染前快照为 null（不挂载任何环境 mesh 与 LabelLayer），effect 建立
+ * 快照后重渲染。LabelLayer 与 FactoryLayer 平级（§5 场景树），借用快照的
+ * labelOccluders 引用做标签遮挡检测——只借用不持有，资源释放仍由本 owner 负责。
  */
-function FactorySceneContent({ bounds }: FactorySceneContentProps): ReactElement | null {
+function FactorySceneContent({ bounds, labels }: FactorySceneContentProps): ReactElement | null {
   const gl = useThree((state) => state.gl)
   const [snapshot, setSnapshot] = useState<FactorySceneSnapshot | null>(null)
 
@@ -72,7 +79,12 @@ function FactorySceneContent({ bounds }: FactorySceneContentProps): ReactElement
     }
   }, [bounds, gl])
 
-  return snapshot === null ? null : <FactoryLayer resources={snapshot} />
+  return snapshot === null ? null : (
+    <>
+      <FactoryLayer resources={snapshot} />
+      <LabelLayer labels={labels} occluders={snapshot.labelOccluders} />
+    </>
+  )
 }
 
 interface MapSceneContentProps {
@@ -116,7 +128,7 @@ export function FactoryScene({
   return (
     <FactoryCanvas bounds={bounds} onWebGLUnavailable={onWebGLUnavailable}>
       <CameraRig bounds={bounds} />
-      <FactorySceneContent bounds={bounds} />
+      <FactorySceneContent bounds={bounds} labels={model.labels} />
       <MapSceneContent model={model} onSceneBuildError={onSceneBuildError} />
     </FactoryCanvas>
   )
