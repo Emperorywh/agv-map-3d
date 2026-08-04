@@ -21,6 +21,11 @@ export * from './application/loadFactoryMap'
 export * from './application/ports/MapRepository'
 export * from './application/ports/FactoryScenePreparer'
 export * from './infrastructure/worker/WorkerScenePreparer'
+// 验收 harness 组合出口（§10.2/§15.2）：tests/ 验收构建经此装配场景与绑定计时；
+// 两模块本就在生产依赖图中（FactoryMapPage → FactoryScene → MapSceneResources），
+// 公开导出不为生产包引入任何新代码
+export * from './rendering/core/bindFactorySceneModel'
+export * from './rendering/scene/FactoryScene'
 export * from './presentation/errorViewModel'
 export * from './presentation/FactoryMapPageController'
 export * from './presentation/PageStateView'

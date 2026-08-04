@@ -27,7 +27,7 @@
 
 import { useThree } from '@react-three/fiber'
 import { useEffect, useState } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
 import type { FactoryBoundsDto, FactorySceneModel } from '../../application/factorySceneModel'
 import type { LabelMetadataDto } from '../../application/factorySceneModel'
@@ -49,6 +49,12 @@ export interface FactorySceneProps {
   readonly onWebGLUnavailable: (error: WebGLUnavailableError) => void
   /** §11：主线程 SceneModel 绑定失败（SceneBuildError）上抛页面统一 error 状态 */
   readonly onSceneBuildError: (error: SceneBuildError) => void
+  /**
+   * 验收组合缝（§10.2/§15.2）：仅 tests/ 验收 harness 构建注入 R3F 桥接组件
+   * （useThree 只读快照/相机驱动），随 FactoryCanvas 子树挂载、不参与场景内容；
+   * 生产页面（FactoryMapPage）不传入，不传时零行为差异。
+   */
+  readonly children?: ReactNode
 }
 
 interface FactorySceneContentProps {
@@ -123,6 +129,7 @@ export function FactoryScene({
   model,
   onWebGLUnavailable,
   onSceneBuildError,
+  children,
 }: FactorySceneProps): ReactElement {
   const { bounds } = model
   return (
@@ -130,6 +137,7 @@ export function FactoryScene({
       <CameraRig bounds={bounds} />
       <FactorySceneContent bounds={bounds} labels={model.labels} />
       <MapSceneContent model={model} onSceneBuildError={onSceneBuildError} />
+      {children}
     </FactoryCanvas>
   )
 }

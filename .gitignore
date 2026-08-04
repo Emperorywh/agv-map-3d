@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 验收 harness 构建产物与 Playwright 瞬态输出（§15.2/§10.2 测试专用，不进入版本库）
+dist-harness
+test-results
+playwright-report
+tests/perf/reports
