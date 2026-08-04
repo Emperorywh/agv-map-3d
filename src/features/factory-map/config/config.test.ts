@@ -63,6 +63,8 @@ import {
   FACTORY_FLOOR_COLOR,
   FLOOR_JOINT_COLOR,
   FOG_COLOR,
+  HEMISPHERE_GROUND_COLOR,
+  HEMISPHERE_SKY_COLOR,
   NODE_DOT_COLOR,
   OUTDOOR_GROUND_COLOR,
   PATH_BACKWARD_COLOR,
@@ -70,6 +72,7 @@ import {
   STATION_CHARGE_COLOR,
   STATION_PARK_COLOR,
   STATION_WORK_COLOR,
+  SUN_LIGHT_COLOR,
   TRUSS_STEEL_COLOR,
   WALL_COLUMN_COLOR,
   WALL_PANEL_COLOR,
@@ -169,6 +172,12 @@ describe('visualTheme（SPEC §6.8 / §7）', () => {
     expect(TRUSS_STEEL_COLOR).toBe('#5D6873')
     expect(OUTDOOR_GROUND_COLOR).toBe('#ACA79B')
     expect(FOG_COLOR).toBe('#D8E0E8')
+  })
+
+  it('§6.6 灯光配色与规格一致', () => {
+    expect(SUN_LIGHT_COLOR).toBe('#FFF6E8')
+    expect(HEMISPHERE_SKY_COLOR).toBe('#DCEAF7')
+    expect(HEMISPHERE_GROUND_COLOR).toBe('#B8B2A4')
   })
 
   it('地图配色与规格一致', () => {

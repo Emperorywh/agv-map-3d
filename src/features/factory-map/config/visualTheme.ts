@@ -28,6 +28,15 @@ export const OUTDOOR_GROUND_COLOR = '#ACA79B'
 /** 雾/天际（与 Sky 地平线接近的浅蓝灰） */
 export const FOG_COLOR = '#D8E0E8'
 
+/** 平行光（太阳）色（§6.6 灯光表） */
+export const SUN_LIGHT_COLOR = '#FFF6E8'
+
+/** 半球光天空色（§6.6 灯光表） */
+export const HEMISPHERE_SKY_COLOR = '#DCEAF7'
+
+/** 半球光地面色（§6.6 灯光表） */
+export const HEMISPHERE_GROUND_COLOR = '#B8B2A4'
+
 /** 正向路径漆带（亮灰白漆） */
 export const PATH_FORWARD_COLOR = '#C9CAC6'
 
