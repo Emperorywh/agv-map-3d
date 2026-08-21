@@ -58,8 +58,8 @@ export interface MapLoadProgress {
 
 export interface AppState {
   cameraMode: CameraMode
-  /** 跟随模式目标 AGV；非跟随模式为 null */
-  followAgvId: number | null
+  /** 跟随模式目标 AGV 编号；非跟随模式恒为 null（SPEC §8.1，CameraRig 据此驱动场景行为） */
+  followTargetId: number | null
   selection: Selection | null
   layers: LayerVisibility
   agvSnapshot: AgvSnapshot[]
@@ -77,8 +77,14 @@ export interface AppState {
   /** true = Worker 中完成规范化；false = 回退主线程 */
   mapLoadUsedWorker: boolean
 
+  /**
+   * 切换自由 / 俯视模式；切出跟随会同时清空 followTargetId。
+   * 跟随模式仅经 setFollowTarget 携带目标进入（'follow' 实参为空操作，保证
+   * cameraMode = 'follow' ⟺ followTargetId ≠ null 的不变量）。
+   */
   setCameraMode: (mode: CameraMode) => void
-  setFollowAgv: (agvId: number | null) => void
+  /** 进入跟随模式：设定目标 AGV 编号并把相机模式切为 follow（SPEC §8.1 列表 / 选中触发） */
+  setFollowTarget: (agvId: number) => void
   setSelection: (selection: Selection | null) => void
   setLayer: <K extends keyof LayerVisibility>(key: K, value: LayerVisibility[K]) => void
   setAgvSnapshot: (snapshot: AgvSnapshot[]) => void
@@ -108,7 +114,7 @@ const DEFAULT_LAYERS: LayerVisibility = {
 
 export const useAppStore = create<AppState>()((set) => ({
   cameraMode: 'orbit',
-  followAgvId: null,
+  followTargetId: null,
   selection: null,
   layers: DEFAULT_LAYERS,
   agvSnapshot: [],
@@ -120,9 +126,11 @@ export const useAppStore = create<AppState>()((set) => ({
   normalizeStats: null,
   mapLoadUsedWorker: false,
 
-  setCameraMode: (mode) => set({ cameraMode: mode }),
-  setFollowAgv: (agvId) =>
-    set(agvId === null ? { followAgvId: null } : { followAgvId: agvId, cameraMode: 'follow' }),
+  setCameraMode: (mode) =>
+    set((state) =>
+      mode === 'follow' ? state : { cameraMode: mode, followTargetId: null },
+    ),
+  setFollowTarget: (agvId) => set({ followTargetId: agvId, cameraMode: 'follow' }),
   setSelection: (selection) => set({ selection }),
   setLayer: (key, value) => set((state) => ({ layers: { ...state.layers, [key]: value } })),
   setAgvSnapshot: (snapshot) => set({ agvSnapshot: snapshot }),

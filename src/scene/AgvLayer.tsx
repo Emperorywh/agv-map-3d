@@ -73,6 +73,7 @@ import type {
   LabelBatch,
   LabelVisibilityThresholds,
 } from '../rendering/scene/map/labelGeometry'
+import { agvRuntime } from '../state/agvRuntime'
 import { useAppStore } from '../state/appStore'
 
 /**
@@ -87,7 +88,8 @@ import { useAppStore } from '../state/appStore'
  * - 每帧仅 in-place 写实例矩阵与色环实例色（writeAgvInstanceMatrices /
  *   writeAgvStatusColors）与标签锚点（LabelBatch.setAnchorPosition），几何零重建；
  * - 模拟状态经 ref / 局部变量瞬时值读取，不触发 React 重渲染；store 仅按
- *   SIM_SNAPSHOT_INTERVAL 低频写入快照（供 TASK-013 / TASK-014 面板节流读取）；
+ *   SIM_SNAPSHOT_INTERVAL 低频写入快照（供 TASK-013 / TASK-014 面板节流读取），
+ *   每帧瞬时值同时写入 state/agvRuntime 通道（CameraRig 跟随模式逐帧读取）；
  * - 模拟器实例为组件内单例（useMemo 持有，store 外）；位姿 / 朝向由快照提供
  *   （domain/simulator 内经 coordinates.ts 与 headingToWorldYaw 换算），
  *   本层不做任何坐标取反或二次翻转（倒车姿态由车头朝向语义自然得出，SPEC §7.2）。
@@ -188,6 +190,17 @@ export function AgvLayer() {
   const accumulatorRef = useRef(0)
   const snapshotClockRef = useRef(0)
 
+  // 每帧瞬时值通道（SPEC §3 / §8.1）：挂载即写入初始快照（跟随模式首帧即可解析目标），
+  // 模拟器重建 / 卸载时清空；之后由 useFrame 每帧覆写
+  useEffect(() => {
+    if (simulator !== null) {
+      agvRuntime.snapshots = snapshotSimulator(simulator)
+    }
+    return () => {
+      agvRuntime.snapshots = null
+    }
+  }, [simulator])
+
   useFrame((_, delta) => {
     if (simulator === null) {
       return
@@ -201,6 +214,8 @@ export function AgvLayer() {
 
     // 每帧瞬时值读取（局部变量，不经 React 渲染路径，SPEC §3 / §9）
     const snapshots = snapshotSimulator(simulator)
+    // 瞬时值通道：CameraRig 跟随模式逐帧解析目标位姿（SPEC §8.1 必须走瞬时值）
+    agvRuntime.snapshots = snapshots
     const body = bodyMeshRef.current
     const ring = ringMeshRef.current
     if (body !== null && ring !== null) {

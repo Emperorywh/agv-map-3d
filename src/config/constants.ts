@@ -257,6 +257,27 @@ export const CAMERA_DISTANCE_MIN = 5
 export const CAMERA_DISTANCE_MAX = 400
 /** 模式切换过渡时长（秒） */
 export const CAMERA_TRANSITION_SECONDS = 0.5
+/** 透视相机垂直视场角（度）与近 / 远裁剪面（米） */
+export const CAMERA_FOV_DEG = 50
+export const CAMERA_NEAR = 0.1
+export const CAMERA_FAR = 2000
+/** 自由 Orbit 初始机位（世界坐标，米）；初始关注点为世界原点（地图经校准居中，SPEC §4.3） */
+export const CAMERA_INITIAL_POSITION: [number, number, number] = [80, 60, 80]
+/** 正交俯视相机离关注点的高度（米；高于屋顶 WALL_HEIGHT，正交下高度不改变取景宽度） */
+export const CAMERA_ORTHO_HEIGHT = 120
+/** 正交俯视视野宽度上下限（米；换算 zoom 上下限随视口宽度推导，全图可览与细部可查兼顾） */
+export const CAMERA_ORTHO_VIEW_WIDTH_MIN = 20
+export const CAMERA_ORTHO_VIEW_WIDTH_MAX = 400
+/**
+ * 正交俯视极角（弧度）：取 ≈0 的微小值使 OrbitControls 的 y-up lookAt 非退化；
+ * 方位角恒为 0（相机在关注点 +Z 侧），屏幕右 = 世界 +X、屏幕上 = 世界 -Z
+ * （地图 y 轴向上，等效 2D 调度地图视角，SPEC §4.3 坐标约定）
+ */
+export const CAMERA_TOPDOWN_POLAR_RAD = 0.0001
+/** 俯视切回透视（自由 / 跟随）时的默认极角（弧度）；方位角取进入俯视前的记忆值 */
+export const CAMERA_ORBIT_RETURN_POLAR_RAD = (55 * Math.PI) / 180
+/** 跟随模式视线关注点相对 AGV 地面位置的抬升（米，对准车体中心） */
+export const CAMERA_FOLLOW_TARGET_LIFT = 0.5
 
 // ---- 遮挡（SPEC §5.5）----
 /** 立柱自动淡出的相机俯角阈值（弧度） */

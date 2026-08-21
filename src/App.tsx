@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
-import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 
 import {
   BEZIER_TOLERANCE,
-  CAMERA_DISTANCE_MAX,
-  CAMERA_DISTANCE_MIN,
-  CAMERA_POLAR_MAX_RAD,
-  CAMERA_POLAR_MIN_RAD,
   CORRIDOR_GEOMETRY_TOLERANCE,
   MAX_DEVICE_PIXEL_RATIO,
 } from './config/constants'
@@ -15,6 +10,7 @@ import { sceneColors } from './config/theme'
 import { loadMap } from './infrastructure/mapLoader'
 import { isWebGLSupported } from './infrastructure/webglSupport'
 import { AgvLayer } from './scene/AgvLayer'
+import { CameraRig } from './scene/CameraRig'
 import { FactoryBuilding } from './scene/FactoryBuilding'
 import { FactoryInterior } from './scene/FactoryInterior'
 import { MapLayer } from './scene/MapLayer'
@@ -32,7 +28,7 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * → 全屏错误页（原因 + 重试），不进入场景。
  * 场景内容：FactoryBuilding 建筑外壳（TASK-006）+ FactoryInterior 内部元素 / 地面标线 /
  * glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层（TASK-003 / TASK-004 / TASK-005）
- * + AgvLayer 模拟巡航 AGV（TASK-010）。
+ * + AgvLayer 模拟巡航 AGV（TASK-010）+ CameraRig 相机三模式与平滑切换（TASK-011）。
  */
 export default function App() {
   const [webglSupported] = useState(isWebGLSupported)
@@ -80,27 +76,17 @@ export default function App() {
 
   return (
     <div className="app-root">
-      <Canvas
-        shadows
-        dpr={[1, MAX_DEVICE_PIXEL_RATIO]}
-        camera={{ position: [80, 60, 80], fov: 50, near: 0.1, far: 2000 }}
-      >
+      <Canvas shadows dpr={[1, MAX_DEVICE_PIXEL_RATIO]}>
         <color attach="background" args={[sceneColors.background]} />
         {/* 光照：1 盏平行光（唯一投影光源，shadow map ≤1024）+ 半球光（SPEC §5.3 / §9） */}
         <SceneLighting />
-        {/* 相机：Orbit 自由视角（SPEC §8.1 极角 / 距离约束），三模式切换由 TASK-012 接管 */}
-        <OrbitControls
-          makeDefault
-          enableDamping
-          minPolarAngle={CAMERA_POLAR_MIN_RAD}
-          maxPolarAngle={CAMERA_POLAR_MAX_RAD}
-          minDistance={CAMERA_DISTANCE_MIN}
-          maxDistance={CAMERA_DISTANCE_MAX}
-        />
         <FactoryBuilding />
         <FactoryInterior />
         <MapLayer />
         <AgvLayer />
+        {/* 相机三模式（自由 Orbit / 正交俯视 / AGV 跟随）与 0.5s 平滑切换（SPEC §8.1）；
+            置于 AgvLayer 之后挂载，同优先级 useFrame 内跟随读取的是当帧 AGV 位姿 */}
+        <CameraRig />
       </Canvas>
     </div>
   )
