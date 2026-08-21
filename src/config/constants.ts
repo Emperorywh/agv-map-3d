@@ -29,6 +29,79 @@ export const SKYLIGHT_EDGE_INSET = 6
 /** 天窗带相对屋顶面的抬升（防同面 z-fighting） */
 export const SKYLIGHT_LIFT = 0.02
 
+// ---- 内部元素（SPEC §5.3），单位：米 ----
+/** 货架 / 工作台放置采样网格单元边长（候选点取单元中心，中心对齐单元边长整数倍） */
+export const SHELF_CELL_SIZE = 2.4
+/**
+ * 放置阈值：候选点与最近走廊中心线距离大于该值才放置（SPEC §5.3；
+ * 已含 ribbon 半宽 RIBBON_WIDTH/2 与货架半深余量，保证货架不压通道并留出 aisle）
+ */
+export const SHELF_CORRIDOR_CLEARANCE = 3
+/** 货架 / 工作台相对外墙的内缩（不贴墙、不挡卷帘门） */
+export const SHELF_WALL_INSET = 1.6
+/** 货架 / 工作台与卷帘门中心的最小间距（留出斑马线与进出空间） */
+export const SHELF_DOOR_CLEARANCE = 4.5
+/** 货架 / 工作台与 charge 节点的最小间距（不压充电位色块与充电桩） */
+export const SHELF_CHARGE_CLEARANCE = 3.2
+/** 成排布置的最短连续单元数（短于该数的零散候选不成排、不放置） */
+export const SHELF_MIN_RUN_CELLS = 3
+/** 货架排尺寸：深 / 高（排长度 = 连续单元数 × 单元边长），低多边形方盒 */
+export const SHELF_ROW_DEPTH = 1.1
+export const SHELF_ROW_HEIGHT = 1.9
+/** 工作台排尺寸：深 / 高 */
+export const WORKBENCH_ROW_DEPTH = 1.2
+export const WORKBENCH_ROW_HEIGHT = 0.85
+
+/** 充电桩相对 charge 节点的侧向偏移（沿节点 angle 朝向的左侧，SPEC §5.3 节点旁） */
+export const CHARGE_PILE_OFFSET = 1.6
+/** 充电桩占位体尺寸：宽 × 高 × 深（与 public/assets/charging-pile.gltf 一致） */
+export const CHARGING_PILE_WIDTH = 0.44
+export const CHARGING_PILE_HEIGHT = 1.33
+export const CHARGING_PILE_DEPTH = 0.3
+/** 地面充电位色块尺寸：长（沿节点 angle）× 宽 */
+export const CHARGE_SPOT_LENGTH = 2.4
+export const CHARGE_SPOT_WIDTH = 1.8
+/** 装卸区色块尺寸（work 节点，方形，随节点 angle 旋转） */
+export const LOADING_AREA_SIZE = 2.2
+/** 区域色块抬升（充电位 / 装卸区常压在通道上，须高于 ribbon 及其 overlay 0.025） */
+export const AREA_BLOCK_LIFT = 0.03
+/** 区域色块不透明度（半透明色洗，不盖死通道底色） */
+export const AREA_BLOCK_OPACITY = 0.4
+
+/** 通道两侧边缘线：相对 ribbon 边缘的外扩间隙 / 线宽 */
+export const LANE_LINE_GAP = 0.04
+export const LANE_LINE_WIDTH = 0.08
+/** 地面标线抬升（边缘线 / 斑马线贴地坪：高于网格刻线 0.01、低于 ribbon 0.02，防 z-fighting） */
+export const MARKING_LIFT = 0.015
+
+/** 吊灯阵列（SPEC §5.3 仅发光体）：灯距 / 相对外墙内缩 / 自屋檐下垂距离 / 灯盘半径 / 厚度 */
+export const CHANDELIER_SPACING = 12
+export const CHANDELIER_EDGE_INSET = 3
+export const CHANDELIER_DROP = 0.8
+export const CHANDELIER_RADIUS = 0.5
+export const CHANDELIER_THICKNESS = 0.12
+
+/** 卷帘门（SPEC §5.2 外墙长边各 2 扇、固定关闭）：门洞净宽 / 净高 */
+export const ROLLER_DOOR_WIDTH = 3
+export const ROLLER_DOOR_HEIGHT = 3
+/** 卷帘门沿长边的布置位置（相对侧长的比例，每条长边 2 处） */
+export const ROLLER_DOOR_FRACTIONS: readonly number[] = [0.25, 0.75]
+/** 门框截面：立柱宽 / 横梁高 / 前后进深（与 public/assets/roller-door-frame.gltf 一致） */
+export const ROLLER_DOOR_POST_SIZE = 0.2
+export const ROLLER_DOOR_BEAM_HEIGHT = 0.3
+export const ROLLER_DOOR_FRAME_DEPTH = 0.3
+/** 门框相对墙面的内缩（门框背面不贴墙，防 z-fighting） */
+export const ROLLER_DOOR_INSET = 0.16
+/** 固定关闭门扇板：厚度 / 横肋沿高度间距 / 肋条凸出面板的高度 */
+export const ROLLER_DOOR_PANEL_THICKNESS = 0.05
+export const ROLLER_DOOR_RIB_SPACING = 0.3
+export const ROLLER_DOOR_RIB_HEIGHT = 0.06
+/** 卷帘门内侧斑马线：条宽 / 间隔 / 条数 / 首条距墙内缩；条长同门洞净宽 */
+export const ZEBRA_STRIPE_WIDTH = 0.35
+export const ZEBRA_STRIPE_GAP = 0.25
+export const ZEBRA_STRIPE_COUNT = 5
+export const ZEBRA_START_INSET = 0.3
+
 // ---- 地图渲染（SPEC §6.2），单位：米 ----
 /** 走廊 ribbon 宽度 */
 export const RIBBON_WIDTH = 1.5

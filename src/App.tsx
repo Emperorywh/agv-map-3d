@@ -15,6 +15,7 @@ import { sceneColors } from './config/theme'
 import { loadMap } from './infrastructure/mapLoader'
 import { isWebGLSupported } from './infrastructure/webglSupport'
 import { FactoryBuilding } from './scene/FactoryBuilding'
+import { FactoryInterior } from './scene/FactoryInterior'
 import { MapLayer } from './scene/MapLayer'
 import { useAppStore } from './state/appStore'
 import { ErrorScreen } from './ui/ErrorScreen'
@@ -27,8 +28,8 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * 加载状态流：WebGL 探测（不可用 → 提示页）→ idle 发起加载（进度条）
  * → ready 进入场景；失败（请求失败 / JSON 损坏 / 顶层结构缺失且主线程回退也失败）
  * → 全屏错误页（原因 + 重试），不进入场景。
- * 场景内容：FactoryBuilding 建筑外壳（TASK-006）+ MapLayer 走廊网络 / 节点实例层 /
- * 标签层（TASK-003 / TASK-004 / TASK-005）。
+ * 场景内容：FactoryBuilding 建筑外壳（TASK-006）+ FactoryInterior 内部元素 / 地面标线 /
+ * glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层（TASK-003 / TASK-004 / TASK-005）。
  */
 export default function App() {
   const [webglSupported] = useState(isWebGLSupported)
@@ -94,6 +95,7 @@ export default function App() {
           maxDistance={CAMERA_DISTANCE_MAX}
         />
         <FactoryBuilding />
+        <FactoryInterior />
         <MapLayer />
       </Canvas>
     </div>

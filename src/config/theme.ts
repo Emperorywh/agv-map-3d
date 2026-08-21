@@ -17,6 +17,36 @@ export const buildingColors = {
   skylight: '#a8c8dc',
 } as const
 
+/** 内部元素（SPEC §5.3）：低饱和哑光，不抢戏 */
+export const interiorColors = {
+  /** 货架排：低饱和钢蓝 */
+  shelf: '#7e8fa3',
+  /** 工作台排：暖灰 */
+  workbench: '#9a917f',
+  /** 吊灯发光体：暖白 */
+  chandelier: '#fff3d6',
+  /** 充电桩程序化占位体（glTF 缺失 / 失败降级）：机身 / 屏幕 */
+  chargingPile: '#b8bcc2',
+  chargingPileScreen: '#1a242e',
+  /** 卷帘门门框程序化占位体（glTF 缺失 / 失败降级） */
+  doorFrame: '#c9cdd4',
+  /** 卷帘门扇板（固定关闭）：面板 / 横肋 */
+  rollerDoorPanel: '#8d939c',
+  rollerDoorRib: '#7c828b',
+} as const
+
+/** 地面标线（SPEC §5.3）：浅色标线 + 区域色块（与节点同色系、半透明色洗） */
+export const markingColors = {
+  /** 通道两侧边缘线 */
+  laneLine: '#d8d5c8',
+  /** 卷帘门内侧斑马线 */
+  zebra: '#e8e6da',
+  /** 充电位色块（与 nodeCharge 同色系） */
+  chargeArea: '#34c6e0',
+  /** 装卸区色块（与 nodeWork 同色系） */
+  loadingArea: '#ff7847',
+} as const
+
 /** 地图元素：高饱和 + 轻微 emissive，视觉层级最高 */
 export const mapColors = {
   /** 普通走廊 ribbon 底色 */
