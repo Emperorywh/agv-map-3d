@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import { DoubleSide, InstancedBufferAttribute, Vector3 } from 'three'
 import type { InstancedMesh, WebGLProgramParametersWithUniforms } from 'three'
 import { useFrame } from '@react-three/fiber'
+import type { ThreeEvent } from '@react-three/fiber'
 
 import {
   AGV_BACK_SPEED_FACTOR,
@@ -30,6 +31,8 @@ import {
   BATTERY_CHARGE_PER_SECOND,
   BATTERY_DRAIN_PER_METER,
   BATTERY_LOW_THRESHOLD,
+  HIGHLIGHT_EMISSIVE_STRENGTH,
+  HOVER_HIGHLIGHT_LEVEL,
   LABEL_ATLAS_CELL_SIZE,
   LABEL_ATLAS_FONT_SIZE,
   LABEL_ATLAS_MAX_SIZE,
@@ -48,9 +51,16 @@ import {
   SIM_SEED,
   SIM_SNAPSHOT_INTERVAL,
 } from '../config/constants'
-import { agvBodyColors, agvStatusColors, mapColors } from '../config/theme'
+import { agvBodyColors, agvStatusColors, highlightColors, mapColors } from '../config/theme'
 import { createSimulator, snapshotSimulator, stepSimulator } from '../domain/simulator'
 import type { SimulatorOptions, SimulatorState } from '../domain/simulator'
+import {
+  attachInstanceHighlight,
+  getAgvIdAtInstance,
+  getAgvInstanceIndex,
+  injectInstanceHighlightShader,
+  writeGroupHighlight,
+} from '../rendering/scene/map/highlight'
 import {
   buildAgvBodyGeometry,
   buildAgvStatusRingGeometry,
@@ -75,6 +85,7 @@ import type {
 } from '../rendering/scene/map/labelGeometry'
 import { agvRuntime } from '../state/agvRuntime'
 import { useAppStore } from '../state/appStore'
+import { isEffectivelyVisible, isSelectionClick } from './picking'
 
 /**
  * AGV 图层（SPEC §7.3）：风格化小车 InstancedMesh（底盘 + 顶盖 + 方向楔形/前灯
@@ -168,6 +179,10 @@ function agvLabelText(agvId: number): string {
 function agvLabelAnchorId(agvId: number): string {
   return `agv:${agvId}`
 }
+
+/** 车体材质逐实例 emissive 提亮注入（SPEC §8.2）：模块级稳定引用，避免材质重编译 */
+const injectAgvHighlightShader = (shader: WebGLProgramParametersWithUniforms) =>
+  injectInstanceHighlightShader(shader, highlightColors.highlight, HIGHLIGHT_EMISSIVE_STRENGTH)
 
 /** 实例矩阵缓冲（three 对 instanceMatrix 固定分配 Float32Array；类型声明为 TypedArray 联合，收窄一次） */
 function instanceMatrixArray(mesh: InstancedMesh): Float32Array {
@@ -271,6 +286,11 @@ export function AgvLayer() {
 /**
  * AGV 本体 + 状态色环实例层：两个 InstancedMesh 共享同一份每帧位姿写入；
  * 几何一次性构建（useMemo），运行期零重建。
+ *
+ * 拾取与高亮（SPEC §8.2）：车体 InstancedMesh raycast 命中后按 instanceId 反查
+ * （getAgvIdAtInstance，实例顺序 = 快照顺序，瞬时值通道与每帧矩阵写入同源）；
+ * 车体几何挂载 aHighlight 实例属性，选中 / 悬停变化时整组重写电平
+ * （emissive 提亮由 injectAgvHighlightShader 注入车体材质；状态色环保持六状态语义不动）。
  */
 function AgvInstances({
   simulator,
@@ -282,7 +302,13 @@ function AgvInstances({
   ringMeshRef: RefObject<InstancedMesh | null>
 }) {
   const count = simulator.agvs.length
-  const bodyGeometry = useMemo(() => buildAgvBodyGeometry(AGV_SHAPE_SIZES, AGV_SHAPE_COLORS), [])
+  const selection = useAppStore((state) => state.selection)
+  const hover = useAppStore((state) => state.hover)
+  const bodyGeometry = useMemo(() => {
+    const geometry = buildAgvBodyGeometry(AGV_SHAPE_SIZES, AGV_SHAPE_COLORS)
+    attachInstanceHighlight(geometry, count)
+    return geometry
+  }, [count])
   const ringGeometry = useMemo(() => buildAgvStatusRingGeometry(AGV_SHAPE_SIZES), [])
   useEffect(
     () => () => {
@@ -310,17 +336,71 @@ function AgvInstances({
     ring.instanceColor.needsUpdate = true
   }, [simulator, count, bodyMeshRef, ringMeshRef])
 
+  // 选中 / 悬停高亮电平整组重写（仅交互变化时触发，非每帧路径；选中优先于悬停）
+  useEffect(() => {
+    // 实例下标经瞬时值通道解析（与每帧矩阵写入同源同序），通道未就绪时退回模拟器快照
+    const snapshots = agvRuntime.snapshots ?? snapshotSimulator(simulator)
+    const selectedIndex =
+      selection?.kind === 'agv' ? getAgvInstanceIndex(snapshots, Number(selection.id)) : -1
+    const hoverIndex =
+      hover?.kind === 'agv' ? getAgvInstanceIndex(snapshots, Number(hover.id)) : -1
+    writeGroupHighlight(
+      attachInstanceHighlight(bodyGeometry, count),
+      selectedIndex,
+      hoverIndex,
+      HOVER_HIGHLIGHT_LEVEL,
+    )
+  }, [selection, hover, bodyGeometry, count, simulator])
+
+  // AGV 拾取（SPEC §8.2）：instanceId 经瞬时值通道反查编号；处理器内先 stopPropagation 再写 store
+  const handleMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!isEffectivelyVisible(event.eventObject)) {
+      return
+    }
+    event.stopPropagation()
+    const snapshots = agvRuntime.snapshots
+    const agvId =
+      snapshots === null || event.instanceId === undefined
+        ? null
+        : getAgvIdAtInstance(snapshots, event.instanceId)
+    useAppStore.getState().setHover(agvId === null ? null : { kind: 'agv', id: String(agvId) })
+  }
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!isEffectivelyVisible(event.eventObject) || !isSelectionClick(event)) {
+      return
+    }
+    event.stopPropagation()
+    const snapshots = agvRuntime.snapshots
+    const agvId =
+      snapshots === null || event.instanceId === undefined
+        ? null
+        : getAgvIdAtInstance(snapshots, event.instanceId)
+    if (agvId !== null) {
+      useAppStore.getState().setSelection({ kind: 'agv', id: String(agvId) })
+    }
+  }
+  const handleOut = () => useAppStore.getState().setHover(null)
+
   return (
     <>
-      {/* 车体：底盘 + 顶盖 + 方向楔形/前灯合并几何（顶点色）；AGV 为投影元素（SPEC §5.3 / §9） */}
+      {/* 车体：底盘 + 顶盖 + 方向楔形/前灯合并几何（顶点色）；AGV 为投影元素（SPEC §5.3 / §9）；
+          onBeforeCompile 注入逐实例 emissive 提亮（aHighlight 属性，SPEC §8.2） */}
       <instancedMesh
         ref={bodyMeshRef}
         args={[undefined, undefined, count]}
         geometry={bodyGeometry}
         castShadow
         frustumCulled={false}
+        onPointerMove={handleMove}
+        onClick={handleClick}
+        onPointerOut={handleOut}
       >
-        <meshStandardMaterial vertexColors roughness={0.55} metalness={0} />
+        <meshStandardMaterial
+          vertexColors
+          roughness={0.55}
+          metalness={0}
+          onBeforeCompile={injectAgvHighlightShader}
+        />
       </instancedMesh>
       {/* 顶部状态色环：实例色六状态（theme.agvStatusColors），toneMapped=false 保持高饱和层级 */}
       <instancedMesh
@@ -340,6 +420,7 @@ function AgvInstances({
  * （每字符一个 quad，共享单张图集纹理），单 mesh 单 draw call；锚点每帧由
  * AgvLayer 驱动 LabelBatch.setAnchorPosition 跟随车体（in-place 写，非几何重建）。
  * 编号恒为等级 0（关键标签），分级 / billboard 与节点标签同一注入。
+ * hover / 选中强制显示（SPEC §6.4 / §8.2）：订阅 store 差量写 aForceVisible。
  */
 function AgvLabels({
   simulator,
@@ -351,6 +432,10 @@ function AgvLabels({
   batchRef: RefObject<LabelBatch | null>
 }) {
   const [built, setBuilt] = useState<{ atlas: LabelAtlas; batch: LabelBatch } | null>(null)
+  const selection = useAppStore((state) => state.selection)
+  const hover = useAppStore((state) => state.hover)
+  /** 当前已置强制显示的标签锚点 id（用于差量清除；批次重建后需重新全量下发） */
+  const forcedLabelIdsRef = useRef<string[]>([])
   // 各等级可见性 uniform（每帧写入，不经 React 渲染路径；与节点标签同一口径）
   const levelVisible = useMemo(() => ({ value: new Vector3(1, 1, 1) }), [])
 
@@ -381,6 +466,38 @@ function AgvLabels({
       atlas.dispose()
     }
   }, [simulator, batchRef])
+
+  // hover / 选中 AGV 强制显示编号标签（SPEC §6.4）：差量写 aForceVisible，不进每帧路径；
+  // 先置位 reset effect（声明顺序在前）：批次重建后 aForceVisible 清零，强制集全量重发
+  useEffect(() => {
+    forcedLabelIdsRef.current = []
+  }, [built])
+  useEffect(() => {
+    const next: string[] = []
+    if (selection?.kind === 'agv') {
+      next.push(`agv:${selection.id}`)
+    }
+    if (hover?.kind === 'agv') {
+      const anchorId = `agv:${hover.id}`
+      if (!next.includes(anchorId)) {
+        next.push(anchorId)
+      }
+    }
+    const previous = forcedLabelIdsRef.current
+    if (built !== null) {
+      for (const id of previous) {
+        if (!next.includes(id)) {
+          built.batch.setForceVisible(id, false)
+        }
+      }
+      for (const id of next) {
+        if (!previous.includes(id)) {
+          built.batch.setForceVisible(id, true)
+        }
+      }
+    }
+    forcedLabelIdsRef.current = next
+  }, [built, selection, hover])
 
   useFrame(({ camera, controls }) => {
     const target = (controls as unknown as { target?: Vector3 } | null)?.target

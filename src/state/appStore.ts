@@ -24,6 +24,17 @@ export interface Selection {
   id: string
 }
 
+/** 选中 / 悬停目标同一性判定（kind + id 相同即同一目标；null 两侧等价） */
+export function sameSelectionTarget(
+  a: Selection | null,
+  b: Selection | null,
+): boolean {
+  if (a === null || b === null) {
+    return a === b
+  }
+  return a.kind === b.kind && a.id === b.id
+}
+
 /** 屋顶手动覆盖三态（SPEC §5.5） */
 export type RoofOverride = 'auto' | 'show' | 'hide'
 
@@ -61,6 +72,8 @@ export interface AppState {
   /** 跟随模式目标 AGV 编号；非跟随模式恒为 null（SPEC §8.1，CameraRig 据此驱动场景行为） */
   followTargetId: number | null
   selection: Selection | null
+  /** 悬停目标（SPEC §8.2 弱高亮 + 强制标签）；与 selection 相互独立，渲染侧选中优先 */
+  hover: Selection | null
   layers: LayerVisibility
   agvSnapshot: AgvSnapshot[]
 
@@ -86,6 +99,10 @@ export interface AppState {
   /** 进入跟随模式：设定目标 AGV 编号并把相机模式切为 follow（SPEC §8.1 列表 / 选中触发） */
   setFollowTarget: (agvId: number) => void
   setSelection: (selection: Selection | null) => void
+  /** 设定悬停目标；与当前悬停相同则为空操作（pointermove 高频触发，同值不引起订阅方重渲染） */
+  setHover: (hover: Selection | null) => void
+  /** 仅当当前悬停即 target 时清除（pointerout 与 pointermove 乱序到达时不清掉新悬停目标） */
+  clearHover: (target: Selection) => void
   setLayer: <K extends keyof LayerVisibility>(key: K, value: LayerVisibility[K]) => void
   setAgvSnapshot: (snapshot: AgvSnapshot[]) => void
 
@@ -116,6 +133,7 @@ export const useAppStore = create<AppState>()((set) => ({
   cameraMode: 'orbit',
   followTargetId: null,
   selection: null,
+  hover: null,
   layers: DEFAULT_LAYERS,
   agvSnapshot: [],
 
@@ -131,7 +149,11 @@ export const useAppStore = create<AppState>()((set) => ({
       mode === 'follow' ? state : { cameraMode: mode, followTargetId: null },
     ),
   setFollowTarget: (agvId) => set({ followTargetId: agvId, cameraMode: 'follow' }),
-  setSelection: (selection) => set({ selection }),
+  setSelection: (selection) =>
+    set((state) => (sameSelectionTarget(state.selection, selection) ? state : { selection })),
+  setHover: (hover) => set((state) => (sameSelectionTarget(state.hover, hover) ? state : { hover })),
+  clearHover: (target) =>
+    set((state) => (sameSelectionTarget(state.hover, target) ? { hover: null } : state)),
   setLayer: (key, value) => set((state) => ({ layers: { ...state.layers, [key]: value } })),
   setAgvSnapshot: (snapshot) => set({ agvSnapshot: snapshot }),
 

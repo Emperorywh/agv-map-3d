@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { RefObject } from 'react'
 import { Color, DoubleSide, Euler, Matrix4, Quaternion, Vector3 } from 'three'
 import type { Group, InstancedMesh, WebGLProgramParametersWithUniforms } from 'three'
 import { useFrame } from '@react-three/fiber'
+import type { ThreeEvent } from '@react-three/fiber'
 
 import {
   CORRIDOR_ARROW_LENGTH,
-  CORRIDOR_ARROW_SPACING,
   CORRIDOR_ARROW_WIDTH,
+  HIGHLIGHT_EMISSIVE_STRENGTH,
+  HOVER_HIGHLIGHT_LEVEL,
   LABEL_ANCHOR_HEIGHT,
   LABEL_ATLAS_CELL_SIZE,
   LABEL_ATLAS_FONT_SIZE,
@@ -29,19 +30,18 @@ import {
   NODE_WORK_ICON_SIZE,
   NODE_WORK_PLATFORM_HEIGHT,
   NODE_WORK_PLATFORM_SIZE,
-  RIBBON_DASH_GAP,
-  RIBBON_DASH_LENGTH,
-  RIBBON_DASH_WIDTH,
-  RIBBON_LIFT,
-  RIBBON_MITER_LIMIT,
-  RIBBON_OVERLAY_LIFT,
-  RIBBON_WIDTH,
 } from '../config/constants'
-import { mapColors } from '../config/theme'
+import { highlightColors, mapColors } from '../config/theme'
 import type { Calibration, NormalizedNode } from '../domain/types'
+import {
+  attachInstanceHighlight,
+  injectInstanceHighlightShader,
+  writeGroupHighlight,
+} from '../rendering/scene/map/highlight'
 import {
   buildNodeKindGeometries,
   createNodeInstanceBuilder,
+  getNodeIdAtInstance,
   shouldHideNavNodes,
 } from '../rendering/scene/map/instanceGeometry'
 import type {
@@ -63,13 +63,15 @@ import type { LabelBatch, LabelVisibilityThresholds } from '../rendering/scene/m
 import {
   buildArrowGeometry,
   createRibbonGeometryBuilder,
+  getCorridorIdAtFace,
 } from '../rendering/scene/map/ribbonGeometry'
 import type {
   ArrowPlacement,
   RibbonBuildResult,
-  RibbonGeometryParams,
 } from '../rendering/scene/map/ribbonGeometry'
 import { useAppStore } from '../state/appStore'
+import { isEffectivelyVisible, isSelectionClick } from './picking'
+import { RIBBON_PARAMS } from './ribbonParams'
 
 /**
  * 地图图层（SPEC §6）：走廊 ribbon + 倒车虚线标识（单个合并 BufferGeometry）
@@ -78,24 +80,13 @@ import { useAppStore } from '../state/appStore'
  *
  * 静态几何分帧构建（SPEC §4.4：每帧处理 MAP_GEOMETRY_CHUNK_SIZE 条走廊 / 个节点，
  * 避免主线程长任务）；标签层构建量小（全图约数千 quad），一次性构建。
+ *
+ * 拾取（SPEC §8.2，TASK-013）：走廊合并 mesh 由 faceIndex 经 getCorridorIdAtFace 反查、
+ * 节点 InstancedMesh 由 instanceId 经 getNodeIdAtInstance 反查；隐藏图层 / 整类隐藏的
+ * node 组经 isEffectivelyVisible 守卫不可拾取；选中 / 悬停高亮电平写入 aHighlight
+ * 实例属性（emissive 提亮由 injectInstanceHighlightShader 注入材质），
+ * hover / 选中标签强制显示经 LabelBatch.setForceVisible 同步。
  */
-
-/** ribbon 几何参数：尺寸阈值与色彩集中在 config（SPEC §5.1 / §6.2） */
-const RIBBON_PARAMS: RibbonGeometryParams = {
-  width: RIBBON_WIDTH,
-  lift: RIBBON_LIFT,
-  miterLimit: RIBBON_MITER_LIMIT,
-  dashLength: RIBBON_DASH_LENGTH,
-  dashGap: RIBBON_DASH_GAP,
-  dashWidth: RIBBON_DASH_WIDTH,
-  overlayLift: RIBBON_OVERLAY_LIFT,
-  arrowSpacing: CORRIDOR_ARROW_SPACING,
-  colors: {
-    normal: mapColors.corridor,
-    oneWay: mapColors.corridorOneWay,
-    back: mapColors.corridorBack,
-  },
-}
 
 /** 节点造型尺寸（SPEC §6.3 尺寸层级 work > charge > park > node），集中在 config/constants.ts */
 const NODE_SHAPE_SIZES: NodeShapeSizes = {
@@ -134,17 +125,16 @@ const LABEL_VISIBILITY_THRESHOLDS: LabelVisibilityThresholds = {
   orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH,
 }
 
+/** 节点材质逐实例 emissive 提亮注入（SPEC §8.2）：模块级稳定引用，避免材质重编译 */
+const injectNodeHighlightShader = (shader: WebGLProgramParametersWithUniforms) =>
+  injectInstanceHighlightShader(shader, highlightColors.highlight, HIGHLIGHT_EMISSIVE_STRENGTH)
+
 export function MapLayer() {
   const mapData = useAppStore((state) => state.mapData)
   const corridorsVisible = useAppStore((state) => state.layers.corridors)
   const nodesVisible = useAppStore((state) => state.layers.nodes)
   const labelsVisible = useAppStore((state) => state.layers.labels)
   const [ribbon, setRibbon] = useState<RibbonBuildResult | null>(null)
-  /**
-   * 标签几何批句柄：hover / 选中强制显示接口（LabelBatch.setForceVisible）
-   * 的场景层暴露点，拾取交互（TASK-013）经此引用调用。
-   */
-  const labelBatchRef = useRef<LabelBatch | null>(null)
 
   useEffect(() => {
     if (mapData === null) {
@@ -183,13 +173,42 @@ export function MapLayer() {
     return () => ribbon.geometry.dispose()
   }, [ribbon])
 
+  // 走廊拾取（SPEC §8.2）：合并几何 raycast 命中后由 faceIndex 反查走廊 id；
+  // 处理器内先 stopPropagation 再写 store（stopPropagation 会同步冲刷被遮挡对象的 pointerout）
+  const handleCorridorMove = (event: ThreeEvent<PointerEvent>) => {
+    if (ribbon === null || !isEffectivelyVisible(event.eventObject)) {
+      return
+    }
+    event.stopPropagation()
+    const corridorId = getCorridorIdAtFace(ribbon, event.faceIndex ?? -1)
+    useAppStore
+      .getState()
+      .setHover(corridorId === null ? null : { kind: 'corridor', id: corridorId })
+  }
+  const handleCorridorClick = (event: ThreeEvent<MouseEvent>) => {
+    if (ribbon === null || !isEffectivelyVisible(event.eventObject) || !isSelectionClick(event)) {
+      return
+    }
+    event.stopPropagation()
+    const corridorId = getCorridorIdAtFace(ribbon, event.faceIndex ?? -1)
+    if (corridorId !== null) {
+      useAppStore.getState().setSelection({ kind: 'corridor', id: corridorId })
+    }
+  }
+  const handlePickOut = () => useAppStore.getState().setHover(null)
+
   return (
     <>
       {ribbon !== null && (
         <group visible={corridorsVisible}>
           {/* 合并 ribbon：实心三角带 + 虚线标识单 mesh 单 draw call；polygonOffset 防 z-fighting；
               toneMapped=false 走原始色值，通道色带保持高饱和视觉层级（SPEC §5.1） */}
-          <mesh geometry={ribbon.geometry}>
+          <mesh
+            geometry={ribbon.geometry}
+            onPointerMove={handleCorridorMove}
+            onClick={handleCorridorClick}
+            onPointerOut={handlePickOut}
+          >
             <meshBasicMaterial
               vertexColors
               side={DoubleSide}
@@ -210,12 +229,7 @@ export function MapLayer() {
         />
       )}
       {mapData !== null && (
-        <MapLabels
-          nodes={mapData.nodes}
-          calibration={mapData.calibration}
-          visible={labelsVisible}
-          batchRef={labelBatchRef}
-        />
+        <MapLabels nodes={mapData.nodes} calibration={mapData.calibration} visible={labelsVisible} />
       )}
     </>
   )
@@ -355,12 +369,21 @@ function MapNodes({
 /**
  * 单类型节点实例组：每段几何一个 InstancedMesh（work = 方台 + 图标色块两段，
  * 共享同一组实例矩阵与 instanceId 映射）；实例矩阵由 buildNodeInstances 一次性写入。
+ *
+ * 拾取与高亮（SPEC §8.2）：raycast 命中后按 instanceId 经 getNodeIdAtInstance 反查
+ * 节点 id；各段几何挂载 aHighlight 实例属性，选中 / 悬停变化时整组重写电平
+ * （emissive 提亮由 injectNodeHighlightShader 注入材质）。
  */
 function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
-  const geometries = useMemo(
-    () => buildNodeKindGeometries(group.kind, NODE_SHAPE_SIZES),
-    [group.kind],
-  )
+  const selection = useAppStore((state) => state.selection)
+  const hover = useAppStore((state) => state.hover)
+  const geometries = useMemo(() => {
+    const built = buildNodeKindGeometries(group.kind, NODE_SHAPE_SIZES)
+    for (const geometry of built) {
+      attachInstanceHighlight(geometry, group.nodeIds.length)
+    }
+    return built
+  }, [group.kind, group.nodeIds.length])
   useEffect(() => () => geometries.forEach((geometry) => geometry.dispose()), [geometries])
   const meshRefs = useRef<Array<InstancedMesh | null>>([])
 
@@ -375,6 +398,45 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
     }
   }, [group, geometries])
 
+  // 选中 / 悬停高亮电平整组重写（仅交互变化时触发，非每帧路径；选中优先于悬停）
+  useEffect(() => {
+    const selectedIndex =
+      selection?.kind === 'node' ? group.nodeIds.indexOf(selection.id) : -1
+    const hoverIndex = hover?.kind === 'node' ? group.nodeIds.indexOf(hover.id) : -1
+    for (const geometry of geometries) {
+      writeGroupHighlight(
+        attachInstanceHighlight(geometry, group.nodeIds.length),
+        selectedIndex,
+        hoverIndex,
+        HOVER_HIGHLIGHT_LEVEL,
+      )
+    }
+  }, [selection, hover, group, geometries])
+
+  // 节点拾取（SPEC §8.2）：instanceId 反查；隐藏图层 / 整类隐藏（node 类拉远隐藏）
+  // 时 isEffectivelyVisible 守卫放行给其后对象（不 stopPropagation）
+  const handleMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!isEffectivelyVisible(event.eventObject)) {
+      return
+    }
+    event.stopPropagation()
+    const nodeId =
+      event.instanceId === undefined ? null : getNodeIdAtInstance(group, event.instanceId)
+    useAppStore.getState().setHover(nodeId === null ? null : { kind: 'node', id: nodeId })
+  }
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!isEffectivelyVisible(event.eventObject) || !isSelectionClick(event)) {
+      return
+    }
+    event.stopPropagation()
+    const nodeId =
+      event.instanceId === undefined ? null : getNodeIdAtInstance(group, event.instanceId)
+    if (nodeId !== null) {
+      useAppStore.getState().setSelection({ kind: 'node', id: nodeId })
+    }
+  }
+  const handleOut = () => useAppStore.getState().setHover(null)
+
   const colors = NODE_KIND_COLORS[group.kind]
   return geometries.map((geometry, index) => (
     <instancedMesh
@@ -385,14 +447,19 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
       args={[undefined, undefined, group.nodeIds.length]}
       geometry={geometry}
       frustumCulled={false}
+      onPointerMove={handleMove}
+      onClick={handleClick}
+      onPointerOut={handleOut}
     >
-      {/* schematic 高饱和 + 轻微 emissive（SPEC §5.1），节点为场景内视觉层级最高元素 */}
+      {/* schematic 高饱和 + 轻微 emissive（SPEC §5.1），节点为场景内视觉层级最高元素；
+          onBeforeCompile 注入逐实例 emissive 提亮（aHighlight 属性，SPEC §8.2） */}
       <meshStandardMaterial
         color={colors[index]}
         emissive={colors[index]}
         emissiveIntensity={NODE_EMISSIVE_INTENSITY}
         roughness={0.7}
         metalness={0}
+        onBeforeCompile={injectNodeHighlightShader}
       />
     </instancedMesh>
   ))
@@ -409,23 +476,24 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
  *   正交俯视按视野宽度（> 160m 仅 work/charge / 60~160m 加 park / ≤ 60m 全部），
  *   判定纯函数 resolveLabelVisibility 的结果每帧写入 uLevelVisible uniform，
  *   GPU 按 aLevel 顶点属性裁剪（CPU 零遍历，不触发 React 重渲染）；
- * - hover / 选中强制显示：batchRef.current.setForceVisible(id, true) 写 aForceVisible
- *   顶点属性跳过分级（交互由 TASK-013 接入）；
- * - 图集 / 几何批 / 分级机制自 rendering/scene/map/labelAtlas.ts 与 labelGeometry.ts
- *   导出，TASK-010 AGV 编号标签复用同一机制。
+ * - hover / 选中强制显示（SPEC §6.4 / §8.2）：订阅 store 的 hover / selection，
+ *   差量写 aForceVisible 顶点属性跳过分级；批次重建后属性清零、强制集全量重发；
+ * - 图集 / 几何批 / 分级机制自 rendering/scene/map/labelAtlas.ts 与 labelGeometry.ts 导出。
  */
 function MapLabels({
   nodes,
   calibration,
   visible,
-  batchRef,
 }: {
   nodes: NormalizedNode[]
   calibration: Calibration
   visible: boolean
-  batchRef: RefObject<LabelBatch | null>
 }) {
   const [built, setBuilt] = useState<{ atlas: LabelAtlas; batch: LabelBatch } | null>(null)
+  const selection = useAppStore((state) => state.selection)
+  const hover = useAppStore((state) => state.hover)
+  /** 当前已置强制显示的标签 id（用于差量清除；批次重建后需重新全量下发） */
+  const forcedLabelIdsRef = useRef<string[]>([])
 
   // 图集 + 合并几何批原子构建；cleanup 对称 dispose（StrictMode 双调用安全）
   useEffect(() => {
@@ -435,16 +503,41 @@ function MapLabels({
     )
     const anchors = buildNodeLabelAnchors(nodes, calibration, LABEL_ANCHOR_HEIGHT)
     const batch = buildLabelBatch(anchors, atlas, LABEL_FONT_WORLD_HEIGHT)
-    batchRef.current = batch
     setBuilt({ atlas, batch })
     return () => {
-      if (batchRef.current === batch) {
-        batchRef.current = null
-      }
       batch.dispose()
       atlas.dispose()
     }
-  }, [nodes, calibration, batchRef])
+  }, [nodes, calibration])
+
+  // hover / 选中节点强制显示标签（SPEC §6.4）：差量写 aForceVisible，不进每帧路径；
+  // 先置位 reset effect（声明顺序在前）：批次重建后 aForceVisible 清零，强制集全量重发
+  useEffect(() => {
+    forcedLabelIdsRef.current = []
+  }, [built])
+  useEffect(() => {
+    const next: string[] = []
+    if (selection?.kind === 'node') {
+      next.push(selection.id)
+    }
+    if (hover?.kind === 'node' && !next.includes(hover.id)) {
+      next.push(hover.id)
+    }
+    const previous = forcedLabelIdsRef.current
+    if (built !== null) {
+      for (const id of previous) {
+        if (!next.includes(id)) {
+          built.batch.setForceVisible(id, false)
+        }
+      }
+      for (const id of next) {
+        if (!previous.includes(id)) {
+          built.batch.setForceVisible(id, true)
+        }
+      }
+    }
+    forcedLabelIdsRef.current = next
+  }, [built, selection, hover])
 
   // 各等级可见性 uniform（每帧写入，不经 React 渲染路径，SPEC §3）
   const levelVisible = useMemo(() => ({ value: new Vector3(1, 1, 1) }), [])

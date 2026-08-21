@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { useAppStore } from './appStore'
+import { sameSelectionTarget, useAppStore } from './appStore'
 
 describe('appStore 骨架', () => {
-  it('提供 cameraMode / followTargetId / selection / layers / agvSnapshot 默认值', () => {
+  it('提供 cameraMode / followTargetId / selection / hover / layers / agvSnapshot 默认值', () => {
     const state = useAppStore.getState()
     expect(state.cameraMode).toBe('orbit')
     expect(state.followTargetId).toBeNull()
     expect(state.selection).toBeNull()
+    expect(state.hover).toBeNull()
     expect(state.layers).toEqual({
       nodes: true,
       corridors: true,
@@ -58,5 +59,52 @@ describe('appStore 骨架', () => {
     const state = useAppStore.getState()
     expect(state.cameraMode).toBe('orbit')
     expect(state.followTargetId).toBeNull()
+  })
+})
+
+describe('拾取选中 / 悬停（SPEC §8.2）', () => {
+  it('sameSelectionTarget 按 kind + id 判定，null 两侧等价', () => {
+    expect(sameSelectionTarget(null, null)).toBe(true)
+    expect(sameSelectionTarget({ kind: 'node', id: 'n1' }, { kind: 'node', id: 'n1' })).toBe(true)
+    expect(sameSelectionTarget({ kind: 'node', id: 'n1' }, { kind: 'node', id: 'n2' })).toBe(false)
+    expect(sameSelectionTarget({ kind: 'node', id: 'n1' }, { kind: 'corridor', id: 'n1' })).toBe(
+      false,
+    )
+    expect(sameSelectionTarget({ kind: 'node', id: 'n1' }, null)).toBe(false)
+    expect(sameSelectionTarget(null, { kind: 'agv', id: '1' })).toBe(false)
+  })
+
+  it('setSelection 设定 / 清除选中，同值重设为空操作（保持引用不变）', () => {
+    const target = { kind: 'node' as const, id: 'n1' }
+    useAppStore.getState().setSelection(target)
+    const selected = useAppStore.getState().selection
+    expect(selected).toEqual(target)
+    useAppStore.getState().setSelection({ kind: 'node', id: 'n1' })
+    expect(useAppStore.getState().selection).toBe(selected)
+    useAppStore.getState().setSelection(null)
+    expect(useAppStore.getState().selection).toBeNull()
+  })
+
+  it('setHover 设定悬停，同值重设为空操作（保持引用不变）', () => {
+    useAppStore.getState().setHover({ kind: 'corridor', id: 'c:1|2' })
+    const hovered = useAppStore.getState().hover
+    expect(hovered).toEqual({ kind: 'corridor', id: 'c:1|2' })
+    useAppStore.getState().setHover({ kind: 'corridor', id: 'c:1|2' })
+    expect(useAppStore.getState().hover).toBe(hovered)
+    useAppStore.getState().setHover(null)
+    expect(useAppStore.getState().hover).toBeNull()
+  })
+
+  it('clearHover 仅清除匹配的悬停目标（乱序 pointerout 不清掉新目标）', () => {
+    useAppStore.getState().setHover({ kind: 'node', id: 'n1' })
+    // 旧目标的 pointerout 迟到：不匹配，当前悬停保留
+    useAppStore.getState().clearHover({ kind: 'corridor', id: 'c:1|2' })
+    expect(useAppStore.getState().hover).toEqual({ kind: 'node', id: 'n1' })
+    // 匹配的 pointerout：清除
+    useAppStore.getState().clearHover({ kind: 'node', id: 'n1' })
+    expect(useAppStore.getState().hover).toBeNull()
+    // 悬停已为 null 时清除为空操作
+    useAppStore.getState().clearHover({ kind: 'node', id: 'n1' })
+    expect(useAppStore.getState().hover).toBeNull()
   })
 })

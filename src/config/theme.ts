@@ -79,6 +79,16 @@ export const agvStatusColors = {
 } as const
 
 /**
+ * 拾取高亮色（SPEC §8.2）：选中描边色环 / 实例 emissive 提亮 / 走廊高亮覆盖
+ * 与悬停弱高亮共用同一高亮色（悬停以更低电平 / 不透明度表达弱化）。
+ * 亮琥珀金——与通道绿 / 单向蓝 / 倒车橙、六状态色均拉开对比。
+ */
+export const highlightColors = {
+  /** 选中 / 悬停高亮统一色 */
+  highlight: '#ffd94d',
+} as const
+
+/**
  * AGV 本体分段色（SPEC §7.3 风格化小车，顶点色分色；状态表达全部交给
  * 顶部色环实例色 agvStatusColors，本体保持中性读车形）
  */

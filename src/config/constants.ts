@@ -279,8 +279,27 @@ export const CAMERA_ORBIT_RETURN_POLAR_RAD = (55 * Math.PI) / 180
 /** 跟随模式视线关注点相对 AGV 地面位置的抬升（米，对准车体中心） */
 export const CAMERA_FOLLOW_TARGET_LIFT = 0.5
 
-// ---- 遮挡（SPEC §5.5）----
-/** 立柱自动淡出的相机俯角阈值（弧度，默认 60°） */
+// ---- 拾取与高亮（SPEC §8.2）----
+/** 点击拾取的最大拖拽位移（像素，R3F click 事件 delta）：超过视为相机拖拽操作，不触发选中 */
+export const PICK_CLICK_MAX_DRAG_PX = 5
+/** 实例 emissive 提亮系数（aHighlight × 该系数 × 高亮色叠加到自发光；选中电平恒为 1） */
+export const HIGHLIGHT_EMISSIVE_STRENGTH = 1.2
+/** 悬停弱高亮电平（写入 aHighlight；选中恒为 1） */
+export const HOVER_HIGHLIGHT_LEVEL = 0.4
+/** 描边色环：内半径相对对象 footprint 外接圆的外扩间隙 / 环宽 / 离地抬升（高于区域色块 0.03） */
+export const SELECTION_RING_MARGIN = 0.25
+export const SELECTION_RING_WIDTH = 0.14
+export const SELECTION_RING_LIFT = 0.05
+/** 悬停色环不透明度（弱高亮；选中色环恒不透明） */
+export const HOVER_RING_OPACITY = 0.55
+/** 走廊高亮覆盖几何抬升（高于 ribbon 0.02 + overlay 0.005 与区域色块 0.03，防同面 z-fighting） */
+export const HIGHLIGHT_RIBBON_LIFT = 0.035
+/** 走廊选中高亮加宽量（米，两侧各加宽一半，边缘露出形成描边效果） */
+export const CORRIDOR_HIGHLIGHT_EXTRA_WIDTH = 0.3
+/** 走廊悬停高亮不透明度（弱高亮；选中覆盖恒不透明） */
+export const CORRIDOR_HOVER_OPACITY = 0.5
+
+// ---- 遮挡（SPEC §5.5）----/** 立柱自动淡出的相机俯角阈值（弧度，默认 60°） */
 export const COLUMN_FADE_PITCH_RAD = (60 * Math.PI) / 180
 /** 不透明度指数阻尼时间常数（秒）：屋顶 / 墙体 / 立柱淡入淡出共用（帧率无关平滑过渡） */
 export const OCCLUSION_FADE_TAU_SECONDS = 0.2
