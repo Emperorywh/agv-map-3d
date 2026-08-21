@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 
+import type { NormalizeStats } from '../domain/normalize'
+import type { NormalizedMap } from '../domain/types'
+
 /**
  * 全局 zustand store 骨架（SPEC §3 / §12）。
  * 承载 UI 状态与模拟状态快照；本任务只定义初始类型与默认值，
@@ -54,6 +57,18 @@ export interface AgvSnapshot {
   task: string | null
 }
 
+/** 地图加载阶段（SPEC §4.4 / §10）：idle → loading → ready / error，error 可重试回 idle */
+export type MapLoadPhase = 'idle' | 'loading' | 'ready' | 'error'
+
+/** 加载进度（与 infrastructure/mapLoader 的进度结构一致，store 不反向依赖 IO 层细节） */
+export interface MapLoadProgress {
+  /** fetch = 下载中（按字节推进）；normalize = 解析与规范化中（不定进度） */
+  phase: 'fetch' | 'normalize'
+  loadedBytes: number
+  /** 响应 Content-Length；未知时为 null，UI 按不定进度展示 */
+  totalBytes: number | null
+}
+
 export interface AppState {
   cameraMode: CameraMode
   /** 跟随模式目标 AGV；非跟随模式为 null */
@@ -62,11 +77,37 @@ export interface AppState {
   layers: LayerVisibility
   agvSnapshot: AgvSnapshot[]
 
+  /** 地图加载阶段（SPEC §4.4 / §10） */
+  mapLoadPhase: MapLoadPhase
+  /** 加载进度（loading 阶段有效） */
+  mapLoadProgress: MapLoadProgress | null
+  /** 加载失败原因（error 阶段有效，展示于全屏错误页） */
+  mapLoadError: string | null
+  /** 规范化后的地图数据（ready 阶段有效） */
+  mapData: NormalizedMap | null
+  /** 规范化统计：跳过 / 降级计数（SPEC §10 计数要求；统计面板见 TASK-014） */
+  normalizeStats: NormalizeStats | null
+  /** true = Worker 中完成规范化；false = 回退主线程 */
+  mapLoadUsedWorker: boolean
+
   setCameraMode: (mode: CameraMode) => void
   setFollowAgv: (agvId: number | null) => void
   setSelection: (selection: Selection | null) => void
   setLayer: <K extends keyof LayerVisibility>(key: K, value: LayerVisibility[K]) => void
   setAgvSnapshot: (snapshot: AgvSnapshot[]) => void
+
+  /** 仅 idle 阶段可发起加载（防 StrictMode 双调用 / 重复请求） */
+  beginMapLoad: () => void
+  setMapLoadProgress: (progress: MapLoadProgress) => void
+  /** 仅 loading 阶段生效（迟到的完成不覆盖重试后的新状态） */
+  completeMapLoad: (result: {
+    map: NormalizedMap
+    stats: NormalizeStats
+    usedWorker: boolean
+  }) => void
+  failMapLoad: (reason: string) => void
+  /** 错误页重试：回到 idle，由加载入口重新发起 */
+  resetMapLoad: () => void
 }
 
 const DEFAULT_LAYERS: LayerVisibility = {
@@ -85,10 +126,56 @@ export const useAppStore = create<AppState>()((set) => ({
   layers: DEFAULT_LAYERS,
   agvSnapshot: [],
 
+  mapLoadPhase: 'idle',
+  mapLoadProgress: null,
+  mapLoadError: null,
+  mapData: null,
+  normalizeStats: null,
+  mapLoadUsedWorker: false,
+
   setCameraMode: (mode) => set({ cameraMode: mode }),
   setFollowAgv: (agvId) =>
     set(agvId === null ? { followAgvId: null } : { followAgvId: agvId, cameraMode: 'follow' }),
   setSelection: (selection) => set({ selection }),
   setLayer: (key, value) => set((state) => ({ layers: { ...state.layers, [key]: value } })),
   setAgvSnapshot: (snapshot) => set({ agvSnapshot: snapshot }),
+
+  beginMapLoad: () =>
+    set((state) =>
+      state.mapLoadPhase === 'idle'
+        ? {
+            mapLoadPhase: 'loading',
+            mapLoadProgress: { phase: 'fetch', loadedBytes: 0, totalBytes: null },
+            mapLoadError: null,
+          }
+        : state,
+    ),
+  setMapLoadProgress: (progress) =>
+    set((state) => (state.mapLoadPhase === 'loading' ? { mapLoadProgress: progress } : state)),
+  completeMapLoad: (result) =>
+    set((state) =>
+      state.mapLoadPhase === 'loading'
+        ? {
+            mapLoadPhase: 'ready',
+            mapLoadProgress: null,
+            mapData: result.map,
+            normalizeStats: result.stats,
+            mapLoadUsedWorker: result.usedWorker,
+          }
+        : state,
+    ),
+  failMapLoad: (reason) =>
+    set((state) =>
+      state.mapLoadPhase === 'loading'
+        ? { mapLoadPhase: 'error', mapLoadProgress: null, mapLoadError: reason }
+        : state,
+    ),
+  resetMapLoad: () =>
+    set({
+      mapLoadPhase: 'idle',
+      mapLoadProgress: null,
+      mapLoadError: null,
+      mapData: null,
+      normalizeStats: null,
+    }),
 }))

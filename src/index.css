@@ -15,3 +15,78 @@ body {
   width: 100vw;
   height: 100vh;
 }
+
+/* ---- 全屏覆盖页（加载进度 / 错误页 / WebGL 提示页，SPEC §4.4 / §10） ---- */
+/* 色彩由 config/theme.ts 的 uiColors 经内联样式注入，此处只放布局与动效 */
+
+.overlay-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+.overlay-title {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.overlay-status {
+  font-size: 13px;
+}
+
+.error-reason {
+  max-width: 480px;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  word-break: break-all;
+}
+
+.progress-track {
+  width: 320px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.15s ease-out;
+}
+
+.progress-bar-indeterminate {
+  width: 40%;
+  animation: progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+.retry-button {
+  padding: 8px 28px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.retry-button:hover {
+  filter: brightness(1.15);
+}

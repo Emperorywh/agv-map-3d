@@ -44,3 +44,14 @@ export const sceneColors = {
   /** 占位网格刻线 */
   gridLine: '#2c3036',
 } as const
+
+/** DOM UI 色彩（加载进度 / 错误页 / 提示页等 Canvas 外界面） */
+export const uiColors = {
+  textPrimary: '#e8eaee',
+  textSecondary: '#9aa2ab',
+  /** 进度条 / 主按钮强调色 */
+  accent: '#3fa7ff',
+  danger: '#ff5c5c',
+  panelBackground: '#1c1f24',
+  progressTrack: '#2c3036',
+} as const
