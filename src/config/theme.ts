@@ -112,13 +112,17 @@ export const sceneColors = {
   hemisphereGround: '#20232a',
 } as const
 
-/** DOM UI 色彩（加载进度 / 错误页 / 提示页等 Canvas 外界面） */
+/** DOM UI 色彩（加载进度 / 错误页 / 提示页 / 统计与开关面板等 Canvas 外界面） */
 export const uiColors = {
   textPrimary: '#e8eaee',
   textSecondary: '#9aa2ab',
-  /** 进度条 / 主按钮强调色 */
+  /** 进度条 / 主按钮强调色（面板激活态同色系） */
   accent: '#3fa7ff',
   danger: '#ff5c5c',
   panelBackground: '#1c1f24',
   progressTrack: '#2c3036',
+  /** 面板行悬停底色（略亮于面板底；经 CSS var 注入 hover 规则） */
+  rowHover: '#262b33',
+  /** 面板行激活底色（当前跟随 AGV 行 / 当前开关态；配合 accent 文字） */
+  rowActive: '#22354d',
 } as const

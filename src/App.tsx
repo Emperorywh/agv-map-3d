@@ -13,13 +13,18 @@ import { AgvLayer } from './scene/AgvLayer'
 import { CameraRig } from './scene/CameraRig'
 import { FactoryBuilding } from './scene/FactoryBuilding'
 import { FactoryInterior } from './scene/FactoryInterior'
+import { FrameStats } from './scene/FrameStats'
 import { MapLayer } from './scene/MapLayer'
 import { SceneLighting } from './scene/SceneLighting'
 import { SelectionHighlight } from './scene/SelectionHighlight'
 import { useAppStore } from './state/appStore'
+import { AgvList } from './ui/AgvList'
 import { DetailPanel } from './ui/DetailPanel'
 import { ErrorScreen } from './ui/ErrorScreen'
+import { LayerToggles } from './ui/LayerToggles'
 import { LoadingOverlay } from './ui/LoadingOverlay'
+import { StatsPanel } from './ui/StatsPanel'
+import { TopBar } from './ui/TopBar'
 import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
 
 /**
@@ -35,6 +40,9 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * 拾取（SPEC §8.2）：地图三类对象（节点 / 走廊 / AGV）在各自图层挂 raycast 事件；
  * 点击未命中任何可拾取对象时 onPointerMissed 取消选中（R3F 自带拖拽守卫：
  * pointerdown→click 位移 > 2px 的相机拖拽不触发）。
+ * UI 面板（SPEC §8.3，TASK-014，DOM、Canvas 外）：顶部栏（相机三模式）+ 右侧面板组
+ * （AGV 列表 / 图层开关 / 统计信息）+ 右侧详情面板（§8.2）；覆盖层不遮挡主要视野，
+ * 动态数据经 store 0.5s 低频快照节流刷新，UI 不订阅每帧状态（SPEC §9）。
  */
 export default function App() {
   const [webglSupported] = useState(isWebGLSupported)
@@ -90,6 +98,8 @@ export default function App() {
         <color attach="background" args={[sceneColors.background]} />
         {/* 光照：1 盏平行光（唯一投影光源，shadow map ≤1024）+ 半球光（SPEC §5.3 / §9） */}
         <SceneLighting />
+        {/* 帧率采样（SPEC §8.3 FPS）：0.5s 窗口均值低频写 store，统计面板节流读取 */}
+        <FrameStats />
         <FactoryInterior />
         <MapLayer />
         <AgvLayer />
@@ -102,6 +112,15 @@ export default function App() {
             读取的是当帧跟随步进后的相机位姿与 controls.target（关注点） */}
         <FactoryBuilding />
       </Canvas>
+      {/* 顶部栏（SPEC §8.3）：相机三模式切换按钮，与 CameraRig 经 store 联动 */}
+      <TopBar />
+      {/* 右侧面板组（SPEC §8.3）：AGV 列表（点击切跟随）/ 图层开关（含屋顶三态）/
+          统计信息（状态分布 / 规模 / 跳过计数 / FPS）；详情面板打开时自右侧覆盖其上 */}
+      <div className="side-panels">
+        <AgvList />
+        <LayerToggles />
+        <StatsPanel />
+      </div>
       {/* 右侧详情面板（SPEC §8.2，DOM、Canvas 外）：消费 store 的 selection / mapData /
           agvSnapshot 低频快照 */}
       <DetailPanel />

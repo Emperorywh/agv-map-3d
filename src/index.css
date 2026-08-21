@@ -139,6 +139,189 @@ body {
   transition: width 0.3s ease-out;
 }
 
+/* ---- 顶部栏与右侧面板组（SPEC §8.3，Canvas 外 DOM 覆盖层，不遮挡主要视野） ---- */
+/* 色彩经 uiColors 内联注入；行 hover 底色经各面板根元素的 --panel-row-hover CSS var 注入 */
+
+.top-bar,
+.side-panels {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+.top-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 14px;
+  border: 1px solid;
+  border-radius: 8px;
+  z-index: 5;
+}
+
+.top-bar-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.top-bar-modes {
+  display: flex;
+  gap: 6px;
+}
+
+/* 面板通用按钮（顶部栏模式按钮 / 屋顶三态选项）：激活态背景经内联注入，
+   非激活态不落内联背景，hover 底色由 CSS var 规则生效 */
+.panel-button {
+  border: none;
+  border-radius: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.panel-button:hover:not(:disabled) {
+  background: var(--panel-row-hover);
+}
+
+.panel-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 右侧面板组：容器不接收指针事件（间隙处相机操作可穿透），面板自身恢复接收 */
+.side-panels {
+  position: absolute;
+  top: 64px;
+  right: 12px;
+  bottom: 12px;
+  width: 252px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.side-panels > * {
+  pointer-events: auto;
+}
+
+.panel {
+  border: 1px solid;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.panel-header {
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid;
+  flex-shrink: 0;
+}
+
+.panel-body {
+  padding: 8px 12px 12px;
+  overflow-y: auto;
+}
+
+/* AGV 列表：占据面板组剩余高度，行内滚动 */
+.agv-list {
+  flex: 1 1 auto;
+  min-height: 140px;
+  flex-shrink: 1;
+}
+
+.agv-list-body {
+  flex: 1;
+  /* flex 子项默认 min-height:auto 会阻止收缩，置 0 让滚动在定高容器内生效 */
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agv-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agv-list-item:hover {
+  background: var(--panel-row-hover);
+}
+
+.agv-list-id {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.agv-list-status {
+  margin-left: auto;
+}
+
+.agv-list-followed {
+  font-size: 11px;
+}
+
+/* 图层开关 */
+.layer-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.layer-toggle-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: -1px 0 3px 24px;
+}
+
+.roof-override-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid;
+  font-size: 13px;
+}
+
+.roof-override-options {
+  display: flex;
+  gap: 4px;
+}
+
+.roof-option {
+  padding: 3px 10px;
+}
+
 /* ---- 全屏覆盖页（加载进度 / 错误页 / WebGL 提示页，SPEC §4.4 / §10） ---- */
 /* 色彩由 config/theme.ts 的 uiColors 经内联样式注入，此处只放布局与动效 */
 

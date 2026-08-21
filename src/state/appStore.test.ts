@@ -108,3 +108,19 @@ describe('拾取选中 / 悬停（SPEC §8.2）', () => {
     expect(useAppStore.getState().hover).toBeNull()
   })
 })
+
+describe('FPS 统计（SPEC §8.3 / §9：低频写入，同值守卫）', () => {
+  it('fps 默认 null（场景未就绪）', () => {
+    expect(useAppStore.getState().fps).toBeNull()
+  })
+
+  it('setFps 写入窗口均值；同值重设为空操作（保持 state 引用不变，不触发订阅方重渲染）', () => {
+    useAppStore.getState().setFps(60)
+    expect(useAppStore.getState().fps).toBe(60)
+    const before = useAppStore.getState()
+    useAppStore.getState().setFps(60)
+    expect(useAppStore.getState()).toBe(before)
+    useAppStore.getState().setFps(59)
+    expect(useAppStore.getState().fps).toBe(59)
+  })
+})

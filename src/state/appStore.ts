@@ -77,6 +77,13 @@ export interface AppState {
   layers: LayerVisibility
   agvSnapshot: AgvSnapshot[]
 
+  /**
+   * 渲染帧率（SPEC §8.3 统计信息 FPS）：scene/FrameStats 在渲染循环内按
+   * SIM_SNAPSHOT_INTERVAL（0.5s）窗口统计均值后低频写入；统计面板节流读取。
+   * 每帧数据不进 store（SPEC §3 / §9），场景就绪前为 null。
+   */
+  fps: number | null
+
   /** 地图加载阶段（SPEC §4.4 / §10） */
   mapLoadPhase: MapLoadPhase
   /** 加载进度（loading 阶段有效） */
@@ -105,6 +112,8 @@ export interface AppState {
   clearHover: (target: Selection) => void
   setLayer: <K extends keyof LayerVisibility>(key: K, value: LayerVisibility[K]) => void
   setAgvSnapshot: (snapshot: AgvSnapshot[]) => void
+  /** 写入 FPS 窗口均值（同值守卫：取整后不变则不触发订阅方重渲染） */
+  setFps: (fps: number) => void
 
   /** 仅 idle 阶段可发起加载（防 StrictMode 双调用 / 重复请求） */
   beginMapLoad: () => void
@@ -136,6 +145,7 @@ export const useAppStore = create<AppState>()((set) => ({
   hover: null,
   layers: DEFAULT_LAYERS,
   agvSnapshot: [],
+  fps: null,
 
   mapLoadPhase: 'idle',
   mapLoadProgress: null,
@@ -156,6 +166,7 @@ export const useAppStore = create<AppState>()((set) => ({
     set((state) => (sameSelectionTarget(state.hover, target) ? { hover: null } : state)),
   setLayer: (key, value) => set((state) => ({ layers: { ...state.layers, [key]: value } })),
   setAgvSnapshot: (snapshot) => set({ agvSnapshot: snapshot }),
+  setFps: (fps) => set((state) => (state.fps === fps ? state : { fps })),
 
   beginMapLoad: () =>
     set((state) =>

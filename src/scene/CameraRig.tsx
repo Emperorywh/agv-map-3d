@@ -47,8 +47,8 @@ import { useAppStore } from '../state/appStore'
  * - 过渡数学全部收敛于 rendering/scene/cameraTransitions.ts 纯函数（可单测）；
  *   相机位置与 OrbitControls target 即遮挡淡出（TASK-012）的消费点。
  *
- * 临时触发手段（TASK-014 顶部栏按钮接线后移除）：按键 1 = 自由 Orbit、
- * 2 = 正交俯视、3 = 跟随下一台 AGV（循环）；Esc = 退出跟随。
+ * 模式切换入口：顶部栏按钮 / AGV 列表点击（TASK-014，均经 store 驱动）；
+ * Esc = 退出跟随（SPEC §8.1）。
  */
 
 /** OrbitControls 实现实例类型（three-stdlib，经 drei 组件 ref 推断，免直接依赖传递包） */
@@ -124,29 +124,15 @@ export function CameraRig() {
   const followScratchRef = useRef(new Vector3())
   const followDeltaRef = useRef(new Vector3())
 
-  // 临时触发手段（SPEC §8.1；TASK-014 顶部栏按钮接线后移除）+ Esc 退出跟随
+  // Esc 退出跟随（SPEC §8.1）；模式切换按钮见 ui/TopBar、跟随目标见 ui/AgvList（TASK-014）
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const state = useAppStore.getState()
-      if (event.key === 'Escape') {
-        if (state.cameraMode === 'follow') {
-          state.setCameraMode('orbit')
-        }
+      if (event.key !== 'Escape') {
         return
       }
-      if (event.key === '1') {
+      const state = useAppStore.getState()
+      if (state.cameraMode === 'follow') {
         state.setCameraMode('orbit')
-      } else if (event.key === '2') {
-        state.setCameraMode('topdown')
-      } else if (event.key === '3') {
-        const snapshots = agvRuntime.snapshots
-        if (snapshots !== null && snapshots.length > 0) {
-          const currentIndex = snapshots.findIndex(
-            (snapshot) => snapshot.id === state.followTargetId,
-          )
-          const next = snapshots[(currentIndex + 1) % snapshots.length]
-          state.setFollowTarget(next.id)
-        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
