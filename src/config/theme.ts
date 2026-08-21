@@ -1,7 +1,8 @@
 /**
  * 色彩规范（SPEC §5.1 Schematic 示意风）的唯一存放处，禁止在组件中散落硬编码。
- * 本文件为骨架：先给出占位场景与后续地图 / 建筑 / AGV 所需的基础色板，
- * 随后续任务落地按需扩展。
+ * 视觉层级（SPEC §5.1）：建筑低饱和浅灰 / 米白哑光不抢戏；地图元素高饱和
+ * + 轻微 emissive，视觉层级最高；地坪中性深灰，与通道色带拉开对比。
+ * AGV 状态色按 SPEC §7.1 状态集合预留（AGV 本体 TASK-010 / TASK-011 落地消费）。
  */
 
 /** 建筑：低饱和、浅灰 / 米白、哑光，不抢戏 */
@@ -79,11 +80,9 @@ export const agvStatusColors = {
 
 /** 场景环境色 */
 export const sceneColors = {
-  /** 画布背景：深色 */
+  /** 画布背景：深色（同时作为 React 挂载前 body 底色，见 main.tsx） */
   background: '#14161a',
-  /** 占位网格刻线 */
-  gridLine: '#2c3036',
-  /** 半球光天光 / 地面反射色（SPEC §5.3 光照基调，TASK-008 统一校准） */
+  /** 半球光天光 / 地面反射色（SPEC §5.3 光照基调） */
   hemisphereSky: '#cfd4dc',
   hemisphereGround: '#20232a',
 } as const

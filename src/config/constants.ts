@@ -212,3 +212,16 @@ export const COLUMN_FADE_PITCH_RAD = (60 * Math.PI) / 180
 // ---- 性能（SPEC §9）----
 /** 渲染分辨率 DPR 封顶 */
 export const MAX_DEVICE_PIXEL_RATIO = 2
+
+// ---- 光照与阴影（SPEC §5.3 / §9：1 盏平行光 + 半球光，≤1024 shadow map）----
+/** 半球光强度（环境基调光，不产生阴影） */
+export const HEMISPHERE_LIGHT_INTENSITY = 0.9
+/** 主平行光强度（唯一投影光源） */
+export const DIRECTIONAL_LIGHT_INTENSITY = 1.2
+/**
+ * 主平行光方向（自场景中心指向光源的向量，不要求单位长度，由渲染层归一化）：
+ * 方位 +x +z、仰角约 53°——阳光侧外墙把阴影带投进室内地坪，示意建筑体量。
+ */
+export const DIRECTIONAL_LIGHT_DIRECTION: readonly [number, number, number] = [2, 3, 1]
+/** 主平行光 shadow map 边长（SPEC §9 预算：≤1024） */
+export const SHADOW_MAP_SIZE = 1024

@@ -33,7 +33,9 @@ import { useAppStore } from '../state/appStore'
  *   淡入淡出由 TASK-012 实现；
  * - draw call：地坪 / 刻线 / 外墙 / 立柱（InstancedMesh）/ 屋顶 / 天窗带各 1，共 6 个；
  * - 建筑元素不可拾取（SPEC §8.2）：全部网格 raycast 置空，拾取系统（TASK-013）不可命中；
- * - 材质为 schematic 平涂（哑光、低饱和）；光照 / 阴影 / 风格整合同 TASK-008。
+ * - 材质为 schematic 平涂（哑光、低饱和）；阴影（SPEC §5.3 / §9）：仅建筑外壳投影
+ *   （外墙 / 屋顶 castShadow），地坪承接阴影（receiveShadow）；立柱不投影；
+ *   天窗带为发光材质模拟透光，不投影。
  */
 
 /** 外壳几何参数：尺寸阈值集中 config/constants.ts（SPEC §5.1 / §5.2） */
@@ -100,18 +102,18 @@ export function FactoryBuilding() {
   const roofVisible = roofOverride === 'show'
   return (
     <group name="factory-building">
-      {/* 地坪：单块深灰哑光平面 + 每 10m 浅网格刻线 */}
+      {/* 地坪：单块深灰哑光平面 + 每 10m 浅网格刻线；地坪承接建筑阴影（不投影） */}
       <group name="factory-floor">
-        <mesh geometry={shell.floor} raycast={NO_RAYCAST}>
+        <mesh geometry={shell.floor} raycast={NO_RAYCAST} receiveShadow>
           <meshStandardMaterial color={buildingColors.floor} roughness={0.95} metalness={0} />
         </mesh>
         <lineSegments geometry={shell.floorGrid} raycast={NO_RAYCAST}>
           <lineBasicMaterial color={buildingColors.floorGrid} />
         </lineSegments>
       </group>
-      {/* 外墙：6m 高沿包围盒矩形，schematic 浅色，双面可见（室内 / 室外） */}
+      {/* 外墙：6m 高沿包围盒矩形，schematic 浅色，双面可见（室内 / 室外）；建筑投影 */}
       <group name="factory-walls">
-        <mesh geometry={shell.walls} raycast={NO_RAYCAST}>
+        <mesh geometry={shell.walls} raycast={NO_RAYCAST} castShadow>
           <meshStandardMaterial
             color={buildingColors.wall}
             roughness={0.9}
@@ -120,7 +122,8 @@ export function FactoryBuilding() {
           />
         </mesh>
       </group>
-      {/* 立柱：12m 柱距规则阵列（避开走廊 ribbon 区域），单个 InstancedMesh */}
+      {/* 立柱：12m 柱距规则阵列（避开走廊 ribbon 区域），单个 InstancedMesh；
+          不投影（SPEC §5.3：货架 / 立柱不开阴影） */}
       <group name="factory-columns" visible={interiorVisible}>
         <instancedMesh
           ref={columnsRef}
@@ -132,9 +135,10 @@ export function FactoryBuilding() {
           <meshStandardMaterial color={buildingColors.column} roughness={0.85} metalness={0} />
         </instancedMesh>
       </group>
-      {/* 屋顶天窗：平屋顶 + 规则天窗带，默认隐藏（SPEC §5.5） */}
+      {/* 屋顶天窗：平屋顶 + 规则天窗带，默认隐藏（SPEC §5.5）；屋顶投影、
+          天窗带为发光材质模拟透光不投影（visible=false 时不参与 shadow map） */}
       <group name="factory-roof" visible={roofVisible}>
-        <mesh geometry={shell.roof} raycast={NO_RAYCAST}>
+        <mesh geometry={shell.roof} raycast={NO_RAYCAST} castShadow>
           <meshStandardMaterial
             color={buildingColors.roof}
             roughness={0.9}

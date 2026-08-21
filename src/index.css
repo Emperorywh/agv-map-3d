@@ -7,7 +7,7 @@ body,
 }
 
 body {
-  background: #14161a;
+  /* 底色由 main.tsx 自 config/theme.ts 的 sceneColors.background 注入，此处不放色值 */
   overflow: hidden;
 }
 

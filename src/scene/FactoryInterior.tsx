@@ -76,7 +76,10 @@ import { useAppStore } from '../state/appStore'
  *   （坐标经 mapToWorld、朝向经 headingToWorldYaw，收口于 domain/coordinates.ts）；
  * - 建筑元素不可拾取（SPEC §8.2）：全部网格 raycast 置空；
  * - 几何一次性构建（货架采样经走廊包围盒预筛为百毫秒级；SPEC §4.4 分帧针对
- *   走廊 / 节点万级几何）；材质为 schematic 平涂，光照 / 阴影整合同 TASK-008。
+ *   走廊 / 节点万级几何）；材质为 schematic 平涂；阴影（SPEC §5.3 / §9）：
+ *   货架 / 工作台 / 吊灯 / 充电桩 / 卷帘门一律不投影（仅建筑外壳与 AGV 投影），
+ *   吊灯为仅发光体；地面标线 / 区域色块为无光照 overlay（toneMapped=false 保持
+ *   标线色与通道色带对比，SPEC §5.1）。
  */
 
 /** 内部元素几何参数：尺寸阈值集中 config/constants.ts，色值集中 config/theme.ts */
@@ -310,12 +313,14 @@ export function FactoryInterior() {
           <primitive key={frame.key} object={frame.object} />
         ))}
       </group>
-      {/* 地面标线（含区域色块）：贴地坪标线低于 ribbon 层高、区域色块高于 ribbon overlay */}
+      {/* 地面标线（含区域色块）：贴地坪标线低于 ribbon 层高、区域色块高于 ribbon overlay；
+          toneMapped=false 走原始色值，不被 ACES 压灰，与地面保持清晰对比（SPEC §5.1） */}
       <group name="factory-ground-markings" visible={markingsVisible}>
         <mesh geometry={interior.groundMarkings} raycast={NO_RAYCAST} frustumCulled={false}>
           <meshBasicMaterial
             vertexColors
             side={DoubleSide}
+            toneMapped={false}
             polygonOffset
             polygonOffsetFactor={-1}
             polygonOffsetUnits={-1}
@@ -328,6 +333,7 @@ export function FactoryInterior() {
             opacity={AREA_BLOCK_OPACITY}
             depthWrite={false}
             side={DoubleSide}
+            toneMapped={false}
             polygonOffset
             polygonOffsetFactor={-1}
             polygonOffsetUnits={-1}

@@ -17,6 +17,7 @@ import { isWebGLSupported } from './infrastructure/webglSupport'
 import { FactoryBuilding } from './scene/FactoryBuilding'
 import { FactoryInterior } from './scene/FactoryInterior'
 import { MapLayer } from './scene/MapLayer'
+import { SceneLighting } from './scene/SceneLighting'
 import { useAppStore } from './state/appStore'
 import { ErrorScreen } from './ui/ErrorScreen'
 import { LoadingOverlay } from './ui/LoadingOverlay'
@@ -78,13 +79,13 @@ export default function App() {
   return (
     <div className="app-root">
       <Canvas
+        shadows
         dpr={[1, MAX_DEVICE_PIXEL_RATIO]}
         camera={{ position: [80, 60, 80], fov: 50, near: 0.1, far: 2000 }}
       >
         <color attach="background" args={[sceneColors.background]} />
-        {/* 基础光照：半球光 + 平行光（SPEC §5.3 光照基调；材质氛围 TASK-008 统一校准） */}
-        <hemisphereLight args={[sceneColors.hemisphereSky, sceneColors.hemisphereGround, 0.9]} />
-        <directionalLight position={[40, 60, 20]} intensity={1.2} />
+        {/* 光照：1 盏平行光（唯一投影光源，shadow map ≤1024）+ 半球光（SPEC §5.3 / §9） */}
+        <SceneLighting />
         {/* 相机：Orbit 自由视角（SPEC §8.1 极角 / 距离约束），三模式切换由 TASK-012 接管 */}
         <OrbitControls
           makeDefault

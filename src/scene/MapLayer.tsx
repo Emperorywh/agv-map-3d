@@ -189,11 +189,13 @@ export function MapLayer() {
     <>
       {ribbon !== null && (
         <group visible={corridorsVisible}>
-          {/* 合并 ribbon：实心三角带 + 虚线标识单 mesh 单 draw call；polygonOffset 防 z-fighting */}
+          {/* 合并 ribbon：实心三角带 + 虚线标识单 mesh 单 draw call；polygonOffset 防 z-fighting；
+              toneMapped=false 走原始色值，通道色带保持高饱和视觉层级（SPEC §5.1） */}
           <mesh geometry={ribbon.geometry}>
             <meshBasicMaterial
               vertexColors
               side={DoubleSide}
+              toneMapped={false}
               polygonOffset
               polygonOffsetFactor={-1}
               polygonOffsetUnits={-1}
@@ -270,6 +272,7 @@ function CorridorArrows({ placements }: { placements: ArrowPlacement[] }) {
     >
       <meshBasicMaterial
         side={DoubleSide}
+        toneMapped={false}
         polygonOffset
         polygonOffsetFactor={-1}
         polygonOffsetUnits={-1}
@@ -385,7 +388,7 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
       geometry={geometry}
       frustumCulled={false}
     >
-      {/* schematic 高饱和 + 轻微 emissive（SPEC §5.1；材质氛围由 TASK-008 统一校准） */}
+      {/* schematic 高饱和 + 轻微 emissive（SPEC §5.1），节点为场景内视觉层级最高元素 */}
       <meshStandardMaterial
         color={colors[index]}
         emissive={colors[index]}
