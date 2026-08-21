@@ -299,7 +299,8 @@ export const CORRIDOR_HIGHLIGHT_EXTRA_WIDTH = 0.3
 /** 走廊悬停高亮不透明度（弱高亮；选中覆盖恒不透明） */
 export const CORRIDOR_HOVER_OPACITY = 0.5
 
-// ---- 遮挡（SPEC §5.5）----/** 立柱自动淡出的相机俯角阈值（弧度，默认 60°） */
+// ---- 遮挡（SPEC §5.5）----
+/** 立柱自动淡出的相机俯角阈值（弧度，默认 60°） */
 export const COLUMN_FADE_PITCH_RAD = (60 * Math.PI) / 180
 /** 不透明度指数阻尼时间常数（秒）：屋顶 / 墙体 / 立柱淡入淡出共用（帧率无关平滑过渡） */
 export const OCCLUSION_FADE_TAU_SECONDS = 0.2
