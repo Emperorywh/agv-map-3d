@@ -195,6 +195,27 @@ export const BATTERY_DRAIN_PER_METER = 0.05
 /** 充电恢复（百分比 / 秒） */
 export const BATTERY_CHARGE_PER_SECOND = 2
 
+// ---- 模拟器（SPEC §7.1 / §7.2，注入 domain 层模拟器的应用层取值）----
+/** 模拟器随机种子（SPEC §15.5 种子常量，调试时可固定；同一种子行为完全可复现） */
+export const SIM_SEED = 20260821
+/** 装卸停留时长（秒，SPEC §7.1 停留 N 秒） */
+export const SIM_LOAD_UNLOAD_SECONDS = 3
+/** IDLE 决策重试间隔（秒）：无空闲充电位 / 规划失败后的重试冷却 */
+export const SIM_IDLE_RETRY_SECONDS = 1
+/** 固定仿真步长（秒）：渲染循环按此步长驱动 stepSimulator，与帧率解耦（SPEC §7.1） */
+export const SIM_FIXED_DT = 0.1
+/** 路径规划权重模式（SPEC §7.1 二选一常量切换）：'lengthOverSpeed' = 边长/限速；'cost' = 直接 cost */
+export const SIM_GRAPH_WEIGHT_MODE: 'lengthOverSpeed' | 'cost' = 'lengthOverSpeed'
+/**
+ * 边限速 / 加速度 / 角速度字段为 null 时的缺省值（SPEC §7.2 缺省兜底；
+ * 实测 2984/3043 条边速度字段为 null、旋转速度全为 null，兜底为必需）
+ */
+export const SIM_DEFAULT_MAX_SPEED = 2
+export const SIM_DEFAULT_ACCELERATION = 0.8
+export const SIM_DEFAULT_DECELERATION = 1.2
+/** 原地旋转缺省角速度（rad/s） */
+export const SIM_DEFAULT_ROTATION_SPEED = Math.PI / 2
+
 // ---- 相机（SPEC §8.1）----
 /** Orbit 极角限制（弧度）：防穿地 / 防翻转 */
 export const CAMERA_POLAR_MIN_RAD = (5 * Math.PI) / 180

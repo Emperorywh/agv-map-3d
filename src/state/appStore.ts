@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type { NormalizeStats } from '../domain/normalize'
+import type { AgvSnapshot } from '../domain/simulator'
 import type { NormalizedMap } from '../domain/types'
 
 /**
@@ -36,26 +37,12 @@ export interface LayerVisibility {
   roof: RoofOverride
 }
 
-/** AGV 对外状态集合（SPEC §7.1） */
-export type AgvStatus =
-  | 'idle'
-  | 'toPick'
-  | 'hauling'
-  | 'toCharge'
-  | 'charging'
-  | 'loading'
-
-/** 单台 AGV 的模拟状态快照（前端模拟值，SPEC §12） */
-export interface AgvSnapshot {
-  id: number
-  status: AgvStatus
-  /** 电量百分比（模拟值，0~100） */
-  battery: number
-  /** 当前所在边；停靠时为 null */
-  edgeId: string | null
-  /** 当前任务描述（演示用） */
-  task: string | null
-}
+/**
+ * AGV 对外状态与快照类型唯一定义在 domain/simulator（SPEC §7.1 / §12）：
+ * 状态集合 空闲 / 去取货 / 载货中 / 去充电 / 充电中 / 装卸中；快照含编号、状态、
+ * 任务、所在边、电量、世界坐标与 yaw（模拟器任务落地，渲染与面板经 store 读取）。
+ */
+export type { AgvSnapshot, AgvStatus } from '../domain/simulator'
 
 /** 地图加载阶段（SPEC §4.4 / §10）：idle → loading → ready / error，error 可重试回 idle */
 export type MapLoadPhase = 'idle' | 'loading' | 'ready' | 'error'
