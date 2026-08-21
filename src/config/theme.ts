@@ -1,0 +1,46 @@
+/**
+ * 色彩规范（SPEC §5.1 Schematic 示意风）的唯一存放处，禁止在组件中散落硬编码。
+ * 本文件为骨架：先给出占位场景与后续地图 / 建筑 / AGV 所需的基础色板，
+ * 随后续任务落地按需扩展。
+ */
+
+/** 建筑：低饱和、浅灰 / 米白、哑光，不抢戏 */
+export const buildingColors = {
+  /** 地坪：中性深灰，与通道色带拉开对比 */
+  floor: '#3a3d42',
+  wall: '#d8d5cc',
+  column: '#cfccc2',
+  roof: '#e4e1d8',
+} as const
+
+/** 地图元素：高饱和 + 轻微 emissive，视觉层级最高 */
+export const mapColors = {
+  /** 普通走廊 ribbon 底色 */
+  corridor: '#2f9e6e',
+  /** 单向走廊 */
+  corridorOneWay: '#2f7fbf',
+  /** 倒车方向标识（虚线边缘 / 异色） */
+  corridorBack: '#e0a13a',
+  node: '#7d8891',
+  nodeWork: '#ff7847',
+  nodeCharge: '#34c6e0',
+  nodePark: '#9d8cff',
+} as const
+
+/** AGV 状态色（SPEC §7.1 状态集合） */
+export const agvStatusColors = {
+  idle: '#8a939b',
+  toPick: '#3fa7ff',
+  hauling: '#ffb13d',
+  toCharge: '#c96bff',
+  charging: '#41d97e',
+  loading: '#ff6b81',
+} as const
+
+/** 场景环境色 */
+export const sceneColors = {
+  /** 画布背景：深色 */
+  background: '#14161a',
+  /** 占位网格刻线 */
+  gridLine: '#2c3036',
+} as const
