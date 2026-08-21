@@ -38,7 +38,9 @@ import {
   LABEL_ATLAS_MAX_SIZE,
   LABEL_FONT_FAMILY,
   LABEL_ORTHO_MAX_VIEW_WIDTH,
+  LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED,
   LABEL_PERSPECTIVE_MAX_DISTANCE,
+  LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED,
   SIM_DEFAULT_ACCELERATION,
   SIM_DEFAULT_DECELERATION,
   SIM_DEFAULT_MAX_SPEED,
@@ -54,6 +56,7 @@ import {
 import { agvBodyColors, agvStatusColors, highlightColors, mapColors } from '../config/theme'
 import { createSimulator, snapshotSimulator, stepSimulator } from '../domain/simulator'
 import type { SimulatorOptions, SimulatorState } from '../domain/simulator'
+import { DEGRADE_LEVEL_LABELS_TIGHTENED } from '../rendering/scene/degradation'
 import {
   attachInstanceHighlight,
   getAgvIdAtInstance,
@@ -168,6 +171,12 @@ const AGV_LABEL_ATLAS_OPTIONS: LabelAtlasOptions = {
 const AGV_LABEL_VISIBILITY_THRESHOLDS: LabelVisibilityThresholds = {
   perspectiveMaxDistance: LABEL_PERSPECTIVE_MAX_DISTANCE,
   orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH,
+}
+
+/** 降级 2 级（SPEC §9 标签阈值收紧）后的分级阈值：与节点标签同一收紧组，等级 0 保持可读 */
+const AGV_LABEL_VISIBILITY_THRESHOLDS_DEGRADED: LabelVisibilityThresholds = {
+  perspectiveMaxDistance: LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED,
+  orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED,
 }
 
 /** AGV 编号标签文本（两位编号；台数上限 100 内恒两位） */
@@ -419,7 +428,8 @@ function AgvInstances({
  * AGV 编号标签层（SPEC §7.3 复用 §6.4 机制）：全部编号合并为单个 BufferGeometry
  * （每字符一个 quad，共享单张图集纹理），单 mesh 单 draw call；锚点每帧由
  * AgvLayer 驱动 LabelBatch.setAnchorPosition 跟随车体（in-place 写，非几何重建）。
- * 编号恒为等级 0（关键标签），分级 / billboard 与节点标签同一注入。
+ * 编号恒为等级 0（关键标签），分级 / billboard 与节点标签同一注入；
+ * 降级 2 级（SPEC §9 标签阈值收紧）时随节点标签同组阈值收紧（等级 0 上限 80m → 60m）。
  * hover / 选中强制显示（SPEC §6.4 / §8.2）：订阅 store 差量写 aForceVisible。
  */
 function AgvLabels({
@@ -434,6 +444,7 @@ function AgvLabels({
   const [built, setBuilt] = useState<{ atlas: LabelAtlas; batch: LabelBatch } | null>(null)
   const selection = useAppStore((state) => state.selection)
   const hover = useAppStore((state) => state.hover)
+  const degradeLevel = useAppStore((state) => state.degradeLevel)
   /** 当前已置强制显示的标签锚点 id（用于差量清除；批次重建后需重新全量下发） */
   const forcedLabelIdsRef = useRef<string[]>([])
   // 各等级可见性 uniform（每帧写入，不经 React 渲染路径；与节点标签同一口径）
@@ -499,11 +510,18 @@ function AgvLabels({
     forcedLabelIdsRef.current = next
   }, [built, selection, hover])
 
+  // 降级 2 级（SPEC §9 标签阈值收紧）切换收紧组阈值（与节点标签同口径；
+  // degradeLevel 变化触发重渲染，useFrame 闭包随之捕获新阈值）
+  const labelThresholds =
+    degradeLevel >= DEGRADE_LEVEL_LABELS_TIGHTENED
+      ? AGV_LABEL_VISIBILITY_THRESHOLDS_DEGRADED
+      : AGV_LABEL_VISIBILITY_THRESHOLDS
+
   useFrame(({ camera, controls }) => {
     const target = (controls as unknown as { target?: Vector3 } | null)?.target
     const [key, park, nav] = resolveLabelVisibility(
       resolveLabelCameraView(camera, target),
-      AGV_LABEL_VISIBILITY_THRESHOLDS,
+      labelThresholds,
     )
     levelVisible.value.set(key ? 1 : 0, park ? 1 : 0, nav ? 1 : 0)
   })

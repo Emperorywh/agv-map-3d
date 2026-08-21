@@ -9,6 +9,7 @@ import {
   WALL_HEIGHT,
 } from '../config/constants'
 import { sceneColors } from '../config/theme'
+import { DEGRADE_LEVEL_SHADOWS_OFF } from '../rendering/scene/degradation'
 import { computeDirectionalShadowFrustum } from '../rendering/scene/lighting'
 import { useAppStore } from '../state/appStore'
 
@@ -20,10 +21,13 @@ import { useAppStore } from '../state/appStore'
  *   正交视锥由 computeDirectionalShadowFrustum 按建筑 footprint（地图包围盒
  *   + FACTORY_MARGIN，与建筑外壳同口径）+ 墙高推导，覆盖整个厂房；
  * - 投影开启面按 SPEC §5.3 收口：仅建筑外壳（外墙 / 屋顶）与 AGV（TASK-010/011
- *   落地）castShadow；货架 / 立柱 / 吊灯 / 地图元素一律不投影，地坪承接阴影。
+ *   落地）castShadow；货架 / 立柱 / 吊灯 / 地图元素一律不投影，地坪承接阴影；
+ * - 降级 1 级（SPEC §9 关阴影）：degradeLevel ≥ 1 时关闭唯一投影光源的 castShadow
+ *   （阴影贴图不再渲染；墙体 / AGV 的 castShadow 标记随之自然失效，无需逐对象改写）。
  */
 export function SceneLighting() {
   const mapData = useAppStore((state) => state.mapData)
+  const degradeLevel = useAppStore((state) => state.degradeLevel)
 
   // 阴影视锥按建筑 footprint 一次性推导（世界 footprint 中心恒为原点，见 §4.3）
   const frustum = useMemo(
@@ -48,7 +52,7 @@ export function SceneLighting() {
         args={[sceneColors.hemisphereSky, sceneColors.hemisphereGround, HEMISPHERE_LIGHT_INTENSITY]}
       />
       <directionalLight
-        castShadow
+        castShadow={degradeLevel < DEGRADE_LEVEL_SHADOWS_OFF}
         position={frustum.position}
         intensity={DIRECTIONAL_LIGHT_INTENSITY}
         shadow-mapSize={[SHADOW_MAP_SIZE, SHADOW_MAP_SIZE]}

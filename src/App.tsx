@@ -11,6 +11,7 @@ import { loadMap } from './infrastructure/mapLoader'
 import { isWebGLSupported } from './infrastructure/webglSupport'
 import { AgvLayer } from './scene/AgvLayer'
 import { CameraRig } from './scene/CameraRig'
+import { DegradationController } from './scene/DegradationController'
 import { FactoryBuilding } from './scene/FactoryBuilding'
 import { FactoryInterior } from './scene/FactoryInterior'
 import { FrameStats } from './scene/FrameStats'
@@ -36,7 +37,8 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * 场景内容：FactoryBuilding 建筑外壳与遮挡淡出（TASK-006 / TASK-012）+ FactoryInterior
  * 内部元素 / 地面标线 / glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层
  * （TASK-003 / TASK-004 / TASK-005）+ AgvLayer 模拟巡航 AGV（TASK-010）
- * + CameraRig 相机三模式与平滑切换（TASK-011）+ SelectionHighlight 拾取高亮（TASK-013）。
+ * + CameraRig 相机三模式与平滑切换（TASK-011）+ SelectionHighlight 拾取高亮（TASK-013）
+ * + DegradationController 超规模 / 低帧率按序降级（TASK-015，SPEC §9）。
  * 拾取（SPEC §8.2）：地图三类对象（节点 / 走廊 / AGV）在各自图层挂 raycast 事件；
  * 点击未命中任何可拾取对象时 onPointerMissed 取消选中（R3F 自带拖拽守卫：
  * pointerdown→click 位移 > 2px 的相机拖拽不触发）。
@@ -98,8 +100,11 @@ export default function App() {
         <color attach="background" args={[sceneColors.background]} />
         {/* 光照：1 盏平行光（唯一投影光源，shadow map ≤1024）+ 半球光（SPEC §5.3 / §9） */}
         <SceneLighting />
-        {/* 帧率采样（SPEC §8.3 FPS）：0.5s 窗口均值低频写 store，统计面板节流读取 */}
+        {/* 性能采样（SPEC §8.3 FPS / §9 draw call）：0.5s 窗口均值低频写 store，统计面板节流读取 */}
         <FrameStats />
+        {/* 性能降级（SPEC §9）：规模超限 / 帧率持续不足按序启用 关阴影→标签收紧→隐藏导航点；
+            消费 FrameStats 的 0.5s 低频 FPS 通道，不进每帧路径 */}
+        <DegradationController />
         <FactoryInterior />
         <MapLayer />
         <AgvLayer />

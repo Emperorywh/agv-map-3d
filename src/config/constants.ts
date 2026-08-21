@@ -320,6 +320,38 @@ export const WALL_OCCLUSION_SEGMENT_MARGIN = 0.5
 /** 渲染分辨率 DPR 封顶 */
 export const MAX_DEVICE_PIXEL_RATIO = 2
 
+// ---- 性能降级（SPEC §9）：规模超限或实测帧率不足时按序启用 ----
+// 等级语义与判定逻辑见 rendering/scene/degradation.ts：
+// 1 级 = 关阴影 → 2 级 = 标签阈值收紧 → 3 级 = 隐藏普通导航点。
+/**
+ * 规模触发上限：节点 / 有向边 / AGV 任一维度超出即启用 1 级降级（关阴影）。
+ * 按设计上限 ~1800 节点 / ~3000 有向边 / 100 AGV（SPEC §9 / §14）留余量取值——
+ * 当前数据（1767 节点 / 3043 有向边 / 20 台）全部在限内，不触发降级。
+ */
+export const DEGRADE_SCALE_MAX_NODES = 2000
+export const DEGRADE_SCALE_MAX_EDGES = 3600
+export const DEGRADE_SCALE_MAX_AGVS = 100
+/** 实测帧率触发：0.5s 窗口均值（FrameStats 口径）低于该值视为帧率不足（60fps 目标的容差带） */
+export const DEGRADE_FPS_THRESHOLD = 55
+/** 帧率不足须持续的窗口数（×0.5s = 3s）才升一级，防瞬时抖动误触 */
+export const DEGRADE_FPS_SUSTAINED_WINDOWS = 6
+/** 场景就绪后的热身窗口数（×0.5s = 3s）：shader 编译 / 分帧构建期的帧率不参与判定 */
+export const DEGRADE_FPS_WARMUP_WINDOWS = 6
+/**
+ * 降级 2 级（标签阈值收紧）后的分级阈值：透视 [60, 15, 10]（原 [80, 20, 20]）、
+ * 正交 [不限, 120, 40]（原 [不限, 160, 60]）；等级 0 关键标签（work/charge/AGV 编号）保持可读。
+ */
+export const LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED: readonly [number, number, number] = [
+  60, 15, 10,
+]
+export const LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED: readonly [number, number, number] = [
+  Number.POSITIVE_INFINITY,
+  120,
+  40,
+]
+/** 降级 3 级（隐藏普通导航点）：node 类整类隐藏距离阈值收紧为 0（任何相机距离恒隐藏） */
+export const NODE_NAV_HIDE_DISTANCE_DEGRADED = 0
+
 // ---- 光照与阴影（SPEC §5.3 / §9：1 盏平行光 + 半球光，≤1024 shadow map）----
 /** 半球光强度（环境基调光，不产生阴影） */
 export const HEMISPHERE_LIGHT_INTENSITY = 0.9

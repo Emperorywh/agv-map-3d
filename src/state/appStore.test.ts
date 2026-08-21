@@ -123,4 +123,29 @@ describe('FPS 统计（SPEC §8.3 / §9：低频写入，同值守卫）', () =>
     useAppStore.getState().setFps(59)
     expect(useAppStore.getState().fps).toBe(59)
   })
+
+  it('drawCalls 默认 null；setDrawCalls 写入采样值，同值重设为空操作（SPEC §9 预算口径）', () => {
+    expect(useAppStore.getState().drawCalls).toBeNull()
+    useAppStore.getState().setDrawCalls(71)
+    expect(useAppStore.getState().drawCalls).toBe(71)
+    const before = useAppStore.getState()
+    useAppStore.getState().setDrawCalls(71)
+    expect(useAppStore.getState()).toBe(before)
+  })
+})
+
+describe('性能降级等级（SPEC §9：DegradationController 低频写入，同值守卫）', () => {
+  it('degradeLevel 默认 0（当前数据规模不触发降级）', () => {
+    expect(useAppStore.getState().degradeLevel).toBe(0)
+  })
+
+  it('setDegradeLevel 写入等级；同值重设为空操作（保持 state 引用不变）', () => {
+    useAppStore.getState().setDegradeLevel(2)
+    expect(useAppStore.getState().degradeLevel).toBe(2)
+    const before = useAppStore.getState()
+    useAppStore.getState().setDegradeLevel(2)
+    expect(useAppStore.getState()).toBe(before)
+    useAppStore.getState().setDegradeLevel(0)
+    expect(useAppStore.getState().degradeLevel).toBe(0)
+  })
 })

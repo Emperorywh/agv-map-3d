@@ -16,13 +16,16 @@ import {
   LABEL_FONT_FAMILY,
   LABEL_FONT_WORLD_HEIGHT,
   LABEL_ORTHO_MAX_VIEW_WIDTH,
+  LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED,
   LABEL_PERSPECTIVE_MAX_DISTANCE,
+  LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED,
   MAP_GEOMETRY_CHUNK_SIZE,
   NODE_CHARGE_HEIGHT,
   NODE_CHARGE_RADIUS,
   NODE_EMISSIVE_INTENSITY,
   NODE_NAV_HEIGHT,
   NODE_NAV_HIDE_DISTANCE,
+  NODE_NAV_HIDE_DISTANCE_DEGRADED,
   NODE_NAV_RADIUS,
   NODE_PARK_HEIGHT,
   NODE_PARK_RADIUS,
@@ -33,6 +36,10 @@ import {
 } from '../config/constants'
 import { highlightColors, mapColors } from '../config/theme'
 import type { Calibration, NormalizedNode } from '../domain/types'
+import {
+  DEGRADE_LEVEL_LABELS_TIGHTENED,
+  DEGRADE_LEVEL_NAV_NODES_HIDDEN,
+} from '../rendering/scene/degradation'
 import {
   attachInstanceHighlight,
   injectInstanceHighlightShader,
@@ -123,6 +130,12 @@ const LABEL_ATLAS_OPTIONS: LabelAtlasOptions = {
 const LABEL_VISIBILITY_THRESHOLDS: LabelVisibilityThresholds = {
   perspectiveMaxDistance: LABEL_PERSPECTIVE_MAX_DISTANCE,
   orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH,
+}
+
+/** 降级 2 级（SPEC §9 标签阈值收紧）后的分级阈值：等级 0 关键标签保持可读 */
+const LABEL_VISIBILITY_THRESHOLDS_DEGRADED: LabelVisibilityThresholds = {
+  perspectiveMaxDistance: LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED,
+  orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED,
 }
 
 /** 节点材质逐实例 emissive 提亮注入（SPEC §8.2）：模块级稳定引用，避免材质重编译 */
@@ -295,7 +308,8 @@ function CorridorArrows({ placements }: { placements: ArrowPlacement[] }) {
 
 /**
  * 节点实例层（SPEC §6.3）：实例矩阵分帧构建（与走廊几何同一节奏）；
- * node 类整类隐藏由 useFrame 按相机距离驱动整组 visible 开关（不逐实例遍历）。
+ * node 类整类隐藏由 useFrame 按相机距离驱动整组 visible 开关（不逐实例遍历）；
+ * 降级 3 级（SPEC §9 隐藏普通导航点）时阈值收紧为 0，任何相机距离恒隐藏。
  */
 function MapNodes({
   nodes,
@@ -307,6 +321,7 @@ function MapNodes({
   visible: boolean
 }) {
   const [result, setResult] = useState<NodeInstanceBuildResult | null>(null)
+  const degradeLevel = useAppStore((state) => state.degradeLevel)
 
   useEffect(() => {
     const builder = createNodeInstanceBuilder(nodes, calibration)
@@ -332,17 +347,22 @@ function MapNodes({
   const navGroupRef = useRef<Group>(null)
 
   // node 类整类隐藏（SPEC §6.3）：相机距关注点超过阈值时整组隐藏，拉近恢复；
-  // 只写 ref 上的 visible，不触发 React 重渲染（SPEC §3 每帧数据不走渲染路径）
+  // 只写 ref 上的 visible，不触发 React 重渲染（SPEC §3 每帧数据不走渲染路径）；
+  // 降级 3 级（SPEC §9）阈值收紧为 0 → 恒隐藏（隐藏后拾取经 isEffectivelyVisible 守卫放行）
   useFrame(({ camera, controls }) => {
     const navGroup = navGroupRef.current
     if (navGroup === null) {
       return
     }
+    const hideDistance =
+      degradeLevel >= DEGRADE_LEVEL_NAV_NODES_HIDDEN
+        ? NODE_NAV_HIDE_DISTANCE_DEGRADED
+        : NODE_NAV_HIDE_DISTANCE
     // makeDefault 的 OrbitControls 在 state.controls 上暴露 target（视线关注点）
     const target = (controls as unknown as { target?: Vector3 } | null)?.target
     const distance =
       target === undefined ? camera.position.length() : camera.position.distanceTo(target)
-    const hidden = shouldHideNavNodes(distance, NODE_NAV_HIDE_DISTANCE)
+    const hidden = shouldHideNavNodes(distance, hideDistance)
     if (navGroup.visible === hidden) {
       navGroup.visible = !hidden
     }
@@ -476,6 +496,7 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
  *   正交俯视按视野宽度（> 160m 仅 work/charge / 60~160m 加 park / ≤ 60m 全部），
  *   判定纯函数 resolveLabelVisibility 的结果每帧写入 uLevelVisible uniform，
  *   GPU 按 aLevel 顶点属性裁剪（CPU 零遍历，不触发 React 重渲染）；
+ *   降级 2 级（SPEC §9 标签阈值收紧）切换为收紧组阈值（DEGRADED 常量组）；
  * - hover / 选中强制显示（SPEC §6.4 / §8.2）：订阅 store 的 hover / selection，
  *   差量写 aForceVisible 顶点属性跳过分级；批次重建后属性清零、强制集全量重发；
  * - 图集 / 几何批 / 分级机制自 rendering/scene/map/labelAtlas.ts 与 labelGeometry.ts 导出。
@@ -492,6 +513,7 @@ function MapLabels({
   const [built, setBuilt] = useState<{ atlas: LabelAtlas; batch: LabelBatch } | null>(null)
   const selection = useAppStore((state) => state.selection)
   const hover = useAppStore((state) => state.hover)
+  const degradeLevel = useAppStore((state) => state.degradeLevel)
   /** 当前已置强制显示的标签 id（用于差量清除；批次重建后需重新全量下发） */
   const forcedLabelIdsRef = useRef<string[]>([])
 
@@ -542,12 +564,19 @@ function MapLabels({
   // 各等级可见性 uniform（每帧写入，不经 React 渲染路径，SPEC §3）
   const levelVisible = useMemo(() => ({ value: new Vector3(1, 1, 1) }), [])
 
+  // 降级 2 级（SPEC §9 标签阈值收紧）：分级阈值切换为收紧组（degradeLevel 变化触发
+  // 组件重渲染，useFrame 闭包随之捕获新阈值；阈值对象为模块级稳定引用不重建材质）
+  const thresholds =
+    degradeLevel >= DEGRADE_LEVEL_LABELS_TIGHTENED
+      ? LABEL_VISIBILITY_THRESHOLDS_DEGRADED
+      : LABEL_VISIBILITY_THRESHOLDS
+
   useFrame(({ camera, controls }) => {
     // makeDefault 的 OrbitControls 在 state.controls 上暴露 target（视线关注点）
     const target = (controls as unknown as { target?: Vector3 } | null)?.target
     const [key, park, nav] = resolveLabelVisibility(
       resolveLabelCameraView(camera, target),
-      LABEL_VISIBILITY_THRESHOLDS,
+      thresholds,
     )
     levelVisible.value.set(key ? 1 : 0, park ? 1 : 0, nav ? 1 : 0)
   })

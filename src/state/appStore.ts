@@ -84,6 +84,20 @@ export interface AppState {
    */
   fps: number | null
 
+  /**
+   * 绘制调用数（SPEC §9 预算 < 200）：scene/FrameStats 与 FPS 同一 0.5s 窗口节拍
+   * 采样 renderer.info.render.calls（上一完成帧口径）低频写入；统计面板节流读取，
+   * 场景就绪前为 null。
+   */
+  drawCalls: number | null
+
+  /**
+   * 性能降级等级（SPEC §9：0 不降级 → 1 关阴影 → 2 标签阈值收紧 → 3 隐藏普通导航点）：
+   * scene/DegradationController 按规模（地图 / AGV 台数变化时重估）与实测帧率
+   * （消费 fps 窗口均值，持续不足按序升档、只升不降）低频写入；光照 / 标签 / 节点层订阅读取。
+   */
+  degradeLevel: number
+
   /** 地图加载阶段（SPEC §4.4 / §10） */
   mapLoadPhase: MapLoadPhase
   /** 加载进度（loading 阶段有效） */
@@ -114,6 +128,10 @@ export interface AppState {
   setAgvSnapshot: (snapshot: AgvSnapshot[]) => void
   /** 写入 FPS 窗口均值（同值守卫：取整后不变则不触发订阅方重渲染） */
   setFps: (fps: number) => void
+  /** 写入 draw call 采样值（同值守卫：不变则不触发订阅方重渲染） */
+  setDrawCalls: (calls: number) => void
+  /** 写入降级等级（同值守卫：等级不变则不触发订阅方重渲染） */
+  setDegradeLevel: (level: number) => void
 
   /** 仅 idle 阶段可发起加载（防 StrictMode 双调用 / 重复请求） */
   beginMapLoad: () => void
@@ -146,6 +164,8 @@ export const useAppStore = create<AppState>()((set) => ({
   layers: DEFAULT_LAYERS,
   agvSnapshot: [],
   fps: null,
+  drawCalls: null,
+  degradeLevel: 0,
 
   mapLoadPhase: 'idle',
   mapLoadProgress: null,
@@ -167,6 +187,10 @@ export const useAppStore = create<AppState>()((set) => ({
   setLayer: (key, value) => set((state) => ({ layers: { ...state.layers, [key]: value } })),
   setAgvSnapshot: (snapshot) => set({ agvSnapshot: snapshot }),
   setFps: (fps) => set((state) => (state.fps === fps ? state : { fps })),
+  setDrawCalls: (calls) =>
+    set((state) => (state.drawCalls === calls ? state : { drawCalls: calls })),
+  setDegradeLevel: (level) =>
+    set((state) => (state.degradeLevel === level ? state : { degradeLevel: level })),
 
   beginMapLoad: () =>
     set((state) =>
