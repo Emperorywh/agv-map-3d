@@ -29,6 +29,8 @@ export const mapColors = {
   nodeWorkBase: '#5a5f68',
   nodeCharge: '#34c6e0',
   nodePark: '#9d8cff',
+  /** 标签文字（图集绘制色，深色场景上高对比浅色） */
+  labelText: '#eef1f5',
 } as const
 
 /** AGV 状态色（SPEC §7.1 状态集合） */

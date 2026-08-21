@@ -60,6 +60,34 @@ export const NODE_NAV_HIDE_DISTANCE = 150
 /** 节点材质轻微 emissive 强度（schematic 高饱和 + 轻微 emissive，SPEC §5.1） */
 export const NODE_EMISSIVE_INTENSITY = 0.35
 
+// ---- 标签（SPEC §6.4），单位：米 / 像素 ----
+/** 标签字高（世界单位，米）：quad 高度，字符宽度按字形宽高比换算 */
+export const LABEL_FONT_WORLD_HEIGHT = 1.0
+/** 标签锚点离地高度（标签 quad 中心的 y 坐标，浮于节点造型之上） */
+export const LABEL_ANCHOR_HEIGHT = 0.8
+/** 图集单元格边长（像素）：每个去重字符占一格 */
+export const LABEL_ATLAS_CELL_SIZE = 64
+/** 图集格内绘制字号（像素，格内留白防 mipmap 渗色） */
+export const LABEL_ATLAS_FONT_SIZE = 52
+/** 图集绘制字体族（需覆盖中文） */
+export const LABEL_FONT_FAMILY = '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif'
+/** 图集纹理边长上限（像素，2 的幂；超出容量的字符截断并警告计数，SPEC §10） */
+export const LABEL_ATLAS_MAX_SIZE = 2048
+/**
+ * 透视模式距离分级（相机 → 关注点距离，米）：按标签等级 [关键 work/charge, park, node]
+ * 各等级的最大可见距离——> 80m 全部隐藏；20~80m 仅 work/charge；≤ 20m 全部显示。
+ */
+export const LABEL_PERSPECTIVE_MAX_DISTANCE: readonly [number, number, number] = [80, 20, 20]
+/**
+ * 正交俯视视野宽度分级（米）：各等级最大可见视野宽度——视野 > 160m 仅 work/charge；
+ * 60~160m 加 park；≤ 60m 全部显示。等级 0 不限宽（Infinity），保证全图俯视关键标签可读。
+ */
+export const LABEL_ORTHO_MAX_VIEW_WIDTH: readonly [number, number, number] = [
+  Number.POSITIVE_INFINITY,
+  160,
+  60,
+]
+
 // ---- AGV（SPEC §7）----
 /** AGV 车体尺寸：宽 × 深（叉车示意比例） */
 export const AGV_BODY_WIDTH = 1.6

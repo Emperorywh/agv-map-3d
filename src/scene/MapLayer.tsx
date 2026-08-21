@@ -1,12 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Color, DoubleSide, Euler, Matrix4, Quaternion, Vector3 } from 'three'
-import type { Group, InstancedMesh } from 'three'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
+import { Color, DoubleSide, Euler, Matrix4, OrthographicCamera, Quaternion, Vector3 } from 'three'
+import type { Group, InstancedMesh, WebGLProgramParametersWithUniforms } from 'three'
 import { useFrame } from '@react-three/fiber'
 
 import {
   CORRIDOR_ARROW_LENGTH,
   CORRIDOR_ARROW_SPACING,
   CORRIDOR_ARROW_WIDTH,
+  LABEL_ANCHOR_HEIGHT,
+  LABEL_ATLAS_CELL_SIZE,
+  LABEL_ATLAS_FONT_SIZE,
+  LABEL_ATLAS_MAX_SIZE,
+  LABEL_FONT_FAMILY,
+  LABEL_FONT_WORLD_HEIGHT,
+  LABEL_ORTHO_MAX_VIEW_WIDTH,
+  LABEL_PERSPECTIVE_MAX_DISTANCE,
   MAP_GEOMETRY_CHUNK_SIZE,
   NODE_CHARGE_HEIGHT,
   NODE_CHARGE_RADIUS,
@@ -41,6 +50,18 @@ import type {
   NodeShapeSizes,
   RenderableNodeKind,
 } from '../rendering/scene/map/instanceGeometry'
+import { createLabelAtlas } from '../rendering/scene/map/labelAtlas'
+import type { LabelAtlas, LabelAtlasOptions } from '../rendering/scene/map/labelAtlas'
+import {
+  buildLabelBatch,
+  buildNodeLabelAnchors,
+  resolveLabelVisibility,
+} from '../rendering/scene/map/labelGeometry'
+import type {
+  LabelBatch,
+  LabelCameraView,
+  LabelVisibilityThresholds,
+} from '../rendering/scene/map/labelGeometry'
 import {
   buildArrowGeometry,
   createRibbonGeometryBuilder,
@@ -54,10 +75,11 @@ import { useAppStore } from '../state/appStore'
 
 /**
  * 地图图层（SPEC §6）：走廊 ribbon + 倒车虚线标识（单个合并 BufferGeometry）
- * + 单向方向箭头（单个 InstancedMesh）+ 按类型分组的节点 InstancedMesh（5 个 draw call）。
+ * + 单向方向箭头（单个 InstancedMesh）+ 按类型分组的节点 InstancedMesh（5 个 draw call）
+ * + 标签层（图集单纹理 + 合并 quad 几何单 draw call，TASK-005）。
  *
  * 静态几何分帧构建（SPEC §4.4：每帧处理 MAP_GEOMETRY_CHUNK_SIZE 条走廊 / 个节点，
- * 避免主线程长任务）；标签层由 TASK-005 并入本组件。
+ * 避免主线程长任务）；标签层构建量小（全图约数千 quad），一次性构建。
  */
 
 /** ribbon 几何参数：尺寸阈值与色彩集中在 config（SPEC §5.1 / §6.2） */
@@ -99,11 +121,32 @@ const NODE_KIND_COLORS: Record<RenderableNodeKind, string[]> = {
   node: [mapColors.node],
 }
 
+/** 图集绘制参数：字号 / 字体 / 纹理上限集中 config，文字色集中 config/theme.ts */
+const LABEL_ATLAS_OPTIONS: LabelAtlasOptions = {
+  cellSize: LABEL_ATLAS_CELL_SIZE,
+  fontSize: LABEL_ATLAS_FONT_SIZE,
+  fontFamily: LABEL_FONT_FAMILY,
+  textColor: mapColors.labelText,
+  maxSize: LABEL_ATLAS_MAX_SIZE,
+}
+
+/** 标签分级阈值（SPEC §6.4，常量可调）：透视按相机距离、正交俯视按视野宽度 */
+const LABEL_VISIBILITY_THRESHOLDS: LabelVisibilityThresholds = {
+  perspectiveMaxDistance: LABEL_PERSPECTIVE_MAX_DISTANCE,
+  orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH,
+}
+
 export function MapLayer() {
   const mapData = useAppStore((state) => state.mapData)
   const corridorsVisible = useAppStore((state) => state.layers.corridors)
   const nodesVisible = useAppStore((state) => state.layers.nodes)
+  const labelsVisible = useAppStore((state) => state.layers.labels)
   const [ribbon, setRibbon] = useState<RibbonBuildResult | null>(null)
+  /**
+   * 标签几何批句柄：hover / 选中强制显示接口（LabelBatch.setForceVisible）
+   * 的场景层暴露点，拾取交互（TASK-013）经此引用调用。
+   */
+  const labelBatchRef = useRef<LabelBatch | null>(null)
 
   useEffect(() => {
     if (mapData === null) {
@@ -164,6 +207,14 @@ export function MapLayer() {
           nodes={mapData.nodes}
           calibration={mapData.calibration}
           visible={nodesVisible}
+        />
+      )}
+      {mapData !== null && (
+        <MapLabels
+          nodes={mapData.nodes}
+          calibration={mapData.calibration}
+          visible={labelsVisible}
+          batchRef={labelBatchRef}
         />
       )}
     </>
@@ -344,4 +395,125 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
       />
     </instancedMesh>
   ))
+}
+
+/**
+ * 标签层（SPEC §6.4）：全部节点标签合并为单个 BufferGeometry（每字符一个 quad），
+ * 共享单张 Canvas 图集纹理，单 mesh 单 draw call（禁止每标签一个 Sprite）。
+ *
+ * - 图集与几何批一次性构建（字符集初始化即全覆盖，运行期无需重建纹理）；
+ * - billboard：position 存标签锚点（世界坐标）、aOffset 存 quad 角点偏移，
+ *   顶点 shader 中按相机 right/up 展开，标签始终面向相机；
+ * - 分级：透视按相机 → 关注点距离（> 80m 全隐 / 20~80m 仅 work/charge / ≤ 20m 全部）、
+ *   正交俯视按视野宽度（> 160m 仅 work/charge / 60~160m 加 park / ≤ 60m 全部），
+ *   判定纯函数 resolveLabelVisibility 的结果每帧写入 uLevelVisible uniform，
+ *   GPU 按 aLevel 顶点属性裁剪（CPU 零遍历，不触发 React 重渲染）；
+ * - hover / 选中强制显示：batchRef.current.setForceVisible(id, true) 写 aForceVisible
+ *   顶点属性跳过分级（交互由 TASK-013 接入）；
+ * - 图集 / 几何批 / 分级机制自 rendering/scene/map/labelAtlas.ts 与 labelGeometry.ts
+ *   导出，TASK-010 AGV 编号标签复用同一机制。
+ */
+function MapLabels({
+  nodes,
+  calibration,
+  visible,
+  batchRef,
+}: {
+  nodes: NormalizedNode[]
+  calibration: Calibration
+  visible: boolean
+  batchRef: RefObject<LabelBatch | null>
+}) {
+  const [built, setBuilt] = useState<{ atlas: LabelAtlas; batch: LabelBatch } | null>(null)
+
+  // 图集 + 合并几何批原子构建；cleanup 对称 dispose（StrictMode 双调用安全）
+  useEffect(() => {
+    const atlas = createLabelAtlas(
+      nodes.map((node) => node.name),
+      LABEL_ATLAS_OPTIONS,
+    )
+    const anchors = buildNodeLabelAnchors(nodes, calibration, LABEL_ANCHOR_HEIGHT)
+    const batch = buildLabelBatch(anchors, atlas, LABEL_FONT_WORLD_HEIGHT)
+    batchRef.current = batch
+    setBuilt({ atlas, batch })
+    return () => {
+      if (batchRef.current === batch) {
+        batchRef.current = null
+      }
+      batch.dispose()
+      atlas.dispose()
+    }
+  }, [nodes, calibration, batchRef])
+
+  // 各等级可见性 uniform（每帧写入，不经 React 渲染路径，SPEC §3）
+  const levelVisible = useMemo(() => ({ value: new Vector3(1, 1, 1) }), [])
+
+  useFrame(({ camera, controls }) => {
+    let view: LabelCameraView
+    if (camera instanceof OrthographicCamera) {
+      // 正交俯视按视野宽度分级：视野宽 = 视锥宽 / zoom
+      view = { mode: 'orthographic', viewWidth: (camera.right - camera.left) / camera.zoom }
+    } else {
+      // 透视按相机 → 视线关注点距离分级（与 node 整类隐藏同一口径）
+      const target = (controls as unknown as { target?: Vector3 } | null)?.target
+      const distance =
+        target === undefined ? camera.position.length() : camera.position.distanceTo(target)
+      view = { mode: 'perspective', cameraDistance: distance }
+    }
+    const [key, park, nav] = resolveLabelVisibility(view, LABEL_VISIBILITY_THRESHOLDS)
+    levelVisible.value.set(key ? 1 : 0, park ? 1 : 0, nav ? 1 : 0)
+  })
+
+  // billboard + 分级裁剪注入 meshBasicMaterial（标准 map/uv 管线不变）
+  const injectLabelShader = useCallback(
+    (shader: WebGLProgramParametersWithUniforms) => {
+      shader.uniforms.uLevelVisible = levelVisible
+      shader.vertexShader = `
+        attribute vec2 aOffset;
+        attribute float aLevel;
+        attribute float aForceVisible;
+        uniform vec3 uLevelVisible;
+      ${shader.vertexShader}`
+        .replace(
+          '#include <begin_vertex>',
+          `vec3 transformed = vec3( position );
+          float levelVisible = aLevel < 0.5
+            ? uLevelVisible.x
+            : ( aLevel < 1.5 ? uLevelVisible.y : uLevelVisible.z );
+          float labelVisible = aForceVisible > 0.5 ? 1.0 : levelVisible;`,
+        )
+        .replace(
+          '#include <project_vertex>',
+          `// 球形 billboard：position 为标签锚点（世界坐标），aOffset 沿相机 right / up 展开
+          vec3 labelRight = vec3( viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0] );
+          vec3 labelUp = vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] );
+          vec3 labelWorld = transformed + labelRight * aOffset.x + labelUp * aOffset.y;
+          vec4 mvPosition = viewMatrix * vec4( labelWorld, 1.0 );
+          gl_Position = projectionMatrix * mvPosition;
+          // 不可见等级整体裁剪（NDC z 超出 [-w, w]，GPU 丢弃三角形）
+          if ( labelVisible < 0.5 ) {
+            gl_Position = vec4( 0.0, 0.0, 2.0, 1.0 );
+          }`,
+        )
+    },
+    [levelVisible],
+  )
+
+  if (built === null) {
+    return null
+  }
+  return (
+    <mesh geometry={built.batch.geometry} visible={visible} frustumCulled={false}>
+      {/* 单张图集纹理 + 合并 quad 几何 = 单 draw call；depthWrite 关 + alphaTest 防透明排序瑕疵 */}
+      <meshBasicMaterial
+        map={built.atlas.texture}
+        transparent
+        alphaTest={0.05}
+        depthWrite={false}
+        side={DoubleSide}
+        toneMapped={false}
+        onBeforeCompile={injectLabelShader}
+      />
+    </mesh>
+  )
 }
