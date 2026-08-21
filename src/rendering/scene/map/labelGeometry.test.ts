@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { BufferAttribute } from 'three'
+import { BufferAttribute, OrthographicCamera, PerspectiveCamera, Vector3 } from 'three'
 
 import {
   LABEL_ANCHOR_HEIGHT,
@@ -23,6 +23,7 @@ import {
   buildNodeLabelAnchors,
   layoutLabelQuads,
   nodeKindToLabelLevel,
+  resolveLabelCameraView,
   resolveLabelVisibility,
 } from './labelGeometry'
 
@@ -299,6 +300,56 @@ describe('labelGeometry：buildLabelBatch 合并几何（SPEC §6.4 批渲染）
     }
     expect(batch.setForceVisible('不存在', true)).toBe(false)
     batch.dispose()
+  })
+
+  it('动态锚点接口：按 id in-place 移动该标签全部顶点 position 并标记更新；未知 id 返回 false', () => {
+    const batch = buildLabelBatch(anchors, source, 1.0)
+    const position = batch.geometry.getAttribute('position') as BufferAttribute
+    expect(position.version).toBe(0)
+
+    // 移动标签 b（顶点区间 [24, 32)）：全部 8 个顶点落到新锚点，标签 a 不受影响
+    expect(batch.setAnchorPosition('b', 10, 1.05, -20)).toBe(true)
+    expect(position.version).toBe(1)
+    for (let i = 0; i < 24; i++) {
+      expect(position.getX(i)).toBeCloseTo(1, 6)
+      expect(position.getZ(i)).toBeCloseTo(-2, 6)
+    }
+    for (let i = 24; i < 32; i++) {
+      expect(position.getX(i)).toBeCloseTo(10, 6)
+      expect(position.getY(i)).toBeCloseTo(1.05, 5)
+      expect(position.getZ(i)).toBeCloseTo(-20, 6)
+    }
+
+    // 再次移动（模拟每帧跟随）：版本号递增，几何未重建（同一 attribute 对象）
+    expect(batch.setAnchorPosition('b', 11, 1.05, -21)).toBe(true)
+    expect(position.version).toBe(2)
+    expect(batch.geometry.getAttribute('position')).toBe(position)
+    expect(position.getX(24)).toBe(11)
+
+    expect(batch.setAnchorPosition('不存在', 0, 0, 0)).toBe(false)
+    batch.dispose()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 分级视图参数（透视按相机距离 / 正交按视野宽度；节点与 AGV 编号标签共用）
+// ---------------------------------------------------------------------------
+
+describe('labelGeometry：resolveLabelCameraView（SPEC §6.4 分级输入）', () => {
+  it('透视相机：有关注点按相机 → 关注点距离，无关注点退化为相机到原点距离', () => {
+    const camera = new PerspectiveCamera()
+    camera.position.set(30, 40, 0)
+    expect(resolveLabelCameraView(camera)).toEqual({ mode: 'perspective', cameraDistance: 50 })
+    expect(resolveLabelCameraView(camera, new Vector3(0, 40, 0))).toEqual({
+      mode: 'perspective',
+      cameraDistance: 30,
+    })
+  })
+
+  it('正交相机：视野宽度 = 视锥宽 / zoom', () => {
+    const camera = new OrthographicCamera(-80, 80, 40, -40, 0.1, 100)
+    camera.zoom = 2
+    expect(resolveLabelCameraView(camera)).toEqual({ mode: 'orthographic', viewWidth: 80 })
   })
 })
 

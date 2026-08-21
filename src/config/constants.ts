@@ -178,14 +178,42 @@ export const LABEL_ORTHO_MAX_VIEW_WIDTH: readonly [number, number, number] = [
   60,
 ]
 
-// ---- AGV（SPEC §7）----
-/** AGV 车体尺寸：宽 × 深（叉车示意比例） */
-export const AGV_BODY_WIDTH = 1.6
-export const AGV_BODY_DEPTH = 1.0
-/** 默认模拟 AGV 数量（上限按 100 设计） */
+// ---- AGV（SPEC §7），单位：米 ----
+/** AGV 车体 footprint：长（沿车头方向，本地 +Z）× 宽（叉车示意比例，SPEC §7.3 / §15.4） */
+export const AGV_BODY_LENGTH = 1.6
+export const AGV_BODY_WIDTH = 1.0
+/** 模拟台数上限（SPEC §7.1 上限按 100 设计；实例容量按实际台数分配，该值仅为规模约束） */
+export const AGV_MAX_COUNT = 100
+/** 默认模拟 AGV 数量 */
 export const AGV_DEFAULT_COUNT = 20
 /** 倒车速度相对正向的系数 */
 export const AGV_BACK_SPEED_FACTOR = 0.5
+/** 底盘高度（底面贴地 y=0） */
+export const AGV_CHASSIS_HEIGHT = 0.18
+/** 顶盖尺寸：长（沿车头方向）× 宽 × 高；中心略偏车尾 */
+export const AGV_COVER_LENGTH = 1.0
+export const AGV_COVER_WIDTH = 0.7
+export const AGV_COVER_HEIGHT = 0.24
+/** 顶盖中心向车尾（本地 -Z）的偏移 */
+export const AGV_COVER_REAR_OFFSET = 0.1
+/** 方向楔形（车头斜楔，薄边指向本地 +Z 车头）：长 × 宽 × 高 */
+export const AGV_WEDGE_LENGTH = 0.5
+export const AGV_WEDGE_WIDTH = 0.7
+export const AGV_WEDGE_HEIGHT = 0.22
+/** 前灯尺寸：宽 × 高 × 深（成对，略凸出车头端面） */
+export const AGV_HEADLIGHT_WIDTH = 0.14
+export const AGV_HEADLIGHT_HEIGHT = 0.08
+export const AGV_HEADLIGHT_DEPTH = 0.05
+/** 前灯横向安装位置（距车体中线）与安装高度 */
+export const AGV_HEADLIGHT_INSET = 0.32
+export const AGV_HEADLIGHT_LIFT = 0.1
+/** 顶部状态色环（SPEC §7.3 实例色）：半径 / 管径 / 环底相对顶盖顶面的抬升 */
+export const AGV_STATUS_RING_RADIUS = 0.3
+export const AGV_STATUS_RING_TUBE = 0.045
+export const AGV_STATUS_RING_LIFT = 0.04
+/** 编号标签（复用 SPEC §6.4 图集批渲染）：世界字高 / 锚点离地高度（浮于车体与色环之上） */
+export const AGV_LABEL_FONT_HEIGHT = 0.55
+export const AGV_LABEL_ANCHOR_HEIGHT = 1.05
 
 // ---- 电量模型（SPEC §7.1，纯模拟值）----
 /** 低电量阈值（百分比） */
@@ -202,8 +230,12 @@ export const SIM_SEED = 20260821
 export const SIM_LOAD_UNLOAD_SECONDS = 3
 /** IDLE 决策重试间隔（秒）：无空闲充电位 / 规划失败后的重试冷却 */
 export const SIM_IDLE_RETRY_SECONDS = 1
-/** 固定仿真步长（秒）：渲染循环按此步长驱动 stepSimulator，与帧率解耦（SPEC §7.1） */
-export const SIM_FIXED_DT = 0.1
+/** 固定仿真步长（秒）：渲染循环以 1/60s 累积器驱动 stepSimulator，帧间隔大时多步（SPEC §7.1 与帧率解耦） */
+export const SIM_FIXED_DT = 1 / 60
+/** 单帧最大仿真推进时长（秒）：钳制帧间隔，防后台标签页恢复后长时间追帧（漏走的时间直接丢弃） */
+export const SIM_MAX_FRAME_DELTA = 0.25
+/** AGV 快照写入 store 的低频周期（秒）：面板低频节流读取（SPEC §9），每帧路径不进 store */
+export const SIM_SNAPSHOT_INTERVAL = 0.5
 /** 路径规划权重模式（SPEC §7.1 二选一常量切换）：'lengthOverSpeed' = 边长/限速；'cost' = 直接 cost */
 export const SIM_GRAPH_WEIGHT_MODE: 'lengthOverSpeed' | 'cost' = 'lengthOverSpeed'
 /**

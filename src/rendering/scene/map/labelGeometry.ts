@@ -9,14 +9,16 @@
  * - 强制显示：setForceVisible(id, true) 写 aForceVisible 顶点属性，shader 跳过分级——
  *   hover / 选中交互（TASK-013）经此接口接入（SPEC §6.4 / §8.2）；
  * - billboard：顶点 position 存标签锚点（世界坐标）、aOffset 存 quad 角点相对锚点偏移，
- *   朝向相机的展开在场景层材质 shader 中完成（见 MapLayer），几何本身与相机无关；
+ *   朝向相机的展开与 aLevel 分级裁剪由 injectLabelBillboardShader 注入材质 shader
+ *   （节点标签层与 AGV 编号标签层共用同一注入），几何本身与相机无关；
  * - 机制对 AGV 编号标签通用（TASK-010 复用）：锚点直接接受世界坐标，与节点无关。
  *
  * rendering 层可 import three 与 config，禁止 import infrastructure（SPEC §12）；
  * 世界坐标转换只经 domain/coordinates.ts（z 取反唯一收口，SPEC §4.3）。
  */
 
-import { BufferAttribute, BufferGeometry } from 'three'
+import { BufferAttribute, BufferGeometry, OrthographicCamera } from 'three'
+import type { Camera, Vector3, WebGLProgramParametersWithUniforms } from 'three'
 
 import { mapToWorld } from '../../../domain/coordinates'
 import type { Calibration, NodeKind, NormalizedNode } from '../../../domain/types'
@@ -85,6 +87,23 @@ export function resolveLabelVisibility(
   }
   const [key, park, nav] = thresholds.orthoMaxViewWidth
   return [view.viewWidth <= key, view.viewWidth <= park, view.viewWidth <= nav]
+}
+
+/**
+ * 由场景相机与视线关注点（OrbitControls target；无 controls 时为 undefined）
+ * 计算分级视图参数：正交按视野宽度（视锥宽 / zoom），透视按相机 → 关注点距离
+ * （无关注点时退化为相机到原点距离，与 node 整类隐藏同口径）。
+ * 节点标签层与 AGV 编号标签层共用（SPEC §6.4 / §7.3）。
+ */
+export function resolveLabelCameraView(camera: Camera, controlsTarget?: Vector3): LabelCameraView {
+  if (camera instanceof OrthographicCamera) {
+    return { mode: 'orthographic', viewWidth: (camera.right - camera.left) / camera.zoom }
+  }
+  const distance =
+    controlsTarget === undefined
+      ? camera.position.length()
+      : camera.position.distanceTo(controlsTarget)
+  return { mode: 'perspective', cameraDistance: distance }
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +229,12 @@ export interface LabelBatch {
    * 写入该标签全部顶点的 aForceVisible 属性并标记更新；id 不存在返回 false。
    */
   setForceVisible(id: string, force: boolean): boolean
+  /**
+   * 移动标签锚点（in-place 写该标签全部顶点的 position 属性并标记更新，
+   * 零分配、非几何重建）；id 不存在返回 false。
+   * 供动态标签（AGV 编号，SPEC §7.3）每帧跟随；静态节点标签不调用。
+   */
+  setAnchorPosition(id: string, x: number, y: number, z: number): boolean
   dispose(): void
 }
 
@@ -288,7 +313,8 @@ export function buildLabelBatch(
   }
 
   const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new BufferAttribute(positions, 3))
+  const positionAttribute = new BufferAttribute(positions, 3)
+  geometry.setAttribute('position', positionAttribute)
   geometry.setAttribute('aOffset', new BufferAttribute(offsets, 2))
   geometry.setAttribute('uv', new BufferAttribute(uvs, 2))
   geometry.setAttribute('aLevel', new BufferAttribute(levels, 1))
@@ -309,8 +335,70 @@ export function buildLabelBatch(
       forceAttribute.needsUpdate = true
       return true
     },
+    setAnchorPosition(id: string, x: number, y: number, z: number) {
+      const range = ranges.get(id)
+      if (range === undefined) {
+        return false
+      }
+      for (let i = range.start; i < range.start + range.count; i++) {
+        positions[i * 3] = x
+        positions[i * 3 + 1] = y
+        positions[i * 3 + 2] = z
+      }
+      positionAttribute.needsUpdate = true
+      return true
+    },
     dispose() {
       geometry.dispose()
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// billboard 与分级裁剪 shader 注入（节点标签 / AGV 编号标签共用）
+// ---------------------------------------------------------------------------
+
+/** 各等级可见性 uniform（x/y/z 分量 = 等级 0/1/2，1 可见 0 隐藏），场景层每帧写入 */
+export interface LabelLevelVisibleUniform {
+  value: Vector3
+}
+
+/**
+ * 把球形 billboard 展开与 aLevel 分级裁剪注入 meshBasicMaterial（onBeforeCompile）。
+ * 顶点契约即 buildLabelBatch 写出的属性：position = 锚点（世界坐标）、
+ * aOffset = quad 角点偏移、aLevel = 标签等级、aForceVisible = 强制显示。
+ * 标准 map / uv 管线不变；不可见等级整体裁剪到 NDC 之外由 GPU 丢弃（CPU 零遍历）。
+ */
+export function injectLabelBillboardShader(
+  shader: WebGLProgramParametersWithUniforms,
+  levelVisible: LabelLevelVisibleUniform,
+): void {
+  shader.uniforms.uLevelVisible = levelVisible
+  shader.vertexShader = `
+    attribute vec2 aOffset;
+    attribute float aLevel;
+    attribute float aForceVisible;
+    uniform vec3 uLevelVisible;
+  ${shader.vertexShader}`
+    .replace(
+      '#include <begin_vertex>',
+      `vec3 transformed = vec3( position );
+      float levelVisible = aLevel < 0.5
+        ? uLevelVisible.x
+        : ( aLevel < 1.5 ? uLevelVisible.y : uLevelVisible.z );
+      float labelVisible = aForceVisible > 0.5 ? 1.0 : levelVisible;`,
+    )
+    .replace(
+      '#include <project_vertex>',
+      `// 球形 billboard：position 为标签锚点（世界坐标），aOffset 沿相机 right / up 展开
+      vec3 labelRight = vec3( viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0] );
+      vec3 labelUp = vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] );
+      vec3 labelWorld = transformed + labelRight * aOffset.x + labelUp * aOffset.y;
+      vec4 mvPosition = viewMatrix * vec4( labelWorld, 1.0 );
+      gl_Position = projectionMatrix * mvPosition;
+      // 不可见等级整体裁剪（NDC z 超出 [-w, w]，GPU 丢弃三角形）
+      if ( labelVisible < 0.5 ) {
+        gl_Position = vec4( 0.0, 0.0, 2.0, 1.0 );
+      }`,
+    )
 }

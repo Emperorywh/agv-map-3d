@@ -14,6 +14,7 @@ import {
 import { sceneColors } from './config/theme'
 import { loadMap } from './infrastructure/mapLoader'
 import { isWebGLSupported } from './infrastructure/webglSupport'
+import { AgvLayer } from './scene/AgvLayer'
 import { FactoryBuilding } from './scene/FactoryBuilding'
 import { FactoryInterior } from './scene/FactoryInterior'
 import { MapLayer } from './scene/MapLayer'
@@ -30,7 +31,8 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * → ready 进入场景；失败（请求失败 / JSON 损坏 / 顶层结构缺失且主线程回退也失败）
  * → 全屏错误页（原因 + 重试），不进入场景。
  * 场景内容：FactoryBuilding 建筑外壳（TASK-006）+ FactoryInterior 内部元素 / 地面标线 /
- * glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层（TASK-003 / TASK-004 / TASK-005）。
+ * glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层（TASK-003 / TASK-004 / TASK-005）
+ * + AgvLayer 模拟巡航 AGV（TASK-010）。
  */
 export default function App() {
   const [webglSupported] = useState(isWebGLSupported)
@@ -98,6 +100,7 @@ export default function App() {
         <FactoryBuilding />
         <FactoryInterior />
         <MapLayer />
+        <AgvLayer />
       </Canvas>
     </div>
   )

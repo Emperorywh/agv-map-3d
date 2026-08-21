@@ -2,17 +2,43 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+import { Color } from 'three'
+
 import {
+  AGV_BODY_LENGTH,
+  AGV_BODY_WIDTH,
+  AGV_CHASSIS_HEIGHT,
+  AGV_COVER_HEIGHT,
+  AGV_COVER_LENGTH,
+  AGV_COVER_REAR_OFFSET,
+  AGV_COVER_WIDTH,
+  AGV_HEADLIGHT_DEPTH,
+  AGV_HEADLIGHT_HEIGHT,
+  AGV_HEADLIGHT_INSET,
+  AGV_HEADLIGHT_LIFT,
+  AGV_HEADLIGHT_WIDTH,
+  AGV_STATUS_RING_LIFT,
+  AGV_STATUS_RING_RADIUS,
+  AGV_STATUS_RING_TUBE,
+  AGV_WEDGE_HEIGHT,
+  AGV_WEDGE_LENGTH,
+  AGV_WEDGE_WIDTH,
   NODE_CHARGE_RADIUS,
   NODE_NAV_RADIUS,
   NODE_PARK_RADIUS,
   NODE_WORK_PLATFORM_SIZE,
 } from '../../../config/constants'
+import { agvBodyColors, agvStatusColors } from '../../../config/theme'
 import { headingToWorldYaw, mapToWorld } from '../../../domain/coordinates'
 import { normalizeMapFromJson } from '../../../domain/normalize'
+import { createSimulator, snapshotSimulator, stepSimulator } from '../../../domain/simulator'
+import type { AgvSnapshot, AgvStatus } from '../../../domain/simulator'
 import type { Calibration, NodeKind, NormalizedNode } from '../../../domain/types'
 import {
   RENDERABLE_NODE_KINDS,
+  buildAgvBodyGeometry,
+  buildAgvStatusRingGeometry,
+  buildAgvWedgeGeometry,
   buildChargePlatformGeometry,
   buildNodeDotGeometry,
   buildNodeInstances,
@@ -21,9 +47,17 @@ import {
   buildWorkPlatformGeometry,
   createNodeInstanceBuilder,
   getNodeIdAtInstance,
+  resolveAgvStatusColors,
   shouldHideNavNodes,
+  writeAgvInstanceMatrices,
+  writeAgvStatusColors,
 } from './instanceGeometry'
-import type { NodeInstanceGroup, NodeShapeSizes } from './instanceGeometry'
+import type {
+  AgvShapeColors,
+  AgvShapeSizes,
+  NodeInstanceGroup,
+  NodeShapeSizes,
+} from './instanceGeometry'
 
 // ---------------------------------------------------------------------------
 // 测试夹具
@@ -338,5 +372,251 @@ describe('instanceGeometry：真实 map.json 集成（SPEC §4.1 / §6.3）', ()
       }
     }
     expect(seenIds.size).toBe(1767)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AGV 风格化小车几何（SPEC §7.3）
+// ---------------------------------------------------------------------------
+
+/** AGV 造型尺寸夹具：直接取真实 config 常量（与应用一致） */
+const TEST_AGV_SIZES: AgvShapeSizes = {
+  bodyLength: AGV_BODY_LENGTH,
+  bodyWidth: AGV_BODY_WIDTH,
+  chassisHeight: AGV_CHASSIS_HEIGHT,
+  coverLength: AGV_COVER_LENGTH,
+  coverWidth: AGV_COVER_WIDTH,
+  coverHeight: AGV_COVER_HEIGHT,
+  coverRearOffset: AGV_COVER_REAR_OFFSET,
+  wedgeLength: AGV_WEDGE_LENGTH,
+  wedgeWidth: AGV_WEDGE_WIDTH,
+  wedgeHeight: AGV_WEDGE_HEIGHT,
+  headlightWidth: AGV_HEADLIGHT_WIDTH,
+  headlightHeight: AGV_HEADLIGHT_HEIGHT,
+  headlightDepth: AGV_HEADLIGHT_DEPTH,
+  headlightInset: AGV_HEADLIGHT_INSET,
+  headlightLift: AGV_HEADLIGHT_LIFT,
+  ringRadius: AGV_STATUS_RING_RADIUS,
+  ringTube: AGV_STATUS_RING_TUBE,
+  ringLift: AGV_STATUS_RING_LIFT,
+}
+
+const TEST_AGV_COLORS: AgvShapeColors = {
+  chassis: agvBodyColors.chassis,
+  cover: agvBodyColors.cover,
+  wedge: agvBodyColors.wedge,
+  headlight: agvBodyColors.headlight,
+}
+
+function makeAgvSnapshot(id: number, overrides: Partial<AgvSnapshot> = {}): AgvSnapshot {
+  return {
+    id,
+    status: 'idle',
+    battery: 100,
+    edgeId: null,
+    nodeId: null,
+    task: null,
+    position: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    ...overrides,
+  }
+}
+
+describe('instanceGeometry：AGV 车体几何（SPEC §7.3 底盘 + 顶盖 + 方向楔形/前灯）', () => {
+  it('合并为单个非索引 BufferGeometry：position/normal/uv/color 同长，可单 InstancedMesh 渲染', () => {
+    const geometry = buildAgvBodyGeometry(TEST_AGV_SIZES, TEST_AGV_COLORS)
+    expect(geometry.index).toBeNull()
+    const count = geometry.getAttribute('position').count
+    expect(count).toBeGreaterThan(0)
+    expect(geometry.getAttribute('normal').count).toBe(count)
+    expect(geometry.getAttribute('uv').count).toBe(count)
+    expect(geometry.getAttribute('color').count).toBe(count)
+    geometry.dispose()
+  })
+
+  it('包围盒符合 1.6×1.0m 叉车示意比例：底面贴 y=0，车头朝本地 +Z（前灯略凸出车头端面）', () => {
+    const geometry = buildAgvBodyGeometry(TEST_AGV_SIZES, TEST_AGV_COLORS)
+    geometry.computeBoundingBox()
+    const box = geometry.boundingBox
+    expect(box?.min.y).toBeCloseTo(0, 6)
+    expect(box ? box.max.x - box.min.x : 0).toBeCloseTo(AGV_BODY_WIDTH, 5)
+    expect(box?.min.z).toBeCloseTo(-AGV_BODY_LENGTH / 2, 5)
+    // 前灯凸出车头端面（+Z），凸出量 < 前灯深度
+    expect(box?.max.z).toBeGreaterThan(AGV_BODY_LENGTH / 2)
+    expect(box?.max.z).toBeLessThan(AGV_BODY_LENGTH / 2 + AGV_HEADLIGHT_DEPTH)
+    // 最高点 = 顶盖顶面
+    expect(box?.max.y).toBeCloseTo(AGV_CHASSIS_HEIGHT + AGV_COVER_HEIGHT, 5)
+    geometry.dispose()
+  })
+
+  it('顶点色分段：底盘 / 顶盖 / 楔形 / 前灯四色均出现在 color 属性中', () => {
+    const geometry = buildAgvBodyGeometry(TEST_AGV_SIZES, TEST_AGV_COLORS)
+    const color = geometry.getAttribute('color')
+    const seen = new Set<string>()
+    for (let i = 0; i < color.count; i++) {
+      seen.add(
+        `${color.getX(i).toFixed(4)},${color.getY(i).toFixed(4)},${color.getZ(i).toFixed(4)}`,
+      )
+    }
+    for (const hex of Object.values(agvBodyColors)) {
+      const expected = new Color(hex)
+      const key = `${expected.r.toFixed(4)},${expected.g.toFixed(4)},${expected.b.toFixed(4)}`
+      expect(seen.has(key)).toBe(true)
+    }
+    geometry.dispose()
+  })
+
+  it('方向楔形：薄边（y=0）在 +Z 车头端，全高在 -Z 车尾端', () => {
+    const wedge = buildAgvWedgeGeometry(AGV_WEDGE_LENGTH, AGV_WEDGE_WIDTH, AGV_WEDGE_HEIGHT)
+    const position = wedge.getAttribute('position')
+    const halfLength = AGV_WEDGE_LENGTH / 2
+    let maxY = 0
+    for (let i = 0; i < position.count; i++) {
+      const y = position.getY(i)
+      const z = position.getZ(i)
+      maxY = Math.max(maxY, y)
+      // 车头端（+Z）顶点全部贴底（薄边）；高于底面的顶点只能出现在车尾端（-Z）
+      if (z > halfLength - 1e-6) {
+        expect(y).toBe(0)
+      }
+      if (y > 1e-6) {
+        expect(z).toBeCloseTo(-halfLength, 6)
+      }
+    }
+    expect(maxY).toBeCloseTo(AGV_WEDGE_HEIGHT, 6)
+    wedge.dispose()
+  })
+
+  it('顶部状态色环：环心位于顶盖顶面之上、随顶盖偏车尾（本地 -Z）', () => {
+    const ring = buildAgvStatusRingGeometry(TEST_AGV_SIZES)
+    ring.computeBoundingBox()
+    const box = ring.boundingBox
+    const ringTop =
+      AGV_CHASSIS_HEIGHT + AGV_COVER_HEIGHT + AGV_STATUS_RING_LIFT + 2 * AGV_STATUS_RING_TUBE
+    expect(box?.max.y).toBeCloseTo(ringTop, 5)
+    expect(box ? (box.min.x + box.max.x) / 2 : 1).toBeCloseTo(0, 5)
+    expect(box ? (box.min.z + box.max.z) / 2 : 0).toBeCloseTo(-AGV_COVER_REAR_OFFSET, 5)
+    expect(box ? box.max.x - box.min.x : 0).toBeCloseTo(
+      2 * (AGV_STATUS_RING_RADIUS + AGV_STATUS_RING_TUBE),
+      4,
+    )
+    ring.dispose()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AGV 每帧实例写入（纯函数：in-place 写既有数组，SPEC §7.3 / §9）
+// ---------------------------------------------------------------------------
+
+describe('instanceGeometry：AGV 每帧实例写入（SPEC §7.3 / §9 只写矩阵与颜色）', () => {
+  it('writeAgvInstanceMatrices：yaw=0 为单位旋转 + 快照世界坐标平移，列主序 16 float/实例', () => {
+    const snapshots = [
+      makeAgvSnapshot(0, { position: { x: 3, y: 0, z: -2 }, yaw: 0 }),
+      makeAgvSnapshot(1, { position: { x: -5, y: 0, z: 7 }, yaw: 0 }),
+    ]
+    const target = new Float32Array(32)
+    writeAgvInstanceMatrices(target, snapshots)
+    // Float32 存储 + -0/+0 差异，按精度断言
+    const expected = [
+      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0, -2, 1],
+      [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -5, 0, 7, 1],
+    ]
+    for (let instance = 0; instance < 2; instance++) {
+      for (let i = 0; i < 16; i++) {
+        expect(target[instance * 16 + i]).toBeCloseTo(expected[instance][i], 6)
+      }
+    }
+  })
+
+  it('writeAgvInstanceMatrices：yaw 为绕 Y 旋转，与 headingToWorldYaw 同口径——地图朝向 0（+x）车头朝世界 +x，无二次翻转', () => {
+    // headingToWorldYaw(0) = π/2：本地 +Z 车头经 R_y(π/2) 应映射为世界 +x（即地图 +x）
+    const yaw = headingToWorldYaw(0, IDENTITY_CALIBRATION)
+    const target = new Float32Array(16)
+    writeAgvInstanceMatrices(target, [makeAgvSnapshot(0, { yaw })])
+    // 车头方向 = 矩阵第三列（e[8], e[9], e[10]）= (sin(yaw), 0, cos(yaw)) = (1, 0, 0)
+    expect(target[8]).toBeCloseTo(1, 5)
+    expect(target[9]).toBe(0)
+    expect(target[10]).toBeCloseTo(0, 5)
+    // 地图朝向 π/2（地图 +y，即世界 -z）：车头应朝 (0, 0, -1)
+    const yawNorth = headingToWorldYaw(Math.PI / 2, IDENTITY_CALIBRATION)
+    writeAgvInstanceMatrices(target, [makeAgvSnapshot(0, { yaw: yawNorth })])
+    expect(target[8]).toBeCloseTo(0, 5)
+    expect(target[10]).toBeCloseTo(-1, 5)
+  })
+
+  it('resolveAgvStatusColors / writeAgvStatusColors：六状态 hex 预解析为 RGB，按快照状态逐实例写入', () => {
+    const table = resolveAgvStatusColors({
+      idle: '#ff0000',
+      toPick: '#00ff00',
+      hauling: '#0000ff',
+      toCharge: '#ffffff',
+      charging: '#000000',
+      loading: '#ff00ff',
+    })
+    const snapshots = [
+      makeAgvSnapshot(0, { status: 'idle' }),
+      makeAgvSnapshot(1, { status: 'hauling' }),
+      makeAgvSnapshot(2, { status: 'charging' }),
+    ]
+    const target = new Float32Array(9)
+    writeAgvStatusColors(target, snapshots, table)
+    expect(Array.from(target.slice(0, 3))).toEqual([1, 0, 0])
+    expect(Array.from(target.slice(3, 6))).toEqual([0, 0, 1])
+    expect(Array.from(target.slice(6, 9))).toEqual([0, 0, 0])
+  })
+
+  it('resolveAgvStatusColors：theme.agvStatusColors 六状态全覆盖（与对外状态集合一一对应）', () => {
+    const table = resolveAgvStatusColors(agvStatusColors)
+    const statuses: AgvStatus[] = ['idle', 'toPick', 'hauling', 'toCharge', 'charging', 'loading']
+    for (const status of statuses) {
+      const rgb = table[status]
+      expect(rgb).toHaveLength(3)
+      for (const component of rgb) {
+        expect(Number.isFinite(component)).toBe(true)
+      }
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AGV 真实 map.json 模拟集成（SPEC §7：模拟器快照 → 实例写入全链路）
+// ---------------------------------------------------------------------------
+
+describe('instanceGeometry：AGV 真实 map.json 模拟集成（SPEC §7）', () => {
+  it('20 台 AGV 固定步长推进 60s：快照写入实例矩阵 / 状态色全部有限，且有 AGV 离开初始位置', () => {
+    const mapJsonPath = fileURLToPath(new URL('../../../../public/map.json', import.meta.url))
+    const { map } = normalizeMapFromJson(readFileSync(mapJsonPath, 'utf8'))
+    const simulator = createSimulator(map, { agvCount: 20 })
+    expect(simulator.agvs).toHaveLength(20)
+
+    const initial = snapshotSimulator(simulator)
+    const matrices = new Float32Array(initial.length * 16)
+    const colors = new Float32Array(initial.length * 3)
+    const table = resolveAgvStatusColors(agvStatusColors)
+    writeAgvInstanceMatrices(matrices, initial)
+    writeAgvStatusColors(colors, initial, table)
+
+    // 渲染循环同口径：1/60s 固定步长推进 60 秒
+    for (let i = 0; i < 3600; i++) {
+      stepSimulator(simulator, 1 / 60)
+    }
+    const after = snapshotSimulator(simulator)
+    writeAgvInstanceMatrices(matrices, after)
+    writeAgvStatusColors(colors, after, table)
+    for (const component of matrices) {
+      expect(Number.isFinite(component)).toBe(true)
+    }
+    for (const component of colors) {
+      expect(Number.isFinite(component)).toBe(true)
+    }
+
+    // 60s 内必有 AGV 开始巡航（位置离开初始停靠点）
+    const moved = after.some((snapshot, index) => {
+      const before = initial[index]
+      const dx = snapshot.position.x - before.position.x
+      const dz = snapshot.position.z - before.position.z
+      return Math.hypot(dx, dz) > 0.5
+    })
+    expect(moved).toBe(true)
   })
 })

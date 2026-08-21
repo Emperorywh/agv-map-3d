@@ -2,7 +2,7 @@
  * 色彩规范（SPEC §5.1 Schematic 示意风）的唯一存放处，禁止在组件中散落硬编码。
  * 视觉层级（SPEC §5.1）：建筑低饱和浅灰 / 米白哑光不抢戏；地图元素高饱和
  * + 轻微 emissive，视觉层级最高；地坪中性深灰，与通道色带拉开对比。
- * AGV 状态色按 SPEC §7.1 状态集合预留（AGV 本体 TASK-010 / TASK-011 落地消费）。
+ * AGV 六状态色与本体分段色按 SPEC §7.1 / §7.3 定义（AgvLayer 消费）。
  */
 
 /** 建筑：低饱和、浅灰 / 米白、哑光，不抢戏 */
@@ -68,7 +68,7 @@ export const mapColors = {
   labelText: '#eef1f5',
 } as const
 
-/** AGV 状态色（SPEC §7.1 状态集合） */
+/** AGV 状态色（SPEC §7.1 状态集合；顶部状态色环实例色，AgvLayer 消费） */
 export const agvStatusColors = {
   idle: '#8a939b',
   toPick: '#3fa7ff',
@@ -76,6 +76,21 @@ export const agvStatusColors = {
   toCharge: '#c96bff',
   charging: '#41d97e',
   loading: '#ff6b81',
+} as const
+
+/**
+ * AGV 本体分段色（SPEC §7.3 风格化小车，顶点色分色；状态表达全部交给
+ * 顶部色环实例色 agvStatusColors，本体保持中性读车形）
+ */
+export const agvBodyColors = {
+  /** 底盘：深 slate（与深色地坪拉开但不抢状态色环） */
+  chassis: '#4c5563',
+  /** 顶盖：亮灰白（衬托顶部状态色环） */
+  cover: '#dfe4ea',
+  /** 方向楔形：琥珀强调（车头方向指示） */
+  wedge: '#ffcf5c',
+  /** 前灯：暖白 */
+  headlight: '#fff6d8',
 } as const
 
 /** 场景环境色 */

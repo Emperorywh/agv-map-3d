@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { Color, DoubleSide, Euler, Matrix4, OrthographicCamera, Quaternion, Vector3 } from 'three'
+import { Color, DoubleSide, Euler, Matrix4, Quaternion, Vector3 } from 'three'
 import type { Group, InstancedMesh, WebGLProgramParametersWithUniforms } from 'three'
 import { useFrame } from '@react-three/fiber'
 
@@ -55,13 +55,11 @@ import type { LabelAtlas, LabelAtlasOptions } from '../rendering/scene/map/label
 import {
   buildLabelBatch,
   buildNodeLabelAnchors,
+  injectLabelBillboardShader,
+  resolveLabelCameraView,
   resolveLabelVisibility,
 } from '../rendering/scene/map/labelGeometry'
-import type {
-  LabelBatch,
-  LabelCameraView,
-  LabelVisibilityThresholds,
-} from '../rendering/scene/map/labelGeometry'
+import type { LabelBatch, LabelVisibilityThresholds } from '../rendering/scene/map/labelGeometry'
 import {
   buildArrowGeometry,
   createRibbonGeometryBuilder,
@@ -452,53 +450,19 @@ function MapLabels({
   const levelVisible = useMemo(() => ({ value: new Vector3(1, 1, 1) }), [])
 
   useFrame(({ camera, controls }) => {
-    let view: LabelCameraView
-    if (camera instanceof OrthographicCamera) {
-      // 正交俯视按视野宽度分级：视野宽 = 视锥宽 / zoom
-      view = { mode: 'orthographic', viewWidth: (camera.right - camera.left) / camera.zoom }
-    } else {
-      // 透视按相机 → 视线关注点距离分级（与 node 整类隐藏同一口径）
-      const target = (controls as unknown as { target?: Vector3 } | null)?.target
-      const distance =
-        target === undefined ? camera.position.length() : camera.position.distanceTo(target)
-      view = { mode: 'perspective', cameraDistance: distance }
-    }
-    const [key, park, nav] = resolveLabelVisibility(view, LABEL_VISIBILITY_THRESHOLDS)
+    // makeDefault 的 OrbitControls 在 state.controls 上暴露 target（视线关注点）
+    const target = (controls as unknown as { target?: Vector3 } | null)?.target
+    const [key, park, nav] = resolveLabelVisibility(
+      resolveLabelCameraView(camera, target),
+      LABEL_VISIBILITY_THRESHOLDS,
+    )
     levelVisible.value.set(key ? 1 : 0, park ? 1 : 0, nav ? 1 : 0)
   })
 
-  // billboard + 分级裁剪注入 meshBasicMaterial（标准 map/uv 管线不变）
+  // billboard + 分级裁剪注入（与 AGV 编号标签共用 labelGeometry 的同一注入）
   const injectLabelShader = useCallback(
-    (shader: WebGLProgramParametersWithUniforms) => {
-      shader.uniforms.uLevelVisible = levelVisible
-      shader.vertexShader = `
-        attribute vec2 aOffset;
-        attribute float aLevel;
-        attribute float aForceVisible;
-        uniform vec3 uLevelVisible;
-      ${shader.vertexShader}`
-        .replace(
-          '#include <begin_vertex>',
-          `vec3 transformed = vec3( position );
-          float levelVisible = aLevel < 0.5
-            ? uLevelVisible.x
-            : ( aLevel < 1.5 ? uLevelVisible.y : uLevelVisible.z );
-          float labelVisible = aForceVisible > 0.5 ? 1.0 : levelVisible;`,
-        )
-        .replace(
-          '#include <project_vertex>',
-          `// 球形 billboard：position 为标签锚点（世界坐标），aOffset 沿相机 right / up 展开
-          vec3 labelRight = vec3( viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0] );
-          vec3 labelUp = vec3( viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1] );
-          vec3 labelWorld = transformed + labelRight * aOffset.x + labelUp * aOffset.y;
-          vec4 mvPosition = viewMatrix * vec4( labelWorld, 1.0 );
-          gl_Position = projectionMatrix * mvPosition;
-          // 不可见等级整体裁剪（NDC z 超出 [-w, w]，GPU 丢弃三角形）
-          if ( labelVisible < 0.5 ) {
-            gl_Position = vec4( 0.0, 0.0, 2.0, 1.0 );
-          }`,
-        )
-    },
+    (shader: WebGLProgramParametersWithUniforms) =>
+      injectLabelBillboardShader(shader, levelVisible),
     [levelVisible],
   )
 
