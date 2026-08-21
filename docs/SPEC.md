@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档状态 | 已完成访谈，待评审 |
+| 文档状态 | 评审修订完成（2026-08-21），待冻结为 v1.0 |
 | 创建日期 | 2026-08-21 |
 | 目标版本 | v1.0 |
 | 关联代码 | `public/map.json`（真实 2D 调度地图导出，6.5 MB） |
@@ -55,8 +55,8 @@
 
 ```
 code / message / timestamp
-└─ data
-   └─ currentMapInfoVersion.mapJson
+└─ data                        （mapName="中环大地图"、floor=1 在这一层，**不在 mapJson 内**）
+   └─ currentMapInfoVersion.mapJson   （仅含以下 4 个数组）
       ├─ nodes[1767]   { id, name, type, x, y, angle, enterChargeStationId, actions, ... }
       ├─ edges[3043]   { id, name, edgeType, sx, sy, ex, ey, cx, cy, dx, dy,
       │                  snodeId, enodeId, sfacing, efacing, isBackEdge, cost,
@@ -72,13 +72,19 @@ code / message / timestamp
 | 节点类型分布 | `node` 1303 / `work` 389 / `charge` 11 / `park` 64 |
 | 边类型 | `LINE` 2934（控制点为 null）/ `BEZIER` 109（**三次**贝塞尔，c/d 两个控制点） |
 | 坐标范围 | x ∈ [-165.74, 2.10]，y ∈ [-25.12, 50.20]，单位**米**，场地约 168m × 75m |
-| 有反向配对的有向边 | 1994 条（即约 997 条双向走廊） |
+| 角度字段单位 | `sfacing / efacing / angle` 均为**弧度**；0 = 地图 +x，逆时针为正（实测含 ±π/2 精确值） |
+| 有反向配对的有向边 | 1994 条（即 997 组双向走廊） |
 | 无配对的单向边 | 1049 条 |
 | 配对组中恰一条 `isBackEdge=true` | 871 组（语义：该方向 AGV **倒车**通过） |
 | 配对组中两条均非 back | 126 组（双向均可正向行驶） |
+| 配对组中两条均 back | 0 组（871 + 126 = 997 组封闭） |
+| `isBackEdge=true` 总数 | 878 条 = 配对组内 871 + **无配对单向边 7 条**（§6.1 的“单向倒车边”即此 7 条） |
+| back 边朝向语义 | 抽样 4 条 back LINE 边 `sfacing` 均为弦方向 + π → `sfacing/efacing` 记录**车头朝向**而非运动方向（详见 §7.2） |
 | `sfacing ≠ efacing` 的边 | 51 条（沿边行驶需渐变朝向） |
 | 悬空引用边（指向不存在节点） | 0 条 |
 | 节点 `angle` 非空 | 464 个（停放/作业朝向） |
+
+注：类型分布、边型、`angle` 非空数与 `isBackEdge` 总数（878）已于 2026-08-21 评审时独立复核；997 / 871 / 126 / 7 为派生数（总数与配对算术封闭）。分析脚本应随仓库提交（`scripts/analyze-map.mjs`），数据更新后可复跑。
 
 ### 4.2 规范化内部模型（NormalizedMap）
 
@@ -87,7 +93,7 @@ code / message / timestamp
 ```ts
 interface NormalizedMap {
   calibration: Calibration;      // 见 4.3
-  floor: number;                 // 预留多层，本期恒为 1
+  floor: number;                 // 取自 data.floor；预留多层，本期恒为 1
   nodes: NormalizedNode[];       // { id, name, kind, x, y, angle? }
   edges: NormalizedEdge[];       // { id, name, from, to, geometry: Polyline,
                                  //   sFacing, eFacing, isBackEdge, cost,
@@ -100,19 +106,20 @@ type NodeKind = 'node' | 'work' | 'charge' | 'park' | 'elevator'; // elevator �
 
 - `kind` 由 `type` 字段映射；未知类型降级为 `node` 并 console 警告；
 - BEZIER 边在规范化阶段细分为折线（`geometry: Polyline`，含累积弧长表），LINE 边为两点折线，下游统一处理；
-- `corridors` 由 `edges` 按无序节点对聚合，是渲染层唯一消费的路径形态；有向 `edges` 保留给模拟器。
+- `corridors` 由 `edges` 按无序节点对聚合，其统一几何（含弧长表）是**渲染与模拟共用**的路径形态；有向 `edges` 保留方向性属性（sfacing/efacing、限速、isBackEdge 等），供模拟器按行驶方向取用。
 
 ### 4.3 坐标系与校准
 
 - 约定：地图坐标单位视为**米**，世界坐标系为 three.js 默认右手系（Y 向上）；
-- 规范化模型携带 `calibration: { scale, rotationRad, offsetX, offsetY }`，当前由 normalize 层输出默认值：`scale=1, rotation=0`，offset 取节点包围盒中心（使建筑与地图居中于世界原点）；
-- **地图 (x, y) → 世界 (x·s - ox, 0, -(y·s - oy))**：2D 的 y 向上对应世界 -z。**z 轴翻转与校准计算只许出现在 `domain/coordinates.ts` 一个模块**，其余代码一律使用其导出的转换函数，不得自行取反；
+- 规范化模型携带 `calibration: { scale, rotationRad, offsetX, offsetY }`，当前由 normalize 层输出默认值：`scale=1, rotationRad=0`，offset 取**地图包围盒**中心——包围盒须涵盖边折线与贝塞尔控制点，非仅节点（使建筑与地图居中于世界原点，且曲线不会贴墙）；
+- **地图 → 世界**通用变换：`wx = s·(x·cosθ - y·sinθ) - ox`，`wz = -[s·(x·sinθ + y·cosθ) - oy]`（先在地图平面内缩放旋转，再 y → -z，最后平移）；当前 θ=0，退化为 `(x·s - ox, 0, -(y·s - oy))`。2D 的 y 向上对应世界 -z。**z 轴翻转、校准与角度换算只许出现在 `domain/coordinates.ts` 一个模块**，其余代码一律使用其导出的转换函数，不得自行取反；
+- 朝向角 → 世界 yaw 的换算同收敛于 `coordinates.ts`（导出如 `headingToWorldYaw()`）：地图朝向角为弧度（0 = 地图 +x，逆时针为正），经 y → -z 翻转后到 three `rotation.y` 的符号/偏移取决于资产前向轴（§5.4 约定 +Z 正面），必须集中一处不得散落；
 - 建筑外壳与地图共用同一转换，天然对齐，不需要二次配准。
 
 ### 4.4 加载管线
 
-1. `fetch('/map.json')` + 加载进度 UI（6.5 MB，本地秒级，部署后取决于网络）；
-2. JSON.parse 与规范化放入 **Web Worker**，避免主线程卡顿；失败时见 §10；
+1. ``fetch(`${import.meta.env.BASE_URL}map.json`)``（拼接 BASE_URL，兼容子路径部署）+ 加载进度 UI（6.5 MB；本机主线程 JSON.parse 实测约 12ms，Worker 主要是为规范化与 BEZIER 细分让出主线程；部署后取决于网络）；
+2. JSON.parse 与规范化放入 **Web Worker**，避免主线程卡顿；Worker 创建失败（CSP / 环境不支持）回退主线程执行同一套 normalize 纯函数，其余失败情形见 §10；
 3. 规范化完成后一次性构建静态场景几何（分帧构建，避免长任务）。
 
 ## 5. 场景设计
@@ -126,13 +133,13 @@ type NodeKind = 'node' | 'work' | 'charge' | 'park' | 'elevator'; // elevator �
 
 ### 5.2 建筑外壳（程序化生成）
 
-由参数化函数生成，尺寸 = 地图包围盒 + `FACTORY_MARGIN`（常量，默认四周各 8m）：
+由参数化函数生成，尺寸 = 地图包围盒（含边折线与贝塞尔控制点，与 §4.3 offset 同一口径）+ `FACTORY_MARGIN`（常量，默认四周各 8m）：
 
 | 元素 | 规格 |
 | --- | --- |
 | 地坪 | 单块平面，深灰哑光，带浅网格刻线（每 10m） |
 | 外墙 | 高 6m，沿包围盒矩形，schematic 浅色，近相机侧自动淡出（见 5.5） |
-| 立柱 | 规则阵列（默认柱距 12m，可调），避开走廊 ribbon 区域采样放置 |
+| 立柱 | 规则阵列（默认柱距 12m，可调），避开走廊 ribbon 区域采样放置；大俯角/正交俯视时自动淡出防遮挡（见 5.5） |
 | 屋顶 | 平屋顶 + 规则天窗带；默认隐藏，随相机模式/高度自动淡入淡出（见 5.5） |
 | 卷帘门 | 外墙长边各 2 扇（装饰性，固定关闭） |
 
@@ -154,8 +161,10 @@ type NodeKind = 'node' | 'work' | 'charge' | 'park' | 'elevator'; // elevator �
 ### 5.5 遮挡处理：屋顶自动隐藏 + 相机穿透淡出
 
 - 默认（俯视/中远距离）：屋顶与天窗**隐藏**，直接看到内部地图；
-- 相机高度低于屋檐（进入建筑内部）：屋顶自动淡入呈现室内感；
-- 相机靠近/穿入外墙：被穿透或遮挡视线的墙段自动淡出（按相机与墙段距离驱动透明度，带滞后阈值避免闪烁）；
+- 相机位于建筑 **footprint 内**（XZ 落在外墙矩形内 **且** 高度低于屋檐，二者交集）：屋顶自动淡入呈现室内感。判定不得退化为单纯高度阈值——跟随模式下相机常在建筑外低高度环绕，按高度判定会让屋顶淡入、恰好遮挡跟随目标；
+- **AGV 跟随模式默认强制屋顶隐藏**（可被下方“屋顶”手动覆盖项改写），保证跟随视线；
+- 墙体淡出取两条判定的并集：① 相机自身穿透/贴近的墙段；② 遮挡“相机 → 视线关注点”连线的墙段（关注点 = OrbitControls target，跟随模式下为目标 AGV）。透明度按距离驱动，带滞后阈值避免闪烁；
+- 相机俯角超过阈值（默认 60°，常量）或处于正交俯视模式时，立柱自动淡出，避免遮挡柱下节点与通道；
 - 图层开关中提供"屋顶"手动覆盖项（自动 / 强制显示 / 强制隐藏）。
 
 ## 6. 地图渲染
@@ -169,13 +178,13 @@ type NodeKind = 'node' | 'work' | 'charge' | 'park' | 'elevator'; // elevator �
 3. 走廊通行属性：
    - **双向**（存在反向配对）：不画方向箭头；
    - **单向**（无配对，1049 条）：画方向箭头（snode→enode 方向）；
-4. 倒车标识：某方向 `isBackEdge=true` 时，该方向按"倒车通行"渲染——双向走廊在 ribbon 对应侧画虚线边缘；单向倒车边整条用虚线样式 + 异色；
+4. 倒车标识：某方向 `isBackEdge=true` 时，该方向按“倒车通行”渲染——双向走廊在 ribbon 的**该方向行驶左侧**（俯视地图、沿行驶方向看）画虚线边缘；无配对的单向倒车边（实测 7 条，见 §4.1）整条虚线 + 异色；
 5. 两条均非 back 的双向走廊（126 组）：正常纯色 ribbon。
 
 ### 6.2 路径 ribbon 几何
 
 - 宽度常量 `RIBBON_WIDTH`（默认 1.5m，可调），贴地坪上方 2cm（防 z-fighting 用 polygonOffset）；
-- 折线生成三角带，拐角处 miter join（限制 miter 长度防脱节）；全部走廊合并为**一个** BufferGeometry（顶点色编码样式：普通/倒车/单向底色），箭头用单独 instanced 几何或纹理动画；
+- 折线生成三角带，拐角处 miter join（限制 miter 长度防脱节）；全部走廊合并为**一个** BufferGeometry（顶点色编码样式：普通/倒车/单向底色）；每个三角形写入 corridorId 属性（或维护三角形区间索引表），供拾取时由 faceIndex 反查走廊（见 8.2）；箭头用单独 instanced 几何或纹理动画；
 - BEZIER 自适应细分（弦高差容差可配，默认 0.05m），细分结果缓存弧长表供模拟器复用。
 
 ### 6.3 节点渲染
@@ -192,8 +201,10 @@ type NodeKind = 'node' | 'work' | 'charge' | 'park' | 'elevator'; // elevator �
 
 ### 6.4 标签策略
 
-- Canvas 绘制文字图集（支持中文，如"门口充电桩1"）→ sprite；同名字符合并图集，禁止每标签一张纹理；
+- Canvas 绘制文字图集（支持中文，如"门口充电桩1"）；同名字符合并图集，禁止每标签一张纹理；
+- 标签一律用实例化 quad / 合并 BufferGeometry + 图集 UV 批渲染（AGV 编号同机制）；**禁止每标签一个 Sprite**（每 Sprite 一个 draw call，会击穿 §9 预算）；
 - 距离分级：> 80m 全部隐藏；20~80m 仅 `work`/`charge`；< 20m 全部显示；
+- 正交俯视模式按视野宽度分级（默认：视野 > 160m 仅 `work`/`charge`；60~160m 显示 `work`/`charge`/`park`；< 60m 全部显示；常量可调），保证俯视全图时关键标签可读；
 - hover / 选中的对象**强制显示**其标签；
 - 阈值常量可调；标签始终面向相机。
 
@@ -204,27 +215,31 @@ type NodeKind = 'node' | 'work' | 'charge' | 'park' | 'elevator'; // elevator �
 模拟器（domain 层，纯 TS，可单测）驱动默认 **20 台** AGV（可调，上限按 100 设计）：
 
 ```
-IDLE(停在 park/work)
-  → TO_PICK(规划到某个 work 节点) → LOADING(停留 N 秒)
-  → TO_DROP(规划到另一 work 节点) → UNLOADING(停留 N 秒)
-  → 电量 < 阈值 → TO_CHARGE(最近空闲 charge 节点) → CHARGING → IDLE
+IDLE(停在 park/work，进入时检查电量)
+  ├─ 电量 < 阈值 → TO_CHARGE(最近空闲 charge 节点；无空闲位则留 IDLE 重试，见 §10) → CHARGING → IDLE
+  └─ 否则 → TO_PICK(规划到某个 work 节点) → LOADING(停留 N 秒)
+      → TO_DROP(规划到另一 work 节点) → UNLOADING(停留 N 秒) → IDLE
 ```
 
-- 路径规划：Dijkstra，权重 = 边长 / 限速（或直接用 `cost`，二选一，常量切换）；
-- 充电位占用互斥；任务选择带随机性，保证演示画面有差异；
-- 状态集合：`空闲 / 去取货 / 载货中 / 去充电 / 充电中 / 装卸中`，各配状态色（`config/theme.ts`）。
+- 路径规划：Dijkstra，权重 = 边长 / 限速（或直接用 `cost`，二选一，常量切换）；“最近充电位”的“最近”按同一权重函数的**路径代价**度量，不用欧氏距离；
+- 初始摆放：按种子随机打乱的顺序依次占用 `park` 节点（每节点至多一台），不足时顺延 `work` 节点（同样互斥）；初始均为 IDLE、满电量。park 仅 64 个 < 100 台上限，溢出落 work 为设计内行为；
+- 充电位占用互斥；任务选择带随机性（种子随机数，见 §15.5），保证演示画面有差异且可复现；
+- 状态集合：`空闲 / 去取货 / 载货中 / 去充电 / 充电中 / 装卸中`（状态机中 LOADING 与 UNLOADING 对外统称"装卸中"），各配状态色（`config/theme.ts`）；
+- 电量模型：按行驶里程线性消耗（%/m 常量），充电按时间恢复（%/s 常量），低电量阈值常量，均入 `config/constants.ts`；
+- 模拟器为纯函数 `step(dt)`，由渲染循环以固定步长调用（与帧率解耦），保证可单测与种子可复现。
 
 ### 7.2 运动学（遵守数据约束）
 
-- 沿边折线弧长参数化行驶，速度/加减速取边的 `maxFreeSpeed / maxLoadSpeed / max*Acceleration` 字段（缺省值兜底）；
-- **朝向约束**：进入边时朝向对齐 `sfacing`，离开时对齐 `efacing`；两者不等的边（51 条）沿弧长插值旋转；节点处若相邻边朝向突变，AGV 原地旋转后再出发；
-- **倒车边**：`isBackEdge=true` 的边上 AGV 车头朝运动反方向（车尾先行的叉车倒车姿态），倒车速度低于正向（常量系数）；
-- 节点 `angle` 非空时，AGV 在该节点停靠期间对齐 `angle`。
+- **朝向语义（实测已验证，见 §4.1）**：`sfacing / efacing` 记录的是**车头朝向角**而非运动方向——普通边上与运动方向一致，`isBackEdge=true` 边上与运动方向相反（即弦方向 + π）。因此“车头对齐 sfacing”本身已给出倒车姿态，**不得**在此之上再叠加 180° 翻转；
+- 沿**走廊统一几何**弧长参数化行驶（反向行驶时折线反转，与渲染 ribbon 零偏差）；速度/加减速取当前行驶方向有向边的 `maxFreeSpeed / maxLoadSpeed / max*Acceleration` 字段（缺省值兜底；实测这些键每条边均存在，值可为 null，null 用缺省常量）；
+- **朝向约束**：进入边时车头对齐 `sfacing`，离开时对齐 `efacing`；两者不等的边（51 条）沿弧长插值旋转；节点处若相邻边朝向突变，AGV 原地旋转后再出发，原地旋转角速度取边的 `maxFreeRotationSpeed / maxLoadRotationSpeed` 字段（缺省值兜底，字段实测存在、值可 null）；
+- **倒车边**：`isBackEdge=true` 的边上车头与运动方向相反（车尾先行的叉车倒车姿态）——这是朝向语义的**推论**，不是叠加在 sfacing 之外的独立翻转；倒车速度低于正向（常量系数）；
+- 节点 `angle` 非空时，AGV 在该节点停靠期间车头对齐 `angle`。
 
 ### 7.3 AGV 外观
 
 - 风格化几何体小车（底盘 + 顶盖 + 方向楔形/前灯），示意叉车比例（默认 1.6 × 1.0 m，常量）；
-- 顶部状态色环 + 编号 sprite（复用标签图集机制）；
+- 顶部状态色环 + 编号标签（复用 §6.4 图集批渲染机制，不引入 per-AGV draw call）；
 - InstancedMesh 渲染，每帧只更新实例矩阵与颜色，不重建几何。
 
 ## 8. 相机、交互与 UI
@@ -241,17 +256,17 @@ IDLE(停在 park/work)
 
 ### 8.2 拾取与详情
 
-- Raycast 拾取节点 / 走廊 / AGV（InstancedMesh 按 instanceId 反查对象）；建筑元素不可拾取；
+- Raycast 拾取节点 / 走廊 / AGV（InstancedMesh 按 instanceId 反查；走廊由合并几何的 corridorId 属性 / 三角形区间表按 faceIndex 反查，见 6.2）；建筑元素不可拾取；
 - 选中后：场景中高亮（emissive 提升 + 描边色环），右侧详情面板显示完整属性：
   - 节点：名称、类型、坐标、angle、关联边列表；
-  - 边/走廊：名称、方向（单/双向）、是否倒车、长度、cost、限速等原始属性；
+  - 边/走廊：名称、方向（单/双向）、是否倒车、长度、cost、限速等原始属性；双向走廊两方向的有向属性（限速/加速度/cost）可能不同，**面板按方向分组展示两组**，单向仅一组；
   - AGV：编号、状态、当前任务、所在边、电量（模拟值）；
 - 点击空白处取消选中；hover 有弱高亮 + 强制标签。
 
 ### 8.3 UI 面板（DOM，Canvas 外）
 
 1. **AGV 列表**：编号 + 状态色点，点击定位（切跟随模式），显示计数；
-2. **图层开关**：节点 / 路径 / 标签 / 货架与工作台 / 地面标线 / 屋顶（自动-显示-隐藏三态）；
+2. **图层开关**：节点 / 路径 / 标签 / 室内陈设（货架与工作台、立柱、吊灯、充电桩造型、卷帘门）/ 地面标线（含充电区等区域色块）/ 屋顶（自动-显示-隐藏三态）；
 3. **统计信息**：AGV 各状态数量、节点/走廊/边总数、FPS；
 4. 顶部栏：相机模式切换按钮。
 
@@ -265,7 +280,9 @@ IDLE(停在 park/work)
 | 启动 | 地图解析 + 场景构建 < 3s | Worker 解析、分帧构建、加载进度反馈 |
 | 阴影 | 1 盏主光，≤1024 shadow map | 仅建筑 + AGV 投影 |
 
-规模按中型上限设计：~1800 节点 / ~3000 有向边（~1500 走廊）/ 100 AGV 内不触发降级。超出时降级策略（按序启用）：关阴影 → 标签阈值收紧 → 隐藏普通导航点。
+规模按中型上限设计：~1800 节点 / ~3000 有向边（按无序节点对聚合后实测 2046 条走廊）/ 100 AGV 内不触发降级。超出时降级策略（按序启用）：关阴影 → 标签阈值收紧 → 隐藏普通导航点。
+
+预算口径：1080p 指 **CSS 像素**，渲染分辨率按 `min(devicePixelRatio, 2)` 封顶（超出的 DPR 不再采样，避免高 DPI 4 倍像素量击穿帧预算）。
 
 ## 10. 异常与分级降级
 
@@ -275,6 +292,7 @@ IDLE(停在 park/work)
 | 个别节点缺坐标 / 类型未知 | 跳过该节点（关联边一并跳过），console 警告 + 计数面板可见 |
 | 个别边引用不存在节点 / 几何退化（s=e） | 跳过该边，console 警告 + 计数 |
 | glTF 点缀资产加载失败 | 程序化占位体替换，console 警告，场景照常 |
+| Worker 创建失败（CSP / 环境不支持） | 回退主线程解析与规范化（同一套纯函数），console 警告；主线程再失败才进错误页 |
 | WebGL 不可用 | 提示页（浏览器不支持说明） |
 | 模拟器进入异常状态（如找不到可达充电位） | 该 AGV 回到 IDLE 并告警计数，不拖垮全局 |
 
@@ -286,9 +304,9 @@ vitest 单测覆盖纯函数模块（domain / rendering 的几何纯函数部分
 
 - `coordinates`：校准、y→-z 翻转、往返转换一致性；
 - `normalize`：map.json → NormalizedMap（类型映射、BEZIER 细分、未知类型降级、坏数据跳过）；
-- `corridors`：配对/去重规则、单双向判定、back 方向归属（用 §4.1 实测分布做断言样本）；
+- `corridors`：配对/去重规则、单双向判定、back 方向归属、单向 back 边计数 = 7（用 §4.1 实测分布做断言样本）；
 - `graph`：邻接表构建、Dijkstra 正确性、不可达处理；
-- `simulator`：状态机迁移、充电互斥、任务完成回流 IDLE；
+- `simulator`：状态机迁移、充电互斥、任务完成回流 IDLE、低电量触发 TO_CHARGE、固定种子下行为可复现；
 - `bezier/ribbon`：细分精度、弧长表单调性、ribbon 顶点数与拐角退化。
 
 手动验收清单：视觉走查（风格/遮挡/标签分级）、交互走查（三相机模式/选中/面板）、性能（Stats 面板确认 60fps 与 draw call）、异常注入（断网/坏 JSON/删 glTF）。
@@ -298,9 +316,10 @@ vitest 单测覆盖纯函数模块（domain / rendering 的几何纯函数部分
 依赖规则（**强制**）：
 
 - `domain`：纯 TS，不 import three / react / config；需要的常量（如 FACTORY_MARGIN）以参数传入；
-- `rendering`：可 import three，**禁止 import infrastructure**；通过 domain 类型交换数据；
-- `infrastructure`：IO 层（fetch、Worker、glTF loader），可依赖 domain；
-- `ui` / `scene`：React 层，组合以上三层；
+- `rendering`：可 import three 与 config（读常量/主题），**禁止 import infrastructure**；通过 domain 类型交换数据；
+- `infrastructure`：IO 层（fetch、Worker、glTF loader），可依赖 domain；**禁止被 rendering / domain 反向引用**；
+- `ui` / `scene`：React 层，组合以上三层；`ui` 不直接 import rendering（场景对象只经 scene 组装，UI 只消费 domain 类型与 store）；
+- `config`：叶子层，只被 rendering / scene / ui 引用，不依赖任何层；
 - z 翻转只在 `domain/coordinates.ts`（见 §4.3）。
 
 ```
@@ -314,8 +333,8 @@ src/
 │     ├─ map/         # instanceGeometry.ts（节点/AGV 实例几何）、ribbonGeometry.ts
 │     └─ factory/     # shellGeometry.ts、interiorGeometry.ts
 ├─ infrastructure/    # mapLoader.ts（fetch+Worker）、normalize.worker.ts、assetLoader.ts
-├─ state/             # zustand store（选中、图层、相机模式、AGV 快照）
-├─ scene/             # R3F 组件：FactoryBuilding / MapLayer / AgvLayer / CameraRig / Effects
+├─ state/             # zustand store（选中、图层、相机模式、AGV 状态快照——前端模拟值，非 §2.2 所述数据层快照）
+├─ scene/             # R3F 组件：FactoryBuilding / MapLayer / AgvLayer / CameraRig
 └─ ui/                # DOM 面板：AgvList / LayerToggles / StatsPanel / DetailPanel / TopBar
 ```
 
@@ -324,7 +343,7 @@ src/
 | # | 任务 | 产出 |
 | --- | --- | --- |
 | TASK-001 | 脚手架：装依赖（drei/zustand/vitest）、分层目录、lint | 空场景可运行 |
-| TASK-002 | 数据层：Worker 加载 + normalize + coordinates + 单测 | NormalizedMap 可用 |
+| TASK-002 | 数据层：Worker 加载（含主线程回退）+ normalize + coordinates + 单测 | NormalizedMap 可用 + 加载进度 UI |
 | TASK-003 | 走廊配对 + 折线/贝塞尔细分 + ribbon 几何 | 地面通道可见 |
 | TASK-004 | 节点 InstancedMesh + 类型造型 | 全图静态可见 |
 | TASK-005 | 标签图集 + 距离分级 | 标签可读不糊 |
@@ -344,7 +363,7 @@ src/
 | 主题 | 决策 |
 | --- | --- |
 | 数据源 | 静态 JSON（`public/map.json`） |
-| 设计规模 | 中型：~1000+ 节点 / ~3000 边 / ≤100 AGV |
+| 设计规模 | 中型：实测 1767 节点 / 3043 边（按 ~1800 / ~3000 上限设计）/ ≤100 AGV |
 | 坐标对齐 | 规范化模型自带 calibration；z 翻转收敛单一模块 |
 | 楼层 | 单层；数据预留 `floor` 与 `elevator` 类型 |
 | 建筑来源 | 程序化外壳 + 少量 glTF 点缀 |
@@ -368,6 +387,18 @@ src/
 
 1. **calibration 默认值**：当前按"米制 + 包围盒居中"处理；若后续更换地图导出格式，需在 normalize 层填入真实 scale/rotation。
 2. **单向边可信度**：1049 条无配对边按数据原样渲染为单向；若实际是数据遗漏（本该双向），表现为"看起来能双向走的路画了箭头"——以数据为准，不做猜测性修复。
-3. **走廊配对几何不一致**：配对边若几何偏差超过阈值（默认 0.3m），取短者渲染并警告计数；本期不做双 ribbon。
+3. **走廊配对几何不一致**：配对边若几何偏差超过阈值（默认 0.3m；当前数据实测 0 组超阈值），取短者渲染并警告计数；本期不做双 ribbon。模拟器与渲染共用走廊统一几何（见 §7.2），不存在 AGV 偏离 ribbon 的二次偏差。
 4. **AGV/ribbon 尺寸**：AGV 1.6×1.0m、ribbon 1.5m 为经验默认值，首版视觉走查后可调（均为常量）。
 5. **任务随机性**：模拟器任务分配用种子随机数，保证演示可复现（种子常量，调试时可固定）。
+6. **AGV 间无交通规则**：本期不做避碰 / 会车 / 排队，允许视觉上重叠穿行；若演示效果不可接受再单独立项。
+7. **电量为纯模拟值**：消耗 / 充电速率为经验常量（见 §7.1），与真实车辆续航无关。
+8. **`enterChargeStationId` 暂不使用**：数据节点自带充电站指派字段，本期模拟器按“最近空闲充电位”策略演示、不读该字段；接入真实调度时需改用。
+9. **§4.1 统计可复现**：派生数（997 / 871 / 126 / 7）由实测总数与配对算术封闭，分析脚本入库后随数据更新重跑。
+
+---
+
+## 16. 变更记录
+
+| 日期 | 版本 | 说明 |
+| --- | --- | --- |
+| 2026-08-21 | v1.0（评审修订） | 首次评审后修订：补全 back 边分布（878 = 871 + 单向 7，两组均 back 为 0）；实测确认 `sfacing/efacing` 为车头朝向角（弧度），明确倒车姿态不得二次翻转；屋顶淡入改 footprint 交集判定、跟随模式强制隐藏屋顶；墙体淡出补视线遮挡判定；校准公式补旋转通用式、角度换算收敛 coordinates.ts；包围盒口径统一为含边几何；正交标签分级补 60~160m 段；补 AGV 初始摆放与“最近充电位”度量定义；Worker 创建失败回退主线程；fetch 拼 BASE_URL；DPR 封顶写入预算口径；§12 依赖矩阵补全（config 叶子层、ui 不引 rendering）并移除无后处理需求的 Effects；图层开关与场景元素对齐；TASK-002 产出补加载进度 UI |
