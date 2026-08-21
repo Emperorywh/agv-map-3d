@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react'
+import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 
-import { BEZIER_TOLERANCE, MAX_DEVICE_PIXEL_RATIO } from './config/constants'
+import {
+  BEZIER_TOLERANCE,
+  CAMERA_DISTANCE_MAX,
+  CAMERA_DISTANCE_MIN,
+  CAMERA_POLAR_MAX_RAD,
+  CAMERA_POLAR_MIN_RAD,
+  CORRIDOR_GEOMETRY_TOLERANCE,
+  MAX_DEVICE_PIXEL_RATIO,
+} from './config/constants'
 import { sceneColors } from './config/theme'
 import { loadMap } from './infrastructure/mapLoader'
 import { isWebGLSupported } from './infrastructure/webglSupport'
-import { PlaceholderScene } from './scene/PlaceholderScene'
+import { MapLayer } from './scene/MapLayer'
 import { useAppStore } from './state/appStore'
 import { ErrorScreen } from './ui/ErrorScreen'
 import { LoadingOverlay } from './ui/LoadingOverlay'
@@ -17,7 +26,7 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * 加载状态流：WebGL 探测（不可用 → 提示页）→ idle 发起加载（进度条）
  * → ready 进入场景；失败（请求失败 / JSON 损坏 / 顶层结构缺失且主线程回退也失败）
  * → 全屏错误页（原因 + 重试），不进入场景。
- * 真实地图 / 建筑场景组件由 TASK-003 起替换 PlaceholderScene。
+ * 场景内容：MapLayer 走廊网络（TASK-003）；节点 / 标签 / 建筑由后续任务并入。
  */
 export default function App() {
   const [webglSupported] = useState(isWebGLSupported)
@@ -37,6 +46,7 @@ export default function App() {
     useAppStore.getState().beginMapLoad()
     loadMap({
       bezierTolerance: BEZIER_TOLERANCE,
+      corridorGeometryTolerance: CORRIDOR_GEOMETRY_TOLERANCE,
       onProgress: (progress) => useAppStore.getState().setMapLoadProgress(progress),
     })
       .then((result) => useAppStore.getState().completeMapLoad(result))
@@ -69,7 +79,19 @@ export default function App() {
         camera={{ position: [80, 60, 80], fov: 50, near: 0.1, far: 2000 }}
       >
         <color attach="background" args={[sceneColors.background]} />
-        <PlaceholderScene />
+        {/* 基础光照：半球光 + 平行光（SPEC §5.3 光照基调；材质氛围 TASK-008 统一校准） */}
+        <hemisphereLight args={[sceneColors.hemisphereSky, sceneColors.hemisphereGround, 0.9]} />
+        <directionalLight position={[40, 60, 20]} intensity={1.2} />
+        {/* 相机：Orbit 自由视角（SPEC §8.1 极角 / 距离约束），三模式切换由 TASK-012 接管 */}
+        <OrbitControls
+          makeDefault
+          enableDamping
+          minPolarAngle={CAMERA_POLAR_MIN_RAD}
+          maxPolarAngle={CAMERA_POLAR_MAX_RAD}
+          minDistance={CAMERA_DISTANCE_MIN}
+          maxDistance={CAMERA_DISTANCE_MAX}
+        />
+        <MapLayer />
       </Canvas>
     </div>
   )

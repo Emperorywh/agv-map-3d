@@ -8,6 +8,8 @@
  */
 
 import { DEFAULT_BEZIER_TOLERANCE, subdivideCubicBezier } from './bezier'
+import { buildCorridors } from './corridors'
+import type { CorridorStats } from './corridors'
 import { buildPolyline } from './polyline'
 import type {
   Calibration,
@@ -29,6 +31,8 @@ export class MapDataError extends Error {
 export interface NormalizeOptions {
   /** BEZIER 细分弦高差容差（米），缺省 DEFAULT_BEZIER_TOLERANCE */
   bezierTolerance?: number
+  /** 走廊配对边几何偏差阈值（米），缺省 DEFAULT_CORRIDOR_GEOMETRY_TOLERANCE */
+  corridorGeometryTolerance?: number
 }
 
 /** 规范化统计（SPEC §10：所有跳过都有计数，便于发现数据问题；面板见 TASK-014） */
@@ -46,6 +50,8 @@ export interface NormalizeStats {
   unknownNodeKinds: number
   /** 被降级处理的边数：未知 edgeType / BEZIER 缺控制点降级为 LINE，facing 等字段缺失按缺省处理 */
   degradedEdges: number
+  /** 走廊配对统计（SPEC §6.1 / §4.1 实测分布口径） */
+  corridors: CorridorStats
 }
 
 export interface NormalizeResult {
@@ -64,6 +70,20 @@ const NODE_KIND_BY_TYPE: Readonly<Record<string, NodeKind>> = {
 
 /** 零长度退化边判定阈值（米） */
 const DEGENERATE_LENGTH_EPSILON = 1e-9
+
+/** 走廊统计初始占位（配对完成后整体替换为真实统计） */
+const EMPTY_CORRIDOR_STATS: CorridorStats = {
+  inputEdges: 0,
+  corridors: 0,
+  bidirectional: 0,
+  oneWay: 0,
+  bidirectionalWithBack: 0,
+  bidirectionalBothForward: 0,
+  bidirectionalBothBack: 0,
+  oneWayBack: 0,
+  geometryMismatch: 0,
+  duplicateDirectionEdges: 0,
+}
 
 /**
  * JSON 文本 → NormalizedMap：JSON.parse + 规范化的组合纯函数，
@@ -98,6 +118,7 @@ export function normalizeMap(raw: unknown, options?: NormalizeOptions): Normaliz
     skippedEdges: 0,
     unknownNodeKinds: 0,
     degradedEdges: 0,
+    corridors: EMPTY_CORRIDOR_STATS,
   }
 
   // ---- 节点：type→kind 映射，缺坐标跳过（SPEC §10）----
@@ -142,6 +163,12 @@ export function normalizeMap(raw: unknown, options?: NormalizeOptions): Normaliz
   stats.nodes = nodes.length
   stats.edges = edges.length
 
+  // ---- 走廊配对（SPEC §6.1）：按无序节点对聚合有向边，统一几何渲染与模拟共用 ----
+  const corridorResult = buildCorridors(edges, {
+    geometryDeviationThreshold: options?.corridorGeometryTolerance,
+  })
+  stats.corridors = corridorResult.stats
+
   const calibration: Calibration = {
     scale: 1,
     rotationRad: 0,
@@ -158,8 +185,7 @@ export function normalizeMap(raw: unknown, options?: NormalizeOptions): Normaliz
   }
 
   return {
-    // corridors 由 TASK-003 按无序节点对配对构建（SPEC §6.1），本阶段为空
-    map: { calibration, floor, nodes, edges, corridors: [] },
+    map: { calibration, floor, nodes, edges, corridors: corridorResult.corridors },
     stats,
   }
 }

@@ -12,6 +12,7 @@ import type { NormalizeResult } from '../domain/normalize'
 export interface NormalizeWorkerRequest {
   jsonText: string
   bezierTolerance?: number
+  corridorGeometryTolerance?: number
 }
 
 /** Worker → 主线程响应；dataError=true 表示数据本身的确定性错误（主线程重试结果相同，无需回退） */
@@ -26,9 +27,9 @@ const workerScope = self as unknown as {
 }
 
 workerScope.onmessage = (event) => {
-  const { jsonText, bezierTolerance } = event.data
+  const { jsonText, bezierTolerance, corridorGeometryTolerance } = event.data
   try {
-    const result = normalizeMapFromJson(jsonText, { bezierTolerance })
+    const result = normalizeMapFromJson(jsonText, { bezierTolerance, corridorGeometryTolerance })
     workerScope.postMessage({ ok: true, result })
   } catch (error) {
     workerScope.postMessage({

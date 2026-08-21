@@ -23,6 +23,8 @@ export interface MapLoadProgress {
 export interface LoadMapOptions {
   /** BEZIER 细分弦高差容差（米），由组合层从 config 传入；缺省用 domain 默认值 */
   bezierTolerance?: number
+  /** 走廊配对边几何偏差阈值（米），由组合层从 config 传入；缺省用 domain 默认值 */
+  corridorGeometryTolerance?: number
   onProgress?: (progress: MapLoadProgress) => void
 }
 
@@ -36,13 +38,16 @@ export interface LoadedMap {
 /** 加载 map.json 并规范化为 NormalizedMap */
 export async function loadMap(options?: LoadMapOptions): Promise<LoadedMap> {
   const onProgress = options?.onProgress
-  const bezierTolerance = options?.bezierTolerance
+  const normalizeOptions = {
+    bezierTolerance: options?.bezierTolerance,
+    corridorGeometryTolerance: options?.corridorGeometryTolerance,
+  }
 
   const { jsonText, totalBytes } = await fetchMapJsonText(onProgress)
   onProgress?.({ phase: 'normalize', loadedBytes: jsonText.length, totalBytes })
 
   try {
-    const result = await normalizeInWorker(jsonText, bezierTolerance)
+    const result = await normalizeInWorker(jsonText, normalizeOptions)
     return { ...result, usedWorker: true }
   } catch (error) {
     // 数据错误（JSON 损坏 / 顶层结构缺失）是确定性的，主线程重试结果相同，直接抛出
@@ -50,7 +55,7 @@ export async function loadMap(options?: LoadMapOptions): Promise<LoadedMap> {
       throw error
     }
     console.warn('[mapLoader] Worker 创建 / 运行失败，回退主线程规范化：', error)
-    const result = normalizeMapFromJson(jsonText, { bezierTolerance })
+    const result = normalizeMapFromJson(jsonText, normalizeOptions)
     return { ...result, usedWorker: false }
   }
 }
@@ -127,7 +132,7 @@ async function fetchMapJsonText(
  */
 function normalizeInWorker(
   jsonText: string,
-  bezierTolerance: number | undefined,
+  normalizeOptions: { bezierTolerance?: number; corridorGeometryTolerance?: number },
 ): Promise<NormalizeResult> {
   return new Promise((resolve, reject) => {
     let worker: Worker
@@ -152,7 +157,7 @@ function normalizeInWorker(
       worker.terminate()
       reject(new Error(`Worker 运行失败：${event.message || '未知错误'}`))
     }
-    const request: NormalizeWorkerRequest = { jsonText, bezierTolerance }
+    const request: NormalizeWorkerRequest = { jsonText, ...normalizeOptions }
     worker.postMessage(request)
   })
 }

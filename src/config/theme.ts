@@ -21,6 +21,8 @@ export const mapColors = {
   corridorOneWay: '#2f7fbf',
   /** 倒车方向标识（虚线边缘 / 异色） */
   corridorBack: '#e0a13a',
+  /** 单向箭头（浅色，与单向底色拉开对比） */
+  corridorArrow: '#cfe4ff',
   node: '#7d8891',
   nodeWork: '#ff7847',
   nodeCharge: '#34c6e0',
@@ -43,6 +45,9 @@ export const sceneColors = {
   background: '#14161a',
   /** 占位网格刻线 */
   gridLine: '#2c3036',
+  /** 半球光天光 / 地面反射色（SPEC §5.3 光照基调，TASK-008 统一校准） */
+  hemisphereSky: '#cfd4dc',
+  hemisphereGround: '#20232a',
 } as const
 
 /** DOM UI 色彩（加载进度 / 错误页 / 提示页等 Canvas 外界面） */

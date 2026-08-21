@@ -19,6 +19,25 @@ export const RIBBON_WIDTH = 1.5
 export const RIBBON_LIFT = 0.02
 /** BEZIER 自适应细分弦高差容差 */
 export const BEZIER_TOLERANCE = 0.05
+/** ribbon 拐角 miter 长度上限（相对半宽的倍数，防脱节） */
+export const RIBBON_MITER_LIMIT = 2
+/** 虚线标识（倒车方向边缘 / 单向 back 整条）实段长 / 间隔 / 线宽 */
+export const RIBBON_DASH_LENGTH = 0.6
+export const RIBBON_DASH_GAP = 0.4
+export const RIBBON_DASH_WIDTH = 0.12
+/** 虚线与箭头相对 ribbon 表面的附加抬升（防同网格内重叠 z-fighting） */
+export const RIBBON_OVERLAY_LIFT = 0.005
+/** 单向走廊箭头沿弧长的布置间距（短于间距的走廊至少 1 个） */
+export const CORRIDOR_ARROW_SPACING = 8
+/** 单向箭头尺寸：长 × 宽 */
+export const CORRIDOR_ARROW_LENGTH = 0.9
+export const CORRIDOR_ARROW_WIDTH = 0.6
+/** 静态地图几何分帧构建：每帧处理的走廊数（SPEC §4.4 避免长任务） */
+export const MAP_GEOMETRY_CHUNK_SIZE = 512
+
+// ---- 走廊配对（SPEC §6.1），单位：米 ----
+/** 配对边几何偏差阈值：超过则取较短者渲染并 console 警告计数 */
+export const CORRIDOR_GEOMETRY_TOLERANCE = 0.3
 
 // ---- AGV（SPEC §7）----
 /** AGV 车体尺寸：宽 × 深（叉车示意比例） */
