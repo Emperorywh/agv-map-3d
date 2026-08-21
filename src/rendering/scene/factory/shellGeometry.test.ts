@@ -26,6 +26,7 @@ import {
   computeFactoryFootprint,
   computeFloorGridLines,
   computeSkylightStrips,
+  computeWallSegments,
 } from './shellGeometry'
 import type { ShellGeometryParams } from './shellGeometry'
 
@@ -160,6 +161,19 @@ describe('shellGeometry：computeFloorGridLines 网格刻线（SPEC §5.2 每 10
   })
 })
 
+describe('shellGeometry：computeWallSegments 墙段划分（SPEC §5.5 逐段淡出）', () => {
+  it('footprint 矩形四边成段，角点闭合一一对接', () => {
+    const footprint = computeFactoryFootprint({ minX: 0, minY: 0, maxX: 10, maxY: 20 }, 2)
+    const segments = computeWallSegments(footprint)
+    expect(segments).toEqual([
+      { a: { x: -2, y: -2 }, b: { x: 12, y: -2 } },
+      { a: { x: 12, y: -2 }, b: { x: 12, y: 22 } },
+      { a: { x: 12, y: 22 }, b: { x: -2, y: 22 } },
+      { a: { x: -2, y: 22 }, b: { x: -2, y: -2 } },
+    ])
+  })
+})
+
 describe('shellGeometry：buildShellGeometry 几何构建（与 calibration 共用同一转换）', () => {
   const bounds: MapBounds = { minX: 0, minY: 0, maxX: 10, maxY: 20 }
   const calibration: Calibration = { scale: 1, rotationRad: 0, offsetX: 5, offsetY: 10 }
@@ -180,12 +194,25 @@ describe('shellGeometry：buildShellGeometry 几何构建（与 calibration 共�
     const floorNormal = result.floor.getAttribute('normal')
     expect(floorNormal.getY(0)).toBeCloseTo(1, 6)
 
-    // 外墙：4 面合并 16 顶点 8 三角形，底边 y=0、顶边 y=WALL_HEIGHT
-    const wallPosition = result.walls.getAttribute('position')
-    expect(wallPosition.count).toBe(16)
-    expect(result.walls.getIndex()?.count).toBe(24)
-    expect(wallPosition.getY(0)).toBe(0)
-    expect(wallPosition.getY(2)).toBe(WALL_HEIGHT)
+    // 外墙：4 段独立几何（逐段淡出），每段 4 顶点 2 三角形，底边 y=0、顶边 y=WALL_HEIGHT；
+    // 段轮廓 = computeWallSegments（遮挡判定输入与几何同源）
+    expect(result.wallSegments.length).toBe(4)
+    const expectedOutlines = computeWallSegments(footprint)
+    for (let i = 0; i < 4; i++) {
+      const segment = result.wallSegments[i]
+      expect(segment.outline).toEqual(expectedOutlines[i])
+      const wallPosition = segment.geometry.getAttribute('position')
+      expect(wallPosition.count).toBe(4)
+      expect(segment.geometry.getIndex()?.count).toBe(6)
+      expect(wallPosition.getY(0)).toBe(0)
+      expect(wallPosition.getY(2)).toBe(WALL_HEIGHT)
+      // 段几何端点 = 轮廓端点经 mapToWorld（与地图天然对齐）
+      const expectedBase = mapToWorld(segment.outline.a, calibration)
+      expect(wallPosition.getX(0)).toBeCloseTo(expectedBase.x, 12)
+      expect(wallPosition.getZ(0)).toBeCloseTo(expectedBase.z, 12)
+    }
+    // footprint 随结果携带（遮挡 footprint 判定输入，SPEC §5.5）
+    expect(result.footprint).toEqual(footprint)
 
     // 屋顶：y=WALL_HEIGHT 水平面；天窗带：y=WALL_HEIGHT+SKYLIGHT_LIFT（float32 存储精度）
     expect(result.roof.getAttribute('position').getY(0)).toBe(WALL_HEIGHT)
@@ -262,7 +289,8 @@ describe('shellGeometry：真实 map.json 集成（SPEC §4.1 / §5.2）', () =>
     const result = buildShellGeometry(map.bounds, corridorGeometries, map.calibration, SHELL_PARAMS)
     expect(result.columnCount).toBe(placements.length)
     expect(result.floor.getAttribute('position').count).toBe(4)
-    expect(result.walls.getAttribute('position').count).toBe(16)
+    expect(result.wallSegments.length).toBe(4)
+    expect(result.wallSegments[0].geometry.getAttribute('position').count).toBe(4)
     result.dispose()
   })
 })

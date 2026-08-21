@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { headingToWorldYaw, mapToWorld, worldToMap } from './coordinates'
+import { headingToWorldYaw, mapToWorld, worldToMap, worldToMapInto } from './coordinates'
 import type { Calibration, MapPoint } from './types'
 
 const identity: Calibration = { scale: 1, rotationRad: 0, offsetX: 0, offsetY: 0 }
@@ -59,6 +59,25 @@ describe('coordinates：往返转换一致性', () => {
       }
     })
   }
+})
+
+describe('coordinates：worldToMapInto（out 参数零分配变体）', () => {
+  it('结果与 worldToMap 一致，写入并返回同一 out 对象', () => {
+    for (const cal of [identity, full]) {
+      for (const world of [
+        { x: 0, z: 0 },
+        { x: -12.5, z: 40.25 },
+        { x: 123.456, z: -789.012 },
+      ]) {
+        const out: MapPoint = { x: 0, y: 0 }
+        const returned = worldToMapInto(world, cal, out)
+        const expected = worldToMap(world, cal)
+        expect(returned).toBe(out)
+        expect(out.x).toBeCloseTo(expected.x, 12)
+        expect(out.y).toBeCloseTo(expected.y, 12)
+      }
+    }
+  })
 })
 
 describe('coordinates：headingToWorldYaw（SPEC §4.3 / §5.4，资产 +Z 正面）', () => {

@@ -26,9 +26,10 @@ import { WebGLUnsupportedScreen } from './ui/WebGLUnsupportedScreen'
  * 加载状态流：WebGL 探测（不可用 → 提示页）→ idle 发起加载（进度条）
  * → ready 进入场景；失败（请求失败 / JSON 损坏 / 顶层结构缺失且主线程回退也失败）
  * → 全屏错误页（原因 + 重试），不进入场景。
- * 场景内容：FactoryBuilding 建筑外壳（TASK-006）+ FactoryInterior 内部元素 / 地面标线 /
- * glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层（TASK-003 / TASK-004 / TASK-005）
- * + AgvLayer 模拟巡航 AGV（TASK-010）+ CameraRig 相机三模式与平滑切换（TASK-011）。
+ * 场景内容：FactoryBuilding 建筑外壳与遮挡淡出（TASK-006 / TASK-012）+ FactoryInterior
+ * 内部元素 / 地面标线 / glTF 点缀（TASK-007）+ MapLayer 走廊网络 / 节点实例层 / 标签层
+ * （TASK-003 / TASK-004 / TASK-005）+ AgvLayer 模拟巡航 AGV（TASK-010）
+ * + CameraRig 相机三模式与平滑切换（TASK-011）。
  */
 export default function App() {
   const [webglSupported] = useState(isWebGLSupported)
@@ -80,13 +81,15 @@ export default function App() {
         <color attach="background" args={[sceneColors.background]} />
         {/* 光照：1 盏平行光（唯一投影光源，shadow map ≤1024）+ 半球光（SPEC §5.3 / §9） */}
         <SceneLighting />
-        <FactoryBuilding />
         <FactoryInterior />
         <MapLayer />
         <AgvLayer />
         {/* 相机三模式（自由 Orbit / 正交俯视 / AGV 跟随）与 0.5s 平滑切换（SPEC §8.1）；
             置于 AgvLayer 之后挂载，同优先级 useFrame 内跟随读取的是当帧 AGV 位姿 */}
         <CameraRig />
+        {/* 遮挡淡出（SPEC §5.5）置于 CameraRig 之后挂载：同优先级 useFrame 后执行，
+            读取的是当帧跟随步进后的相机位姿与 controls.target（关注点） */}
+        <FactoryBuilding />
       </Canvas>
     </div>
   )

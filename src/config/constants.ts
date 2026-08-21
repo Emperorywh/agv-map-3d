@@ -280,8 +280,21 @@ export const CAMERA_ORBIT_RETURN_POLAR_RAD = (55 * Math.PI) / 180
 export const CAMERA_FOLLOW_TARGET_LIFT = 0.5
 
 // ---- 遮挡（SPEC §5.5）----
-/** 立柱自动淡出的相机俯角阈值（弧度） */
+/** 立柱自动淡出的相机俯角阈值（弧度，默认 60°） */
 export const COLUMN_FADE_PITCH_RAD = (60 * Math.PI) / 180
+/** 不透明度指数阻尼时间常数（秒）：屋顶 / 墙体 / 立柱淡入淡出共用（帧率无关平滑过渡） */
+export const OCCLUSION_FADE_TAU_SECONDS = 0.2
+/** 不透明度吸附阈值：与目标差小于该值时直接取目标（防渐近不收敛的微幅抖动与 visible 无法落定） */
+export const OCCLUSION_OPACITY_EPSILON = 0.01
+/** 墙体判定①贴近淡出：相机距墙段 ≤ 近阈时不透明度降至最低，≥ 远阈时完全不透明（米，之间连续过渡） */
+export const WALL_FADE_NEAR_DISTANCE = 2
+export const WALL_FADE_FAR_DISTANCE = 6
+/** 墙体淡出最低不透明度（贴近 / 遮挡并集生效的下限，保留 ghost 可辨感） */
+export const WALL_FADE_MIN_OPACITY = 0.12
+/** 墙体判定②滞后：退出遮挡的穿越高度相对屋檐的放宽余量（米，带内保持上一状态防闪烁） */
+export const WALL_OCCLUSION_EXIT_HEIGHT_MARGIN = 0.6
+/** 墙体判定②滞后：已遮挡状态下墙段两端的外延余量（米，防穿越点掠过墙角时相邻两段来回切换） */
+export const WALL_OCCLUSION_SEGMENT_MARGIN = 0.5
 
 // ---- 性能（SPEC §9）----
 /** 渲染分辨率 DPR 封顶 */

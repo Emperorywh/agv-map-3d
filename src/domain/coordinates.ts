@@ -31,16 +31,27 @@ export function mapToWorld(point: MapPoint, calibration: Calibration): WorldPoin
 
 /** 世界地面点（取 x / z）→ 地图平面点，mapToWorld 的逆变换 */
 export function worldToMap(world: { x: number; z: number }, calibration: Calibration): MapPoint {
+  return worldToMapInto(world, calibration, { x: 0, y: 0 })
+}
+
+/**
+ * worldToMap 的 out 参数变体（零分配）：结果写入 out 并返回 out。
+ * 每帧路径（相机遮挡判定等）复用同一 out 对象，避免逐帧分配（SPEC §3 / §9）。
+ */
+export function worldToMapInto(
+  world: { x: number; z: number },
+  calibration: Calibration,
+  out: MapPoint,
+): MapPoint {
   const { scale, rotationRad, offsetX, offsetY } = calibration
   const cos = Math.cos(rotationRad)
   const sin = Math.sin(rotationRad)
   // a = s·(x·cosθ - y·sinθ)，b = s·(x·sinθ + y·cosθ)，再左乘旋转逆矩阵并除以 s
   const a = world.x + offsetX
   const b = offsetY - world.z
-  return {
-    x: (a * cos + b * sin) / scale,
-    y: (-a * sin + b * cos) / scale,
-  }
+  out.x = (a * cos + b * sin) / scale
+  out.y = (-a * sin + b * cos) / scale
+  return out
 }
 
 /**

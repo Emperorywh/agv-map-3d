@@ -8,9 +8,10 @@
  *   常量（FACTORY_MARGIN、柱距、避让阈值等）全部以参数传入，可单测；
  * - 立柱按柱距规则阵列，采样时避开走廊 ribbon 区域：候选柱位与走廊中心线距离
  *   小于避让阈值（COLUMN_CORRIDOR_CLEARANCE，含 ribbon 半宽余量）则不放置；
- * - 几何按 地坪 / 外墙 / 立柱 / 屋顶天窗 分组产出：地坪、外墙、屋顶、天窗带各为
- *   单个合并 BufferGeometry，立柱为单个 InstancedMesh（实例矩阵 + 本地几何），
- *   整壳合计 6 个 draw call（SPEC §9 预算）。
+ * - 几何按 地坪 / 外墙 / 立柱 / 屋顶天窗 分组产出：地坪、屋顶、天窗带各为
+ *   单个合并 BufferGeometry，外墙按 footprint 四边拆为 4 段独立几何
+ *   （SPEC §5.5 逐墙段淡出，每段独立材质不透明度），立柱为单个 InstancedMesh
+ *   （实例矩阵 + 本地几何），整壳合计 9 个 draw call（SPEC §9 预算）。
  *
  * rendering 层可 import three 与 config，禁止 import infrastructure（SPEC §12）。
  */
@@ -161,10 +162,24 @@ export function computeSkylightStrips(
   return strips
 }
 
-/** 地图平面线段（两点式），供 LineSegments 几何构建 */
+/** 地图平面线段（两点式），供 LineSegments 几何构建与外墙遮挡判定 */
 export interface MapSegment {
   a: MapPoint
   b: MapPoint
+}
+
+/**
+ * 外墙墙段（SPEC §5.5 按墙段组织）：footprint 矩形的 4 条边，顺序与
+ * buildShellGeometry 的墙段几何一致（角点 minX/minY 起逆时针）。
+ */
+export function computeWallSegments(footprint: FactoryFootprint): MapSegment[] {
+  const corners: MapPoint[] = [
+    { x: footprint.minX, y: footprint.minY },
+    { x: footprint.maxX, y: footprint.minY },
+    { x: footprint.maxX, y: footprint.maxY },
+    { x: footprint.minX, y: footprint.maxY },
+  ]
+  return corners.map((corner, i) => ({ a: corner, b: corners[(i + 1) % 4] }))
 }
 
 /** 地坪网格刻线（SPEC §5.2 每 10m 浅网格）：footprint 内对齐 step 整数倍的纵横线 */
@@ -204,14 +219,24 @@ export interface ShellGeometryParams {
   skylightLift: number
 }
 
-/** 建筑外壳全部分组几何（地坪 / 网格刻线 / 外墙 / 立柱 / 屋顶 / 天窗带） */
+/** 单个外墙段的几何与遮挡判定轮廓（SPEC §5.5 逐墙段淡出） */
+export interface WallSegmentGeometry {
+  /** 墙段的地图平面轮廓（遮挡纯函数的判定输入，与几何顶点同源） */
+  outline: MapSegment
+  /** 单面竖直 quad 几何（高 wallHeight，双面可见由场景层材质置 DoubleSide） */
+  geometry: BufferGeometry
+}
+
+/** 建筑外壳全部分组几何（地坪 / 网格刻线 / 外墙段 / 立柱 / 屋顶 / 天窗带） */
 export interface ShellGeometryResult {
+  /** 建筑占位矩形（地图平面，遮挡 footprint 判定输入，SPEC §5.5） */
+  footprint: FactoryFootprint
   /** 地坪：单块平面（y=0），法线 +Y */
   floor: BufferGeometry
   /** 网格刻线：LineSegments（y=gridLift，低于 ribbon） */
   floorGrid: BufferGeometry
-  /** 外墙：沿 footprint 矩形的 4 面合并几何（高 wallHeight） */
-  walls: BufferGeometry
+  /** 外墙：沿 footprint 矩形的 4 段独立几何（高 wallHeight），逐段淡出（SPEC §5.5） */
+  wallSegments: WallSegmentGeometry[]
   /** 立柱本地几何（方柱，底面贴 y=0），与 columnMatrices 配套供单个 InstancedMesh */
   columnGeometry: BufferGeometry
   /** 立柱实例矩阵（Matrix4.elements 列主序展平，长度 = columnCount × 16） */
@@ -256,7 +281,11 @@ export function buildShellGeometry(
     params.gridLift,
     calibration,
   )
-  const walls = buildWallGeometry(footprint, params.wallHeight, calibration)
+  // 外墙按段独立成几何（SPEC §5.5：逐墙段淡出，每段独立材质不透明度）
+  const wallSegments = computeWallSegments(footprint).map((outline) => ({
+    outline,
+    geometry: buildWallSegmentGeometry(outline, params.wallHeight, calibration),
+  }))
   const columnGeometry = buildColumnGeometry(params.columnSize, params.wallHeight)
   const columnMatrices = buildColumnInstanceMatrices(columnPlacements, calibration)
   const roof = buildHorizontalQuadGeometry(footprint, params.wallHeight, calibration)
@@ -267,9 +296,10 @@ export function buildShellGeometry(
   )
 
   return {
+    footprint,
     floor,
     floorGrid,
-    walls,
+    wallSegments,
     columnGeometry,
     columnMatrices,
     columnCount: columnPlacements.length,
@@ -278,7 +308,9 @@ export function buildShellGeometry(
     dispose() {
       floor.dispose()
       floorGrid.dispose()
-      walls.dispose()
+      for (const segment of wallSegments) {
+        segment.geometry.dispose()
+      }
       columnGeometry.dispose()
       roof.dispose()
       skylights.dispose()
@@ -349,37 +381,25 @@ function buildFloorGridGeometry(
 }
 
 /**
- * 外墙：沿 footprint 矩形的 4 面竖直 quad 合并（每面 4 顶点独立，保证平面法线）；
+ * 单个外墙段：竖直 quad（4 顶点 2 三角形，独立顶点保证平面法线）；
  * 双面可见（室内 / 室外两侧），材质由场景层置 DoubleSide。
  */
-function buildWallGeometry(
-  footprint: FactoryFootprint,
+function buildWallSegmentGeometry(
+  segment: MapSegment,
   height: number,
   calibration: Calibration,
 ): BufferGeometry {
-  const corners: MapPoint[] = [
-    { x: footprint.minX, y: footprint.minY },
-    { x: footprint.maxX, y: footprint.minY },
-    { x: footprint.maxX, y: footprint.maxY },
-    { x: footprint.minX, y: footprint.maxY },
-  ]
-  const positions: number[] = []
-  const indices: number[] = []
-  for (let i = 0; i < 4; i++) {
-    const base = mapToWorld(corners[i], calibration)
-    const next = mapToWorld(corners[(i + 1) % 4], calibration)
-    const offset = positions.length / 3
-    positions.push(
-      base.x, 0, base.z,
-      next.x, 0, next.z,
-      next.x, height, next.z,
-      base.x, height, base.z,
-    )
-    indices.push(offset, offset + 1, offset + 2, offset, offset + 2, offset + 3)
-  }
+  const base = mapToWorld(segment.a, calibration)
+  const next = mapToWorld(segment.b, calibration)
   const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
+  geometry.setAttribute(
+    'position',
+    new Float32BufferAttribute(
+      [base.x, 0, base.z, next.x, 0, next.z, next.x, height, next.z, base.x, height, base.z],
+      3,
+    ),
+  )
+  geometry.setIndex([0, 1, 2, 0, 2, 3])
   geometry.computeVertexNormals()
   return geometry
 }
