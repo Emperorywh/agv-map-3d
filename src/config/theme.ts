@@ -25,6 +25,8 @@ export const mapColors = {
   corridorArrow: '#cfe4ff',
   node: '#7d8891',
   nodeWork: '#ff7847',
+  /** work 方形台底色（中性灰，衬托高饱和图标色块） */
+  nodeWorkBase: '#5a5f68',
   nodeCharge: '#34c6e0',
   nodePark: '#9d8cff',
 } as const

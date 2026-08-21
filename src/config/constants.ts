@@ -39,6 +39,27 @@ export const MAP_GEOMETRY_CHUNK_SIZE = 512
 /** 配对边几何偏差阈值：超过则取较短者渲染并 console 警告计数 */
 export const CORRIDOR_GEOMETRY_TOLERANCE = 0.3
 
+// ---- 节点渲染（SPEC §6.3），单位：米；尺寸层级 work > charge > park > node ----
+/** work 方形台：边长 / 高（最大、最醒目） */
+export const NODE_WORK_PLATFORM_SIZE = 1.4
+export const NODE_WORK_PLATFORM_HEIGHT = 0.26
+/** work 图标色块：边长 / 高（位于方台顶面之上，俯视呈 45° 菱形） */
+export const NODE_WORK_ICON_SIZE = 0.8
+export const NODE_WORK_ICON_HEIGHT = 0.22
+/** charge 六边形台：外接圆半径 / 高（大） */
+export const NODE_CHARGE_RADIUS = 0.62
+export const NODE_CHARGE_HEIGHT = 0.2
+/** park 中小圆点：半径 / 高 */
+export const NODE_PARK_RADIUS = 0.3
+export const NODE_PARK_HEIGHT = 0.12
+/** node 小圆点：半径 / 高（最小） */
+export const NODE_NAV_RADIUS = 0.15
+export const NODE_NAV_HEIGHT = 0.07
+/** node 类整类隐藏的相机距离阈值：相机距关注点超过该值时整类隐藏（常量可调） */
+export const NODE_NAV_HIDE_DISTANCE = 150
+/** 节点材质轻微 emissive 强度（schematic 高饱和 + 轻微 emissive，SPEC §5.1） */
+export const NODE_EMISSIVE_INTENSITY = 0.35
+
 // ---- AGV（SPEC §7）----
 /** AGV 车体尺寸：宽 × 深（叉车示意比例） */
 export const AGV_BODY_WIDTH = 1.6
