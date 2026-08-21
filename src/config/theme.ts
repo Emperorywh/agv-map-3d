@@ -8,9 +8,13 @@
 export const buildingColors = {
   /** 地坪：中性深灰，与通道色带拉开对比 */
   floor: '#3a3d42',
+  /** 地坪网格刻线：略浅于地坪的刻痕色 */
+  floorGrid: '#484d55',
   wall: '#d8d5cc',
   column: '#cfccc2',
   roof: '#e4e1d8',
+  /** 天窗带：浅蓝透光感（SPEC §5.3 发光材质模拟透光） */
+  skylight: '#a8c8dc',
 } as const
 
 /** 地图元素：高饱和 + 轻微 emissive，视觉层级最高 */

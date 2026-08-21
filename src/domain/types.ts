@@ -35,6 +35,19 @@ export interface MapPoint {
 }
 
 /**
+ * 地图平面轴对齐包围盒（单位：米）。
+ * SPEC §4.3 offset 口径：须涵盖节点、边折线与贝塞尔控制点（曲线含于控制多边形内，
+ * 控制点可能超出细分折线）；建筑外壳尺寸（SPEC §5.2）与该 offset 同源，
+ * 保证曲线不会贴墙。
+ */
+export interface MapBounds {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+/**
  * 折线（SPEC §4.2）：BEZIER 细分或 LINE 两点统一后的路径形态。
  * 携带累积弧长表，供渲染与模拟器（弧长参数化行驶，SPEC §7.2）共用。
  */
@@ -135,6 +148,11 @@ export interface Corridor {
 /** 规范化地图（SPEC §4.2）：与后端导出格式解耦的内部模型 */
 export interface NormalizedMap {
   calibration: Calibration
+  /**
+   * 地图包围盒（SPEC §4.3 口径：含节点、边折线与贝塞尔控制点）；
+   * calibration offset 取其中心，建筑外壳尺寸（SPEC §5.2）同源复用。
+   */
+  bounds: MapBounds
   /** 取自 data.floor；预留多层，本期恒为 1 */
   floor: number
   nodes: NormalizedNode[]

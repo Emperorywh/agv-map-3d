@@ -219,6 +219,10 @@ describe('normalize：calibration 与 floor（SPEC §4.3）', () => {
     expect(map.calibration.rotationRad).toBe(0)
     expect(map.calibration.offsetX).toBeCloseTo(5, 12)
     expect(map.calibration.offsetY).toBeCloseTo(10, 12)
+    // bounds 与 offset 同一口径（含边折线与贝塞尔控制点，SPEC §4.3 / §5.2）
+    expect(map.bounds).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 20 })
+    expect(map.calibration.offsetX).toBeCloseTo((map.bounds.minX + map.bounds.maxX) / 2, 12)
+    expect(map.calibration.offsetY).toBeCloseTo((map.bounds.minY + map.bounds.maxY) / 2, 12)
   })
 
   it('floor 取自 data.floor', () => {
@@ -287,5 +291,13 @@ describe('normalize：真实 map.json 集成（SPEC §4.1 实测分布）', () =
     const nodeCenterY = (Math.min(...ys) + Math.max(...ys)) / 2
     expect(Math.abs(map.calibration.offsetX - nodeCenterX)).toBeLessThan(1)
     expect(Math.abs(map.calibration.offsetY - nodeCenterY)).toBeLessThan(1)
+
+    // bounds：不窄于节点范围，offset 恰为 bounds 中心（§4.3 / §5.2 同源口径）
+    expect(map.bounds.minX).toBeLessThanOrEqual(Math.min(...xs))
+    expect(map.bounds.maxX).toBeGreaterThanOrEqual(Math.max(...xs))
+    expect(map.bounds.minY).toBeLessThanOrEqual(Math.min(...ys))
+    expect(map.bounds.maxY).toBeGreaterThanOrEqual(Math.max(...ys))
+    expect(map.calibration.offsetX).toBe((map.bounds.minX + map.bounds.maxX) / 2)
+    expect(map.calibration.offsetY).toBe((map.bounds.minY + map.bounds.maxY) / 2)
   })
 })

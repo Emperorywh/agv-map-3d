@@ -13,6 +13,7 @@ import type { CorridorStats } from './corridors'
 import { buildPolyline } from './polyline'
 import type {
   Calibration,
+  MapBounds,
   MapPoint,
   NodeKind,
   NormalizedEdge,
@@ -175,6 +176,11 @@ export function normalizeMap(raw: unknown, options?: NormalizeOptions): Normaliz
     offsetX: bounds.minX === Infinity ? 0 : (bounds.minX + bounds.maxX) / 2,
     offsetY: bounds.minY === Infinity ? 0 : (bounds.minY + bounds.maxY) / 2,
   }
+  // 包围盒与 calibration offset 同一口径（SPEC §4.3 / §5.2）；空数据兜底为零矩形
+  const mapBounds: MapBounds =
+    bounds.minX === Infinity
+      ? { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+      : { minX: bounds.minX, minY: bounds.minY, maxX: bounds.maxX, maxY: bounds.maxY }
 
   if (stats.skippedNodes > 0 || stats.skippedEdges > 0 || stats.unknownNodeKinds > 0) {
     console.warn(
@@ -185,7 +191,7 @@ export function normalizeMap(raw: unknown, options?: NormalizeOptions): Normaliz
   }
 
   return {
-    map: { calibration, floor, nodes, edges, corridors: corridorResult.corridors },
+    map: { calibration, bounds: mapBounds, floor, nodes, edges, corridors: corridorResult.corridors },
     stats,
   }
 }

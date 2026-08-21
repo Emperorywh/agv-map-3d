@@ -11,6 +11,23 @@ export const FACTORY_MARGIN = 8
 export const WALL_HEIGHT = 6
 /** 立柱阵列柱距 */
 export const COLUMN_SPACING = 12
+/** 立柱方形截面边长（柱高同外墙 WALL_HEIGHT） */
+export const COLUMN_SIZE = 0.4
+/**
+ * 柱位避让阈值：候选柱位与走廊中心线距离小于该值则不放置
+ * （已含 ribbon 半宽 RIBBON_WIDTH/2 与柱截面余量，保证立柱不压在通道上）
+ */
+export const COLUMN_CORRIDOR_CLEARANCE = 2
+/** 地坪浅网格刻线间距 */
+export const FLOOR_GRID_STEP = 10
+/** 网格刻线抬升高度（低于 ribbon 的 RIBBON_LIFT，防与地坪 z-fighting） */
+export const FLOOR_GRID_LIFT = 0.01
+/** 天窗带：带宽 / 带间距（带中心到带中心）/ 相对外墙的内缩 */
+export const SKYLIGHT_STRIP_WIDTH = 3
+export const SKYLIGHT_STRIP_SPACING = 12
+export const SKYLIGHT_EDGE_INSET = 6
+/** 天窗带相对屋顶面的抬升（防同面 z-fighting） */
+export const SKYLIGHT_LIFT = 0.02
 
 // ---- 地图渲染（SPEC §6.2），单位：米 ----
 /** 走廊 ribbon 宽度 */

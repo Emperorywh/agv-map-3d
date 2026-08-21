@@ -1,6 +1,36 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildPolyline, samplePolylineAt } from './polyline'
+import { buildPolyline, distanceToPolyline, samplePolylineAt } from './polyline'
+
+describe('polyline：distanceToPolyline 点到折线距离（SPEC §5.2 柱位避让度量）', () => {
+  it('投影落在线段内：垂距', () => {
+    const polyline = buildPolyline([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ])
+    expect(distanceToPolyline({ x: 5, y: 3 }, polyline)).toBeCloseTo(3, 12)
+  })
+
+  it('投影落在线段外：取端点距离；多段取最小值', () => {
+    const polyline = buildPolyline([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ])
+    expect(distanceToPolyline({ x: -3, y: -4 }, polyline)).toBeCloseTo(5, 12)
+    expect(distanceToPolyline({ x: 13, y: 5 }, polyline)).toBeCloseTo(3, 12)
+  })
+
+  it('点在折线上距离为 0；零长度段退化为端点距离', () => {
+    const polyline = buildPolyline([
+      { x: 1, y: 1 },
+      { x: 1, y: 1 },
+      { x: 4, y: 1 },
+    ])
+    expect(distanceToPolyline({ x: 2, y: 1 }, polyline)).toBeCloseTo(0, 12)
+    expect(distanceToPolyline({ x: 1, y: 4 }, polyline)).toBeCloseTo(3, 12)
+  })
+})
 
 describe('polyline：buildPolyline 弧长表', () => {
   it('累积弧长表单调不减、首项 0、末项为总长', () => {

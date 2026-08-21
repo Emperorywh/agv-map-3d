@@ -36,6 +36,38 @@ export interface PolylineSample {
 const SEGMENT_EPSILON = 1e-12
 
 /**
+ * 点到折线的最短距离（地图平面，米）：各段点-线段距离的最小值。
+ * 建筑柱位避让（SPEC §5.2）与内部陈设采样（§5.3）复用同一距离度量。
+ */
+export function distanceToPolyline(point: MapPoint, polyline: Polyline): number {
+  const { points } = polyline
+  let min = Infinity
+  for (let i = 0; i < points.length - 1; i++) {
+    const distance = distanceToSegment(point, points[i], points[i + 1])
+    if (distance < min) {
+      min = distance
+    }
+  }
+  return min
+}
+
+/** 点到线段的最短距离（地图平面，米） */
+function distanceToSegment(point: MapPoint, a: MapPoint, b: MapPoint): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const lengthSq = dx * dx + dy * dy
+  // 零长度段退化为到端点的距离
+  const t =
+    lengthSq <= SEGMENT_EPSILON
+      ? 0
+      : Math.min(
+          1,
+          Math.max(0, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq),
+        )
+  return Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t))
+}
+
+/**
  * 按弧长采样折线（SPEC §7.2 弧长参数化；走廊配对偏差采样与箭头布置也复用）。
  * @param arcLength 目标弧长，自动夹取到 [0, length]
  */
