@@ -19,12 +19,14 @@ import { collectUniqueChars, computeAtlasLayout } from './labelAtlas'
 import type { LabelAnchor, LabelGlyphSource, LabelVisibilityThresholds } from './labelGeometry'
 import {
   LABEL_LEVEL_COUNT,
+  assignLabelThinRanks,
   buildLabelBatch,
   buildNodeLabelAnchors,
   layoutLabelQuads,
   nodeKindToLabelLevel,
   resolveLabelCameraView,
   resolveLabelVisibility,
+  resolveThinMaxRank,
 } from './labelGeometry'
 
 // ---------------------------------------------------------------------------
@@ -138,6 +140,88 @@ describe('labelGeometry：分级阈值可调（SPEC §6.4 阈值常量可调）'
 })
 
 // ---------------------------------------------------------------------------
+// 防重叠抽稀（纯函数：聚簇 rank 分配 + 运行时保留数判定）
+// ---------------------------------------------------------------------------
+
+describe('labelGeometry：assignLabelThinRanks 聚簇（SPEC §6.4 全图关键标签可读）', () => {
+  const anchor = (id: string, level: 0 | 1 | 2, x: number, z: number): LabelAnchor => ({
+    id,
+    text: id,
+    level,
+    x,
+    y: 0.8,
+    z,
+  })
+
+  it('同等级近距归簇：首个为簇代表 rank 0，簇内后续被覆盖 rank ≥ 1', () => {
+    const ranks = assignLabelThinRanks(
+      [anchor('a', 0, 0, 0), anchor('b', 0, 2, 0), anchor('c', 0, 4, 0)],
+      6,
+    ).map((item) => item.thinRank)
+    expect(ranks).toEqual([0, 1, 1])
+  })
+
+  it('链式成排标签：代表间距 ≥ 聚簇间距（距既有代表 ≥ 间距才立新代表）', () => {
+    // 间距 2m 的 7 个一排（x = 0..12）：代表落在 x = 0 / 6 / 12
+    const input = Array.from({ length: 7 }, (_, i) => anchor(`n${i}`, 0, i * 2, 0))
+    const ranks = assignLabelThinRanks(input, 6).map((item) => item.thinRank)
+    expect(ranks).toEqual([0, 1, 1, 0, 1, 1, 0])
+  })
+
+  it('被多个代表覆盖的锚点 rank = 覆盖代表数', () => {
+    // A(0,0) 与 B(6,0) 间距 = 6 不互覆（各为代表）；C(3,1) 距两者均 < 6 → rank 2
+    const ranks = assignLabelThinRanks(
+      [anchor('a', 0, 0, 0), anchor('b', 0, 6, 0), anchor('c', 0, 3, 1)],
+      6,
+    ).map((item) => item.thinRank)
+    expect(ranks).toEqual([0, 0, 2])
+  })
+
+  it('网格 cell 边界两侧仍正确聚簇（3×3 邻域完备）', () => {
+    // cell 边长 6：A(5.9) 在 cell 0、B(6.1) 在 cell 1，间距 0.2 仍被覆盖；
+    // C(-0.1) 在 cell -1，距 A 恰好 6（不 < 6）自立为代表
+    const ranks = assignLabelThinRanks(
+      [anchor('a', 0, 5.9, 0), anchor('b', 0, 6.1, 0), anchor('c', 0, -0.1, 0)],
+      6,
+    ).map((item) => item.thinRank)
+    expect(ranks).toEqual([0, 1, 0])
+  })
+
+  it('不同等级互不影响（各自成簇）；不修改输入；空输入返回空', () => {
+    const crossLevel = assignLabelThinRanks(
+      [anchor('w', 0, 0, 0), anchor('p', 1, 1, 0), anchor('n', 2, 2, 0)],
+      6,
+    )
+    expect(crossLevel.map((item) => item.thinRank)).toEqual([0, 0, 0])
+
+    const input = [anchor('a', 0, 0, 0)]
+    const output = assignLabelThinRanks(input, 6)
+    expect(output).not.toBe(input)
+    expect(input[0].thinRank).toBeUndefined()
+    expect(output[0].thinRank).toBe(0)
+    expect(assignLabelThinRanks([], 6)).toEqual([])
+  })
+})
+
+describe('labelGeometry：resolveThinMaxRank 抽稀分档（阈值常量可调）', () => {
+  const thresholds = { perspectiveDistance: 40, orthoViewWidth: 120 }
+
+  it('透视：距离 > 阈值每簇仅显示代表（1），≤ 阈值全量显示（Infinity）', () => {
+    expect(resolveThinMaxRank({ mode: 'perspective', cameraDistance: 40.5 }, thresholds)).toBe(1)
+    expect(resolveThinMaxRank({ mode: 'perspective', cameraDistance: 40 }, thresholds)).toBe(
+      Number.POSITIVE_INFINITY,
+    )
+  })
+
+  it('正交俯视：视野 > 阈值每簇仅显示代表（1），≤ 阈值全量显示（Infinity）', () => {
+    expect(resolveThinMaxRank({ mode: 'orthographic', viewWidth: 121 }, thresholds)).toBe(1)
+    expect(resolveThinMaxRank({ mode: 'orthographic', viewWidth: 120 }, thresholds)).toBe(
+      Number.POSITIVE_INFINITY,
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
 // quad 排版（纯函数）
 // ---------------------------------------------------------------------------
 
@@ -219,6 +303,7 @@ describe('labelGeometry：buildLabelBatch 合并几何（SPEC §6.4 批渲染）
     expect(batch.geometry.getAttribute('aOffset').count).toBe(32)
     expect(batch.geometry.getAttribute('uv').count).toBe(32)
     expect(batch.geometry.getAttribute('aLevel').count).toBe(32)
+    expect(batch.geometry.getAttribute('aThinRank').count).toBe(32)
     expect(batch.geometry.getAttribute('aForceVisible').count).toBe(32)
     expect(batch.geometry.getIndex()?.count).toBe(48)
     batch.dispose()
@@ -257,6 +342,30 @@ describe('labelGeometry：buildLabelBatch 合并几何（SPEC §6.4 批渲染）
       expect(offsets.getY(corner)).toBeCloseTo(expectedY[corner], 5)
       expect(uvs.getX(corner)).toBeCloseTo(expectedU[corner], 6)
       expect(uvs.getY(corner)).toBeCloseTo(expectedV[corner], 6)
+    }
+    batch.dispose()
+  })
+
+  it('aThinRank 逐顶点 = 锚点簇内 rank（缺省 0）', () => {
+    const batch = buildLabelBatch(
+      [
+        { id: 'a', text: 'K1', level: 0, x: 0, y: 0.8, z: 0, thinRank: 0 },
+        { id: 'b', text: 'K1', level: 0, x: 2, y: 0.8, z: 0, thinRank: 2 },
+        { id: 'c', text: 'K1', level: 0, x: 40, y: 0.8, z: 0 },
+      ],
+      source,
+      1.0,
+    )
+    const ranks = batch.geometry.getAttribute('aThinRank')
+    // 每标签 2 字符 × 4 顶点 = 8 个顶点区间
+    for (let i = 0; i < 8; i++) {
+      expect(ranks.getX(i)).toBe(0)
+    }
+    for (let i = 8; i < 16; i++) {
+      expect(ranks.getX(i)).toBe(2)
+    }
+    for (let i = 16; i < 24; i++) {
+      expect(ranks.getX(i)).toBe(0)
     }
     batch.dispose()
   })
@@ -409,5 +518,31 @@ describe('labelGeometry：真实 map.json 集成（SPEC §4.1 / §6.4）', () =>
     expect(batch.setForceVisible(anchors[0].id, true)).toBe(true)
     expect(batch.setForceVisible('nonexistent', true)).toBe(false)
     batch.dispose()
+  })
+
+  it('抽稀聚簇（间距 6m）：被覆盖标签的同等级 6m 内必有簇代表，代表数显著少于总数', () => {
+    const mapJsonPath = fileURLToPath(new URL('../../../../public/map.json', import.meta.url))
+    const { map } = normalizeMapFromJson(readFileSync(mapJsonPath, 'utf8'))
+
+    const anchors = buildNodeLabelAnchors(map.nodes, map.calibration, LABEL_ANCHOR_HEIGHT)
+    const ranked = assignLabelThinRanks(anchors, 6)
+    expect(ranked).toHaveLength(anchors.length)
+
+    const representatives = ranked.filter((anchor) => anchor.thinRank === 0)
+    // 成排 work / park 标签被抽稀：代表数显著收缩但仍覆盖全图各区域
+    expect(representatives.length).toBeLessThan(ranked.length)
+    expect(representatives.length).toBeGreaterThan(100)
+    // 性质：任意被覆盖标签的 6m 内必有同等级簇代表
+    for (const anchor of ranked) {
+      if (anchor.thinRank === 0) {
+        continue
+      }
+      const covered = representatives.some(
+        (rep) =>
+          rep.level === anchor.level &&
+          (rep.x - anchor.x) ** 2 + (rep.z - anchor.z) ** 2 < 36,
+      )
+      expect(covered).toBe(true)
+    }
   })
 })

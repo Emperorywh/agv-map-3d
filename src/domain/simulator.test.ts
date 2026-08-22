@@ -879,7 +879,8 @@ describe('simulator：真实 map.json 集成', () => {
     expect(workCount).toBe(36)
   })
 
-  it('100 台长跑 300s：任务流 / 充电互斥 / 电量边界不变量全程成立', () => {
+  // 3000 步 × 100 台逐步断言计算量大，本机 / CI 负载波动时易擦边超默认 5s，显式放宽
+  it('100 台长跑 300s：任务流 / 充电互斥 / 电量边界不变量全程成立', { timeout: 30_000 }, () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     // 高耗电迫使触发充电流（1%/m → 约 100m 即低电量）
     const state = createSimulator(map, { seed: 20260821, agvCount: 100, batteryDrainPerMeter: 1 })

@@ -177,6 +177,16 @@ export const LABEL_ORTHO_MAX_VIEW_WIDTH: readonly [number, number, number] = [
   160,
   60,
 ]
+/**
+ * 标签防重叠抽稀的聚簇间距（米）：同等级标签锚点水平间距小于该值归为一簇
+ * （略大于典型 4~6 字符标签宽度：字高 LABEL_FONT_WORLD_HEIGHT × 字符宽高比），
+ * 成排密集标签（如"站点N"队列）同簇；远距离 / 宽视野下每簇仅显示 rank 0 代表。
+ */
+export const LABEL_THIN_CLUSTER_SPACING = 6
+/** 抽稀启用阈值：透视相机 → 关注点距离超过该值（米）时每簇仅显示代表标签 */
+export const LABEL_THIN_PERSPECTIVE_DISTANCE = 40
+/** 抽稀启用阈值：正交俯视视野宽度超过该值（米）时每簇仅显示代表标签 */
+export const LABEL_THIN_ORTHO_VIEW_WIDTH = 120
 
 // ---- AGV（SPEC §7），单位：米 ----
 /** AGV 车体 footprint：长（沿车头方向，本地 +Z）× 宽（叉车示意比例，SPEC §7.3 / §15.4） */

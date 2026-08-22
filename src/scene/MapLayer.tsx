@@ -19,6 +19,9 @@ import {
   LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED,
   LABEL_PERSPECTIVE_MAX_DISTANCE,
   LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED,
+  LABEL_THIN_CLUSTER_SPACING,
+  LABEL_THIN_ORTHO_VIEW_WIDTH,
+  LABEL_THIN_PERSPECTIVE_DISTANCE,
   MAP_GEOMETRY_CHUNK_SIZE,
   NODE_CHARGE_HEIGHT,
   NODE_CHARGE_RADIUS,
@@ -60,13 +63,19 @@ import type {
 import { createLabelAtlas } from '../rendering/scene/map/labelAtlas'
 import type { LabelAtlas, LabelAtlasOptions } from '../rendering/scene/map/labelAtlas'
 import {
+  assignLabelThinRanks,
   buildLabelBatch,
   buildNodeLabelAnchors,
   injectLabelBillboardShader,
   resolveLabelCameraView,
   resolveLabelVisibility,
+  resolveThinMaxRank,
 } from '../rendering/scene/map/labelGeometry'
-import type { LabelBatch, LabelVisibilityThresholds } from '../rendering/scene/map/labelGeometry'
+import type {
+  LabelBatch,
+  LabelThinThresholds,
+  LabelVisibilityThresholds,
+} from '../rendering/scene/map/labelGeometry'
 import {
   buildArrowGeometry,
   createRibbonGeometryBuilder,
@@ -136,6 +145,12 @@ const LABEL_VISIBILITY_THRESHOLDS: LabelVisibilityThresholds = {
 const LABEL_VISIBILITY_THRESHOLDS_DEGRADED: LabelVisibilityThresholds = {
   perspectiveMaxDistance: LABEL_PERSPECTIVE_MAX_DISTANCE_DEGRADED,
   orthoMaxViewWidth: LABEL_ORTHO_MAX_VIEW_WIDTH_DEGRADED,
+}
+
+/** 标签防重叠抽稀阈值（常量可调）：远距 / 宽视野每簇仅显示 rank 0 代表，近距全量 */
+const LABEL_THIN_THRESHOLDS: LabelThinThresholds = {
+  perspectiveDistance: LABEL_THIN_PERSPECTIVE_DISTANCE,
+  orthoViewWidth: LABEL_THIN_ORTHO_VIEW_WIDTH,
 }
 
 /** 节点材质逐实例 emissive 提亮注入（SPEC §8.2）：模块级稳定引用，避免材质重编译 */
@@ -497,6 +512,9 @@ function NodeKindInstances({ group }: { group: NodeInstanceGroup }) {
  *   判定纯函数 resolveLabelVisibility 的结果每帧写入 uLevelVisible uniform，
  *   GPU 按 aLevel 顶点属性裁剪（CPU 零遍历，不触发 React 重渲染）；
  *   降级 2 级（SPEC §9 标签阈值收紧）切换为收紧组阈值（DEGRADED 常量组）；
+ * - 防重叠抽稀：构建期 assignLabelThinRanks 按锚点间距聚簇写 aThinRank，
+ *   远距 / 宽视野时 uThinMaxRank=1 每簇仅显示代表（成排"站点N"不再叠印），
+ *   近距恢复全量（resolveThinMaxRank，不动 §6.4 近距离口径）；
  * - hover / 选中强制显示（SPEC §6.4 / §8.2）：订阅 store 的 hover / selection，
  *   差量写 aForceVisible 顶点属性跳过分级；批次重建后属性清零、强制集全量重发；
  * - 图集 / 几何批 / 分级机制自 rendering/scene/map/labelAtlas.ts 与 labelGeometry.ts 导出。
@@ -523,7 +541,10 @@ function MapLabels({
       nodes.map((node) => node.name),
       LABEL_ATLAS_OPTIONS,
     )
-    const anchors = buildNodeLabelAnchors(nodes, calibration, LABEL_ANCHOR_HEIGHT)
+    const anchors = assignLabelThinRanks(
+      buildNodeLabelAnchors(nodes, calibration, LABEL_ANCHOR_HEIGHT),
+      LABEL_THIN_CLUSTER_SPACING,
+    )
     const batch = buildLabelBatch(anchors, atlas, LABEL_FONT_WORLD_HEIGHT)
     setBuilt({ atlas, batch })
     return () => {
@@ -561,8 +582,9 @@ function MapLabels({
     forcedLabelIdsRef.current = next
   }, [built, selection, hover])
 
-  // 各等级可见性 uniform（每帧写入，不经 React 渲染路径，SPEC §3）
+  // 各等级可见性 + 抽稀保留数 uniform（每帧写入，不经 React 渲染路径，SPEC §3）
   const levelVisible = useMemo(() => ({ value: new Vector3(1, 1, 1) }), [])
+  const thinMaxRank = useMemo(() => ({ value: Number.POSITIVE_INFINITY }), [])
 
   // 降级 2 级（SPEC §9 标签阈值收紧）：分级阈值切换为收紧组（degradeLevel 变化触发
   // 组件重渲染，useFrame 闭包随之捕获新阈值；阈值对象为模块级稳定引用不重建材质）
@@ -574,18 +596,17 @@ function MapLabels({
   useFrame(({ camera, controls }) => {
     // makeDefault 的 OrbitControls 在 state.controls 上暴露 target（视线关注点）
     const target = (controls as unknown as { target?: Vector3 } | null)?.target
-    const [key, park, nav] = resolveLabelVisibility(
-      resolveLabelCameraView(camera, target),
-      thresholds,
-    )
+    const view = resolveLabelCameraView(camera, target)
+    const [key, park, nav] = resolveLabelVisibility(view, thresholds)
     levelVisible.value.set(key ? 1 : 0, park ? 1 : 0, nav ? 1 : 0)
+    thinMaxRank.value = resolveThinMaxRank(view, LABEL_THIN_THRESHOLDS)
   })
 
-  // billboard + 分级裁剪注入（与 AGV 编号标签共用 labelGeometry 的同一注入）
+  // billboard + 分级 / 抽稀裁剪注入（与 AGV 编号标签共用 labelGeometry 的同一注入）
   const injectLabelShader = useCallback(
     (shader: WebGLProgramParametersWithUniforms) =>
-      injectLabelBillboardShader(shader, levelVisible),
-    [levelVisible],
+      injectLabelBillboardShader(shader, levelVisible, thinMaxRank),
+    [levelVisible, thinMaxRank],
   )
 
   if (built === null) {

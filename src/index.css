@@ -177,7 +177,9 @@ body {
 }
 
 /* 面板通用按钮（顶部栏模式按钮 / 屋顶三态选项）：激活态背景经内联注入，
-   非激活态不落内联背景，hover 底色由 CSS var 规则生效 */
+   非激活态不落内联背景，hover 底色由 CSS var 规则生效；
+   必须显式 transparent 兜底——否则非激活态落回 UA 默认 buttonface 浅底色，
+   与 textPrimary 近白文字形成白底白字（按钮文字不可见） */
 .panel-button {
   border: none;
   border-radius: 5px;
@@ -186,6 +188,7 @@ body {
   line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
+  background: transparent;
 }
 
 .panel-button:hover:not(:disabled) {
@@ -267,6 +270,8 @@ body {
   line-height: 1.5;
   cursor: pointer;
   text-align: left;
+  /* 同 .panel-button：非跟随行不落内联背景，须 transparent 兜底防 UA 默认浅底色白字 */
+  background: transparent;
 }
 
 .agv-list-item:hover {

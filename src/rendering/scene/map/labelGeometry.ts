@@ -6,7 +6,10 @@
  * - 分级：标签按等级 0 关键（work/charge）/ 1（park）/ 2（node）写入 aLevel 顶点属性；
  *   透视按相机距离、正交俯视按视野宽度的分级判定收敛于纯函数 resolveLabelVisibility，
  *   场景层每帧把结果写入 shader uniform，GPU 裁剪不可见等级（CPU 零遍历）；
- * - 强制显示：setForceVisible(id, true) 写 aForceVisible 顶点属性，shader 跳过分级——
+ * - 防重叠抽稀：同等级标签按锚点间距聚簇（assignLabelThinRanks），aThinRank 顶点属性
+ *   记录簇内 rank（0 = 簇代表）；远距离 / 宽视野时 uThinMaxRank=1 每簇仅显示代表，
+ *   近距离恢复全量（不动 §6.4 分级口径）；判定收敛于纯函数 resolveThinMaxRank；
+ * - 强制显示：setForceVisible(id, true) 写 aForceVisible 顶点属性，shader 跳过分级与抽稀——
  *   hover / 选中交互（TASK-013）经此接口接入（SPEC §6.4 / §8.2）；
  * - billboard：顶点 position 存标签锚点（世界坐标）、aOffset 存 quad 角点相对锚点偏移，
  *   朝向相机的展开与 aLevel 分级裁剪由 injectLabelBillboardShader 注入材质 shader
@@ -107,6 +110,35 @@ export function resolveLabelCameraView(camera: Camera, controlsTarget?: Vector3)
 }
 
 // ---------------------------------------------------------------------------
+// 防重叠抽稀（纯函数；SPEC §6.4「保证俯视全图时关键标签可读」）
+// ---------------------------------------------------------------------------
+
+/** 抽稀阈值（值取自 config/constants.ts，由场景层注入；均可调） */
+export interface LabelThinThresholds {
+  /** 透视：相机距离超过该值（米）启用抽稀 */
+  perspectiveDistance: number
+  /** 正交俯视：视野宽度超过该值（米）启用抽稀 */
+  orthoViewWidth: number
+}
+
+/**
+ * 抽稀保留数的运行时判定：超过阈值（远距离 / 宽视野）返回 1——shader 只显示
+ * aThinRank < 1 的簇代表标签；未超过返回 Infinity——全量显示，
+ * 不改变 §6.4 近距离「全部显示」的分级口径。
+ */
+export function resolveThinMaxRank(
+  view: LabelCameraView,
+  thresholds: LabelThinThresholds,
+): number {
+  if (view.mode === 'perspective') {
+    return view.cameraDistance > thresholds.perspectiveDistance
+      ? 1
+      : Number.POSITIVE_INFINITY
+  }
+  return view.viewWidth > thresholds.orthoViewWidth ? 1 : Number.POSITIVE_INFINITY
+}
+
+// ---------------------------------------------------------------------------
 // 标签 quad 排版（纯函数）
 // ---------------------------------------------------------------------------
 
@@ -183,6 +215,11 @@ export interface LabelAnchor {
   x: number
   y: number
   z: number
+  /**
+   * 防重叠抽稀的簇内 rank（0 = 簇代表，抽稀时仍显示；≥1 = 被代表覆盖，抽稀时隐藏）。
+   * 由 assignLabelThinRanks 分配；缺省 0（不参与抽稀，AGV 编号等动态标签用缺省）。
+   */
+  thinRank?: number
 }
 
 /**
@@ -211,6 +248,58 @@ export function buildNodeLabelAnchors(
     })
   }
   return anchors
+}
+
+/**
+ * 防重叠抽稀 rank 分配（纯函数，不修改输入）：同等级锚点水平间距 < clusterSpacing 时
+ * 归为一簇——锚点周围已存在簇代表（rank 0）则被覆盖，rank = 覆盖它的代表数（≥1）；
+ * 周围无代表时自身成为代表（rank 0）。贪心独立集，代表间距 ≥ clusterSpacing，
+ * 网格哈希 O(n)；不同等级互不影响（各自成簇）。
+ *
+ * 标签世界尺寸固定时相邻标签的重叠与缩放无关（间距与字宽同比例缩放），
+ * 故抽稀只能按缩放分档：远 / 宽视野仅显示代表，近距全量（resolveThinMaxRank）。
+ */
+export function assignLabelThinRanks(
+  anchors: readonly LabelAnchor[],
+  clusterSpacing: number,
+): LabelAnchor[] {
+  const spacingSq = clusterSpacing * clusterSpacing
+  // 网格 cell 边长 = 聚簇间距：任意距离 < 间距的两点必落在相同或相邻 cell（3×3 邻域完备）
+  const grid = new Map<string, number[]>()
+  const result: LabelAnchor[] = []
+  for (const anchor of anchors) {
+    const cellX = Math.floor(anchor.x / clusterSpacing)
+    const cellZ = Math.floor(anchor.z / clusterSpacing)
+    let rank = 0
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const bucket = grid.get(`${anchor.level}:${cellX + dx}:${cellZ + dz}`)
+        if (bucket === undefined) {
+          continue
+        }
+        for (const index of bucket) {
+          const other = result[index]
+          const distX = other.x - anchor.x
+          const distZ = other.z - anchor.z
+          if (distX * distX + distZ * distZ < spacingSq) {
+            rank += 1
+          }
+        }
+      }
+    }
+    result.push({ ...anchor, thinRank: rank })
+    // 仅簇代表参与后续覆盖判定（被覆盖者不再扩大簇）
+    if (rank === 0) {
+      const key = `${anchor.level}:${cellX}:${cellZ}`
+      const bucket = grid.get(key)
+      if (bucket === undefined) {
+        grid.set(key, [result.length - 1])
+      } else {
+        bucket.push(result.length - 1)
+      }
+    }
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +338,7 @@ const CORNER_SIGNS: readonly (readonly [number, number])[] = [
 /**
  * 构建合并标签几何：全部锚点的全部字符 quad 写入单个 BufferGeometry。
  * 顶点属性：position（锚点，vec3）、aOffset（角点偏移，vec2）、uv（图集 UV）、
- * aLevel（标签等级）、aForceVisible（强制显示，初始 0）。
+ * aLevel（标签等级）、aThinRank（抽稀簇内 rank，缺省 0）、aForceVisible（强制显示，初始 0）。
  * id 重复的锚点以后者覆盖（消费方约定 id 唯一）。
  */
 export function buildLabelBatch(
@@ -270,6 +359,7 @@ export function buildLabelBatch(
   const offsets = new Float32Array(vertexCount * 2)
   const uvs = new Float32Array(vertexCount * 2)
   const levels = new Float32Array(vertexCount)
+  const thinRanks = new Float32Array(vertexCount)
   const forceVisible = new Float32Array(vertexCount)
   // 顶点数可能超过 65535（全图近万 quad），统一 32 位索引
   const indices = new Uint32Array(quadCount * 6)
@@ -296,6 +386,7 @@ export function buildLabelBatch(
         uvs[vertexIndex * 2] = signX < 0 ? quad.u0 : quad.u1
         uvs[vertexIndex * 2 + 1] = signY < 0 ? quad.v0 : quad.v1
         levels[vertexIndex] = anchor.level
+        thinRanks[vertexIndex] = anchor.thinRank ?? 0
       }
       const indexBase = quadCursor * 6
       const vertexBase = quadCursor * 4
@@ -318,6 +409,7 @@ export function buildLabelBatch(
   geometry.setAttribute('aOffset', new BufferAttribute(offsets, 2))
   geometry.setAttribute('uv', new BufferAttribute(uvs, 2))
   geometry.setAttribute('aLevel', new BufferAttribute(levels, 1))
+  geometry.setAttribute('aThinRank', new BufferAttribute(thinRanks, 1))
   const forceAttribute = new BufferAttribute(forceVisible, 1)
   geometry.setAttribute('aForceVisible', forceAttribute)
   geometry.setIndex(new BufferAttribute(indices, 1))
@@ -363,22 +455,37 @@ export interface LabelLevelVisibleUniform {
   value: Vector3
 }
 
+/** 抽稀保留数 uniform（aThinRank < 值 才显示；Infinity = 不抽稀），场景层每帧写入 */
+export interface LabelThinMaxRankUniform {
+  value: number
+}
+
+/** 未注入抽稀 uniform 时的共享缺省（Infinity = 不抽稀；AGV 编号标签等不设抽稀的消费方用） */
+const DEFAULT_THIN_MAX_RANK: LabelThinMaxRankUniform = {
+  value: Number.POSITIVE_INFINITY,
+}
+
 /**
- * 把球形 billboard 展开与 aLevel 分级裁剪注入 meshBasicMaterial（onBeforeCompile）。
- * 顶点契约即 buildLabelBatch 写出的属性：position = 锚点（世界坐标）、
- * aOffset = quad 角点偏移、aLevel = 标签等级、aForceVisible = 强制显示。
- * 标准 map / uv 管线不变；不可见等级整体裁剪到 NDC 之外由 GPU 丢弃（CPU 零遍历）。
+ * 把球形 billboard 展开与 aLevel 分级 + aThinRank 抽稀裁剪注入 meshBasicMaterial
+ * （onBeforeCompile）。顶点契约即 buildLabelBatch 写出的属性：position = 锚点（世界坐标）、
+ * aOffset = quad 角点偏移、aLevel = 标签等级、aThinRank = 簇内 rank、aForceVisible = 强制显示。
+ * 标准 map / uv 管线不变；不可见 / 被抽稀的标签整体裁剪到 NDC 之外由 GPU 丢弃（CPU 零遍历）。
+ * thinMaxRank 缺省时共享 Infinity 缺省（不抽稀）。
  */
 export function injectLabelBillboardShader(
   shader: WebGLProgramParametersWithUniforms,
   levelVisible: LabelLevelVisibleUniform,
+  thinMaxRank: LabelThinMaxRankUniform = DEFAULT_THIN_MAX_RANK,
 ): void {
   shader.uniforms.uLevelVisible = levelVisible
+  shader.uniforms.uThinMaxRank = thinMaxRank
   shader.vertexShader = `
     attribute vec2 aOffset;
     attribute float aLevel;
+    attribute float aThinRank;
     attribute float aForceVisible;
     uniform vec3 uLevelVisible;
+    uniform float uThinMaxRank;
   ${shader.vertexShader}`
     .replace(
       '#include <begin_vertex>',
@@ -386,7 +493,8 @@ export function injectLabelBillboardShader(
       float levelVisible = aLevel < 0.5
         ? uLevelVisible.x
         : ( aLevel < 1.5 ? uLevelVisible.y : uLevelVisible.z );
-      float labelVisible = aForceVisible > 0.5 ? 1.0 : levelVisible;`,
+      float thinVisible = aThinRank < uThinMaxRank ? 1.0 : 0.0;
+      float labelVisible = aForceVisible > 0.5 ? 1.0 : levelVisible * thinVisible;`,
     )
     .replace(
       '#include <project_vertex>',
