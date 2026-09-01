@@ -1,0 +1,18 @@
+{
+  "dataSource": "mock",
+  "mapUrl": "./json/map.json",
+  "wsUrl": null,
+  "maxVehicles": 256,
+  "staleAfterMs": 10000,
+  "renderer": {
+    "maxDpr": 1.5,
+    "shadowMapSize": 2048
+  },
+  "coordinateTransform": {
+    "scale": 1,
+    "rotation": 0,
+    "mirrorY": false,
+    "translateX": 0,
+    "translateY": 0
+  }
+}

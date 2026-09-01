@@ -6,8 +6,10 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/copyStaticAssets.mjs && node scripts/verifyDist.mjs",
     "preview": "vite preview",
+    "verify:dist": "node scripts/verifyDist.mjs",
+    "smoke:dist": "node scripts/smokeDist.mjs",
     "lint": "oxlint",
     "typecheck": "tsc -b --pretty false",
     "test:unit": "vitest run",
