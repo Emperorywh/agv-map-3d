@@ -102,7 +102,7 @@
 - app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置、地图上下文与世界变换构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 与 `FleetMonitoringFeature` 并以 Provider 注入车队运行时。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
-- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（154 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（155 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
 - 尚无车辆标签、选择/告警环与交通资源（TASK-011/012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
 
@@ -177,7 +177,7 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 | 单元测试 | `pnpm test:unit`（Vitest + jsdom，44 文件 411 例：TASK-002～009 全部保留；TASK-010 新增 42 例——实例槽位 12 例（幂等分配、0/1/200/250/256/257/512/513 容量边界、空闲复用、硬上限等待队列 FIFO 转派、截断批次、拾取映射互逆、500 步随机增删参考模型）、几何与布局 10 例（§2.5 centerOffset 世界位姿与角度符号、七部件固定高度阶梯与每车尺寸、非法位置/尺寸 visible=false、FAULT/STALE/OFFLINE 信标激活语义、方向楔 +x 鼻尖、信标叶片、单位几何、dispose 幂等）、帧同步与实例批 12 例（下一帧整车矩阵/颜色同步、theta=π/2 车头方向、未变化槽位零提交与脏批次合并、删除清场零缩放与槽位复用、FAULT 信标旋转闪烁与断连熄灭、STALE 冻结灰、非法位置不占槽位、250/257 批次扩容、513 超硬上限补录与诊断、worldTransform 注入收敛、StrictMode 双挂载、拾取元数据与 raycast 关闭）、Feature 根组件 2 例（50 条高频增量零 React 重渲染 + 场景对象身份不变、worldTransform=null 不挂载批次）、app 组合层 A4 对齐集成 4 例（当前车辆参考点与节点「1644」世界距离 <1mm、centerOffset=0.25 世界距离守恒且 rotation.y=-θ、TRAFFIC_WAIT 投影下车体可见/载货/信标熄灭/楔在 +x、每车尺寸进入部件矩阵——经两 Feature 公开入口在 app 层完成跨域事实验证） | 通过（411/411） |
 | 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004/005 数据、几何与语义图层事实全部保留；`mockDataSource.integration.test.ts`：默认 60 台位置落在当前地图坐标范围、200s 窗口覆盖全部验收事件（含充电约 172s）、固定 seed 事件序列逐位一致、250 台可用 | 通过 |
 | 当前车辆夹具 | `vehicleFixture.integration.test.ts`：`json/vehicle.json` 重新校验——TRAFFIC_WAIT（D5）、LOW_BATTERY、LOADED、ONLINE、locked 1 + applying 3、运行时 10s STALE 跃迁；`vehicleSceneAlignment.integration.test.ts`（app 组合层）：当前车辆与节点「1644」及方向、centerOffset、部件尺寸矩阵对齐（A4） | 通过 |
-| 架构检查 | `pnpm test:architecture`（真实 src 154 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 155 模块 0 违规；负例全部命中；正例零误报） | 通过 |
 | 构建 | `pnpm build`（含 `copyStaticAssets` 与 `verifyDist`） | 通过 |
 | dist 校验 | `pnpm verify:dist`（index/config/map 存在、相对路径引用、白名单与凭据检查、map.json 可解析） | 通过 |
 | 部署冒烟 | `pnpm smoke:dist`（根路径与子路径静态冒烟） | 通过 |
