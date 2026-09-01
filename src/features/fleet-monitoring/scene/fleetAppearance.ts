@@ -1,18 +1,20 @@
 /**
- * 车辆场景视觉常量（SPEC §2.6、§5.2、§5.4、§6.4、§7.2、§7.3；TASK-010/011）。
+ * 车辆场景视觉常量（SPEC §2.6、§5.1～§5.4、§6.4、§7.2、§7.3；TASK-010/011/012）。
  *
  * 职责：集中定义程序化通用 AGV 的全部外观常量——各部件的固定尺寸与颜色、
- *       主状态 → 车体色的映射表、警示灯旋转/闪烁参数、车底假阴影参数，以及
- *       车辆标签的尺寸、LOD 投影阈值、重点标签上限与边框配色——供几何构建、
- *       图集、材质与帧同步层共同引用，保证车辆视觉语言只有一份事实源。
+ *       主状态 → 车体色的映射表、警示灯旋转/闪烁参数、车底假阴影参数、车辆
+ *       标签的尺寸、LOD 投影阈值、重点标签上限与边框配色，以及选中/L1/L2
+ *       分层光环与红黄交通锁资源的高度、配色与几何参数——供几何构建、图集、
+ *       材质、光环与交通资源层共同引用，保证车辆视觉语言只有一份事实源。
  * 边界：只包含数值与颜色常量及纯映射表，不创建任何 Three.js 对象；地图侧
- *       静态外观属 map-visualization 的 mapAppearance；L1/L2 告警环几何表达
- *       属 TASK-012，届时复用本模块的 LABEL_BORDER_* 配色保持语义一致。
+ *       静态外观属 map-visualization 的 mapAppearance；告警环与交通锁的几何
+ *       构建、哈希与合并窗口语义分别属 vehicleRings / trafficRectangle /
+ *       trafficGeometry 模块，本模块只提供它们共用的外观数值。
  * 关键不变量：
  * 1. 主状态色映射覆盖 VehiclePrimaryDisplayState 全部取值且次序与投影规则
  *    一致：STALE 冻结灰、DISCONNECTED 深灰、FRESH 业务色（SPEC §2.6）；
  *    状态不得只靠颜色表达——方向由 +x 方向楔表达、故障由旋转警示灯表达、
- *    文字由图集化标签表达（TASK-011）；
+ *    文字由图集化标签表达（TASK-011）、告警由分层光环表达（TASK-012）；
  * 2. 充电色与地图 charge 节点同色系（#31d9e8），执行色与 work 节点同色系，
  *    保持全场景色彩语义统一；
  * 3. 部件固定高度为厘米级经验值（与当前车宽 0.7m 量级协调），不随车辆
@@ -20,7 +22,10 @@
  * 4. 警示灯只在 FAULT（FRESH + ONLINE）时旋转闪烁；OFFLINE/STALE 熄灭
  *    （SPEC §5.2），熄灭用零缩放矩阵表达（不存在 instanceColor.a）；
  * 5. 标签 LOD 阈值与重点上限来自 SPEC §6.4：投影 ≥8px 显示名称、≥20px 增加
- *    电量条与完整状态，远景最多 20 个重点标签（优先级截断属 labelLod）。
+ *    电量条与完整状态，远景最多 20 个重点标签（优先级截断属 labelLod）；
+ * 6. 光环与交通锁复用标签边框配色（选中白 / L1 黄 / L2 红），保证「同一告警
+ *    语义在全场景只有一种颜色」（SPEC §7.3，TASK-012）；贴地层次自下而上
+ *    依次为：假阴影(0.012) < 交通锁(0.02) < 光环(0.03)，透明层互不 z-fight。
  */
 
 /** 图层高度：车辆贴花 lowest 优先级低于地图名称层，假阴影贴地避免 z-fighting */
@@ -141,3 +146,32 @@ export const LABEL_BATTERY_CRITICAL_COLOR = '#ff2d2d'
  */
 export const LABEL_FONT_FAMILY =
   '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
+
+/* ============ 选中/告警环与交通资源外观（SPEC §5.1、§5.3、§7.3；TASK-012） ============ */
+
+/** 光环贴地高度：高于交通锁贴片，低于标签层（透明层按 renderOrder 分层） */
+export const RING_Y_M = 0.03
+
+/** 光环尺寸基准（米）：车辆最大长宽边在该基准时长宽比为 1（当前夹具同量级） */
+export const RING_SIZE_REFERENCE_M = 1.8
+
+/**
+ * 分层光环半径系数（米，基准车）：从内到外依次为选中、L1、L2——
+ * SPEC §7.3「按从内到外选中、L1、L2 排列」由半径单调递增表达。
+ */
+export const RING_LAYER_RADII_M = [1.25, 1.65, 2.05] as const
+
+/** 光环环带内外半径比：环宽随半径等比缩放（单位环几何的固定比例） */
+export const RING_INNER_RATIO = 0.86
+
+/** 光环圆周分段数：近景下边缘平滑的最低段数 */
+export const RING_SEGMENTS = 48
+
+/** 光环透明度：三层共用同一材质，靠颜色区分语义 */
+export const RING_OPACITY = 0.9
+
+/** 交通锁贴片贴地高度：高于假阴影、低于光环 */
+export const TRAFFIC_LOCK_Y_M = 0.02
+
+/** 交通锁贴片透明度：locked 红与 applying 黄共用材质（顶点色区分） */
+export const TRAFFIC_LOCK_OPACITY = 0.4

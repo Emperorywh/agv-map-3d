@@ -18,8 +18,11 @@
  *    LOW_LOCALIZATION < 0.5；缺失值（null）不产生告警也不伪装正常；
  * 4. 投影顺序固定：STALE 冻结 > OFFLINE/UNKNOWN 连接断连灰 > FRESH 业务色；
  *    副徽标只在 STALE/断连时保留最后已知业务状态，业务状态本身 UNKNOWN 时
- *    副徽标为 null（不把「未知」当业务徽标展示）。
+ *    副徽标为 null（不把「未知」当业务徽标展示）；
+ * 5. 交通四边形无效完整传播：所属车任一 locked/applying 矩形无法形成有效
+ *    凸四边形时增加 INVALID_DATA（SPEC §5.3 第 5 步），有效矩形不产生告警。
  */
+import { trafficHasInvalidRectangle } from './trafficRectangle'
 import type {
   StaticVehicleState,
   VehicleAlert,
@@ -104,7 +107,7 @@ function deriveLoadState(loaded: boolean | null): VehicleLoadState {
   return 'UNKNOWN'
 }
 
-/** 多告警并存：电量、定位、数据有效性三类互不排斥，按稳定顺序输出 */
+/** 多告警并存：电量、定位、数据有效性与交通四边形四类互不排斥，按稳定顺序输出 */
 function deriveAlerts(snapshot: VehicleSnapshot): readonly VehicleAlert[] {
   const alerts: VehicleAlert[] = []
   const charge = snapshot.battery.batteryCharge
@@ -119,7 +122,12 @@ function deriveAlerts(snapshot: VehicleSnapshot): readonly VehicleAlert[] {
   if (score !== null && score < LOW_LOCALIZATION_THRESHOLD) {
     alerts.push({ type: 'LOW_LOCALIZATION' })
   }
-  if (!snapshot.positionValid || !snapshot.dimensionValid) {
+  if (
+    !snapshot.positionValid ||
+    !snapshot.dimensionValid ||
+    // 无效交通矩形逐项跳过渲染，同时给所属车传播 INVALID_DATA（SPEC §5.3）
+    trafficHasInvalidRectangle(snapshot.trafficShapeResources)
+  ) {
     alerts.push({ type: 'INVALID_DATA' })
   }
   return Object.freeze(alerts)

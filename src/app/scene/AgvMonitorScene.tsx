@@ -23,6 +23,11 @@ export interface AgvMonitorSceneProps {
   staleAfterMs?: number
   /** 地图世界变换（app 由 bootstrap 产物注入）；null 时车辆不渲染 */
   worldTransform?: WorldTransform | null
+  /**
+   * 车辆双击跟随请求上抛（实体键，TASK-012 暴露）：跟随的相机语义归
+   * camera-navigation（TASK-013），组合层在那时接线；缺省时请求被丢弃。
+   */
+  onVehicleFollowRequest?: (entityKey: string) => void
 }
 
 export function AgvMonitorScene({
@@ -30,12 +35,16 @@ export function AgvMonitorScene({
   vehicleSource = null,
   staleAfterMs,
   worldTransform = null,
+  onVehicleFollowRequest,
 }: AgvMonitorSceneProps) {
   return (
     <group name="agv-monitor-scene">
       <FleetRuntimeProvider source={vehicleSource} staleAfterMs={staleAfterMs}>
         <MapVisualizationFeature map={mapDescriptor} />
-        <FleetMonitoringFeature worldTransform={worldTransform} />
+        <FleetMonitoringFeature
+          worldTransform={worldTransform}
+          onFollowRequest={onVehicleFollowRequest}
+        />
       </FleetRuntimeProvider>
     </group>
   )

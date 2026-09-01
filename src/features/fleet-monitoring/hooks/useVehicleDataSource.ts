@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { isAbortError } from '@/shared/diagnostics'
-import type { FleetRuntime } from '../model/createFleetRuntime'
+import type { FleetDiff, FleetRuntime } from '../model/createFleetRuntime'
 import type { SourceStatus, VehicleDataSource } from '../data-source/contract'
 
 /** freshness ticker 周期：1Hz 只做 FRESH/STALE 跃迁（SPEC §4） */
@@ -34,6 +34,12 @@ export interface UseVehicleDataSourceOptions {
   onStatusChange?: (status: SourceStatus) => void
   /** 连接以非取消方式失败时的上报口（诊断由 Provider 注入） */
   onConnectError?: (error: unknown) => void
+  /**
+   * 事件归并后的差异回调（TASK-012）：removed 差异在此处可转发为低频
+   * store 命令（如清除被删车辆的选中状态）。回调在高频事件路径上执行，
+   * 实现必须廉价且不得触碰 React state。
+   */
+  onDiffApplied?: (diff: FleetDiff) => void
 }
 
 /**
@@ -60,7 +66,8 @@ export function useVehicleDataSource(
 
     // 高频路径：事件 → 运行时普通 Map/脏集合，绝不触碰 React state
     const unsubscribeEvent = source.onEvent((event) => {
-      runtime.applyEvent(event)
+      const diff = runtime.applyEvent(event)
+      optionsRef.current.onDiffApplied?.(diff)
     })
     // 低频路径：连接状态罕见变化，交由调用方决定落点（Provider 存 React state）
     const unsubscribeStatus = source.onStatusChange((status) => {

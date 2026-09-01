@@ -537,6 +537,14 @@ function flushDirtyBatches(
       if (controller.matrixDirty[b][k]) {
         controller.matrixDirty[b][k] = false
         mesh.instanceMatrix.needsUpdate = true
+        // 外壳可拾取（SPEC §5.2）：实例矩阵变化后同步重算拾取包围球。
+        // InstancedMesh 的 boundingSphere 只在 null 时被惰性计算，若在挂载期
+        // 实例全零时被提前计算并缓存为「原点半径 0」，此后 raycast 的包围球
+        // 预检将永远失败（真实浏览器实测复现）；这里按脏帧重算保证拾取球
+        // 恒与最新实例数据一致（含车辆移出旧球的情形）。
+        if (VEHICLE_PART_KINDS[k] === 'shell') {
+          mesh.computeBoundingSphere()
+        }
       }
       if (controller.colorDirty[b][k]) {
         controller.colorDirty[b][k] = false

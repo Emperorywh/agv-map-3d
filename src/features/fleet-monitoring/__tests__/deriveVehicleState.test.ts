@@ -131,6 +131,26 @@ describe('多告警并存与阈值边界（§7.3）', () => {
     const healthy = derive({})
     expect(healthy.alerts.map((a) => a.type)).not.toContain('INVALID_DATA')
   })
+
+  it('无效交通矩形给所属车传播 INVALID_DATA；有效矩形不产生告警（SPEC §5.3）', () => {
+    const validRect = [0, 0, 2, 0, 2, 2, 0, 2]
+    const valid = derive({
+      trafficShapeResources: { lockedRectangles: [validRect], applyingRectangles: [validRect] },
+    })
+    expect(valid.alerts.map((a) => a.type)).not.toContain('INVALID_DATA')
+    // 任一矩形无效（NaN / 重复点 / 凹形）→ INVALID_DATA
+    const invalidByNaN = derive({
+      trafficShapeResources: { lockedRectangles: [], applyingRectangles: [[0, 0, NaN, 0, 2, 2, 0, 2]] },
+    })
+    expect(invalidByNaN.alerts.map((a) => a.type)).toContain('INVALID_DATA')
+    const invalidByDup = derive({
+      trafficShapeResources: { lockedRectangles: [[1, 1, 2, 2, 1, 1, 2, 2]], applyingRectangles: [] },
+    })
+    expect(invalidByDup.alerts.map((a) => a.type)).toContain('INVALID_DATA')
+    // 资源缺失（null / 空数组）不产生告警
+    const absent = derive({ trafficShapeResources: undefined })
+    expect(absent.alerts.map((a) => a.type)).not.toContain('INVALID_DATA')
+  })
 })
 
 describe('projectDisplayState 主状态投影（SPEC §2.6 顺序）', () => {

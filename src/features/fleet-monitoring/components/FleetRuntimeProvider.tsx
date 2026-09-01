@@ -19,7 +19,10 @@
  * 3. source 为 null 是合法稳态（Mock 未实现/无数据源配置）：不连接、状态
  *    恒为 IDLE，子树照常渲染——静态地图不依赖车队数据存在；
  * 4. 连接以非取消方式失败时只记结构化诊断并保持状态机自身语义，绝不抛出
- *    或渲染错误 DOM（SPEC §7.4 / D2）。
+ *    或渲染错误 DOM（SPEC §7.4 / D2）；
+ * 5. 删除差异转发为低频 store 命令（TASK-012）：onDiffApplied 在高频事件
+ *    路径上只调用 store 的命令式动作（notifyEntitiesRemoved），被选中车辆
+ *    被删除时选中键立即清空，绝不触碰 React state。
  */
 import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -39,6 +42,7 @@ import {
   createFleetRuntime,
   type FleetRuntime,
 } from '../model/createFleetRuntime'
+import { useFleetMonitoringStore } from '../model/fleetMonitoringStore'
 import type { SourceStatus, VehicleDataSource } from '../data-source/contract'
 
 /** 兜底诊断通道：仅在调用方未注入 diagnostics 时用于连接失败上报 */
@@ -77,6 +81,13 @@ export function FleetRuntimeProvider({
 
   useVehicleDataSource(source, runtime, {
     onStatusChange: setStatus,
+    // 删除差异立即清理低频交互状态：被选中的车辆被删除时选中键同帧清空
+    // （SPEC §11.6；TASK-012）。命令式 store 调用不触碰 React state。
+    onDiffApplied: (diff) => {
+      if (diff.removed.length > 0) {
+        useFleetMonitoringStore.getState().notifyEntitiesRemoved(diff.removed)
+      }
+    },
     onConnectError: (error) => {
       const reporter = diagnosticsRef.current ?? fallbackDiagnostics
       reporter.report(

@@ -9,7 +9,8 @@
  *    operation=TRAFFIC_WAIT（orderState=PROCESSING 被优先级压住，D5/D1）；
  * 3. 电量 19.57 → LOW_BATTERY（非 CRITICAL）；loaded=true → LOADED；
  * 4. 位置/尺寸合法（centerOffset=0.25），无 INVALID_DATA；
- * 5. 交通四边形 locked 1 个、applying 3 个，原样保留（规范化属 TASK-012）。
+ * 5. 交通四边形 locked 1 个、applying 3 个，原样保留且经 §5.3 规范化均为
+ *    无自交凸四边形（A5，TASK-012）。
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -17,12 +18,25 @@ import { describe, expect, it } from 'vitest'
 import { deriveVehicleState, projectDisplayState } from '@/features/fleet-monitoring/model/deriveVehicleState'
 import { validateVehicle } from '@/features/fleet-monitoring/model/validateVehicle'
 import { createVehicleEntityKey } from '@/features/fleet-monitoring/model/types'
+import {
+  MIN_TRAFFIC_AREA_M2,
+  normalizeTrafficRectangle,
+  trafficHasInvalidRectangle,
+  type NormalizedTrafficRectangle,
+} from '@/features/fleet-monitoring/model/trafficRectangle'
 import { createFleetRuntime } from '@/features/fleet-monitoring/model/createFleetRuntime'
 
 const VEHICLE_JSON_PATH = path.resolve(process.cwd(), 'json/vehicle.json')
 const MAP_ID = 'map-under-test'
 
 const rawVehicle: unknown = JSON.parse(readFileSync(VEHICLE_JSON_PATH, 'utf-8'))
+
+/** 规范化断言助手：非法矩形直接令测试失败 */
+function expectValidQuad(raw: unknown): NormalizedTrafficRectangle {
+  const rect = normalizeTrafficRectangle(raw)
+  expect(rect).not.toBeNull()
+  return rect!
+}
 
 describe('当前车辆夹具（json/vehicle.json）领域事实', () => {
   const result = validateVehicle(rawVehicle, MAP_ID)
@@ -77,6 +91,37 @@ describe('当前车辆夹具（json/vehicle.json）领域事实', () => {
     if (!result.ok) return expect.fail()
     expect(result.snapshot.trafficShapeResources?.lockedRectangles).toHaveLength(1)
     expect(result.snapshot.trafficShapeResources?.applyingRectangles).toHaveLength(3)
+  })
+
+  it('A5：当前四个交通矩形均规范化为无自交凸四边形（面积大于阈值）', () => {
+    if (!result.ok) return expect.fail()
+    const resources = result.snapshot.trafficShapeResources
+    expect(resources).not.toBeNull()
+    const normalized: NormalizedTrafficRectangle[] = []
+    for (const rect of resources!.lockedRectangles) {
+      normalized.push(expectValidQuad(rect))
+    }
+    for (const rect of resources!.applyingRectangles) {
+      normalized.push(expectValidQuad(rect))
+    }
+    expect(normalized).toHaveLength(4)
+    for (const rect of normalized) {
+      expect(rect.points).toHaveLength(4)
+      expect(rect.area).toBeGreaterThan(MIN_TRAFFIC_AREA_M2)
+    }
+    // 规范化点序稳定：同几何乱序输入得到同一哈希（哈希不变，重建判据的基础）
+    const locked = expectValidQuad(resources!.lockedRectangles[0])
+    const shuffled = normalizeTrafficRectangle([
+      locked.points[2].x, locked.points[2].y,
+      locked.points[0].x, locked.points[0].y,
+      locked.points[3].x, locked.points[3].y,
+      locked.points[1].x, locked.points[1].y,
+    ])
+    expect(shuffled!.hash).toBe(locked.hash)
+    // 全部有效 → 不因交通资源产生 INVALID_DATA
+    expect(trafficHasInvalidRectangle(resources)).toBe(false)
+    const state = deriveVehicleState(result.snapshot)
+    expect(state.alerts.map((alert) => alert.type)).toEqual(['LOW_BATTERY'])
   })
 
   it('夹具经运行时归并后 FRESH，10s 无更新跃迁 STALE 且主状态冻结', () => {
