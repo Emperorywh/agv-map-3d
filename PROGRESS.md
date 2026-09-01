@@ -11,12 +11,12 @@
 | 字段 | 当前值 |
 |---|---|
 | 项目状态 | `IN_PROGRESS` |
-| 当前 Task | `TASK-006 车辆领域模型、事件合同与车队运行时` |
+| 当前 Task | `TASK-007 WebSocket 数据源与 React 生命周期` |
 | 当前 Task 状态 | `TODO` |
-| 已完成工程 Task | `5 / 21` |
+| 已完成工程 Task | `6 / 21` |
 | 条件任务 | `TASK-021 WAITING_EXTERNAL` |
 | 验收 Gate | GATE-001、GATE-002、GATE-003 均为 `NOT_READY` |
-| 当前下一步 | 将 TASK-006 改为 `IN_PROGRESS` 后，实现经校验的 VehicleSnapshot、统一 VehicleDataEvent 合同与不依赖 React 的高频车队运行时（snapshot/update/remove/heartbeat、10s STALE、多告警、高频快照不进 React state） |
+| 当前下一步 | 将 TASK-007 改为 `IN_PROGRESS` 后，实现可注入协议适配器与 WebSocket 工厂的 VehicleDataSource（幂等连接、指数退避+抖动、序号治理、15s 静默重连、连接代次隔离）与 StrictMode 安全的 useVehicleDataSource Hook |
 | 项目完成条件 | TASK-001～TASK-021 全部 `DONE`，GATE-001～GATE-003 全部通过，SPEC A1～F6 均有当前证据 |
 
 编号是推荐交付顺序，执行前必须核对真实依赖。`WAITING_EXTERNAL` 的 TASK-021 不阻塞 TASK-018～020；其他 Task 只有在自身依赖全部 `DONE` 后才能开始。
@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 3 个提交（TASK-003、TASK-004、TASK-005 待推送） |
-| HEAD | TASK-005 实施提交（TASK-004 提交之后） |
-| 未提交差异 | 无（工作区干净；TASK-005 已随提交完成） |
+| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 4 个提交（TASK-003～TASK-006 待推送） |
+| HEAD | TASK-006 实施提交（TASK-005 提交之后） |
+| 未提交差异 | 无（工作区干净；TASK-006 已随提交完成） |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -60,12 +60,20 @@
   - `hooks/useMapNameAtlas.ts`：名称图集单一所有者——随视图重建、StrictMode 安全、工厂失败降级为 null 并记录 `MAP_NAME_ATLAS_FAILED` 诊断。
   - `scene/mapAppearance.ts`：新增语义层外观常量（独占区外沿、充电桩/光环/呼吸灯、方垫、名称图集/文字/显隐区间），图层高度阶梯扩展至 `NAME_QUAD_Y`。
   - `decorationsEnabled` 为 MapVisualizationFeature props（默认 true），TASK-014 质量控制接入时由组合层显式传入。
+- TASK-006 已完成车辆领域模型、事件合同与车队运行时（`src/features/fleet-monitoring/`，无 React 组件、无 GPU 对象、无网络连接）：
+  - `data-source/contract.ts`：`VehicleDataEvent` 四类显式事件（snapshot/update/remove/heartbeat，含 schemaVersion/mapId/sequence/单调 receivedAt）、`VehicleDataSource` 幂等生命周期接口与 `SourceStatus`——Mock（TASK-009）与 WS（TASK-007）的共同合同。
+  - `model/types.ts`：不可变 `VehicleSnapshot`（`Object.freeze`）；实体键 `(mapId, agvKey)` 长度前缀无歧义编码 `createVehicleEntityKey`；非法尺寸回退常量 `DEFAULT_VEHICLE_DIMENSION`；原始枚举/故障条目/交通四边形/速度原样保留或置 null。
+  - `model/validateVehicle.ts`：单车隔离校验——整车仅因非对象或 agvKey 无法字符串化被拒（`VEHICLE_NOT_AN_OBJECT`/`AGV_KEY_MISSING`/`AGV_KEY_INVALID`，数字 agvKey String 化）；位置 x/y/theta 非有限置 `positionValid=false`；尺寸非正有限回退默认值并置 `dimensionValid=false`（二者经派生传播 INVALID_DATA）；localizationScore/电量/速度缺失置 null 不伪装正常。
+  - `model/deriveVehicleState.ts`：connectivity 严格映射（非 ONLINE/OFFLINE 一律 UNKNOWN）；operation 固定优先级链 FAULT→PAUSED→CHARGING→TRAFFIC_WAIT→EXECUTING→IDLE→UNKNOWN；多告警并存（CRITICAL<15≤LOW<30 电量、定位<0.5、INVALID_DATA）；`projectDisplayState` 投影 STALE 冻结 > 断连深灰 > FRESH 业务色，STALE/断连保留最后已知业务状态副徽标。
+  - `model/createFleetRuntime.ts`：不依赖 React 的高频运行时——普通 Map 持有实体（最新快照/静态维度/displayState/freshness/单调 lastReceivedAt），snapshot diff 产生 added/removed/updated（同 mapId 基线外删、重复键后到覆盖）、update 不隐式删除、remove 幂等、heartbeat 不刷新单车新鲜度；lastReceivedAt 只增不减；`tick(now)` 1Hz 只做 FRESH/STALE 跃迁；脏集合 pose/display/removed 按签名变化最小标记（`consumeDirty` 消费即清）；事件外壳非法整条拒绝并记 `FLEET_EVENT_REJECTED` 采样诊断；staleAfterMs/时钟/诊断可注入。
+  - `model/fleetMonitoringStore.ts`：独立 zustand 低频 store——选中实体键（删除时立即清除）与活跃告警键集合（内容幂等，等价集合不通知）；高频快照/脏集合不进入 store，组件按窄 selector 订阅。
+  - `index.ts` 公开合同：事件与数据源接口、快照与派生类型、实体键编码、`ReadonlyFleetRuntime` 只读查询视图；不导出可变实体表、脏集合与 store 实例。
 - app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后以稳定描述符（含 bootstrap 种子）传入场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 并透传描述符。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
-- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（83 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（102 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
-- 尚无车辆模型与车队运行时（TASK-006/010）、WebSocket 数据源、Mock、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。
+- 尚无 WebSocket 数据源与 React 接线（TASK-007）、Mock 拓扑与仿真（TASK-008/009）、车辆模型渲染与实例批（TASK-010）、标签/选择/交通资源（TASK-011/012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。
 
 ### 2.3 当前数据输入
 
@@ -95,7 +103,7 @@
 | TASK-003 | 统一坐标、地图校验与不可变 MapModel | 002 | `DONE` |
 | TASK-004 | 可运行核心地图场景与恢复生命周期 | 003 | `DONE` |
 | TASK-005 | 地图业务语义图层 | 004 | `DONE` |
-| TASK-006 | 车辆领域模型、事件合同与车队运行时 | 001、002 | `TODO` |
+| TASK-006 | 车辆领域模型、事件合同与车队运行时 | 001、002 | `DONE` |
 | TASK-007 | WebSocket 数据源与 React 生命周期 | 006 | `TODO` |
 | TASK-008 | Mock 拓扑、运动与充电内核 | 003、006 | `TODO` |
 | TASK-009 | Mock 数据源、确定性场景与启动接线 | 007、008 | `TODO` |
@@ -116,14 +124,14 @@
 
 | 字段 | 当前内容 |
 |---|---|
-| Task | `TASK-006 车辆领域模型、事件合同与车队运行时` |
+| Task | `TASK-007 WebSocket 数据源与 React 生命周期` |
 | 状态 | `TODO` |
-| 当前目标 | 形成经校验的 VehicleSnapshot、统一 VehicleDataEvent 合同和不依赖 React 的高频车队运行时，正确处理快照、增量、删除、新鲜度和多告警 |
-| 当前主要范围 | `features/fleet-monitoring/model/**`、`data-source/contract.ts`、Feature 公开合同、低频 Fleet store 和共置测试 |
-| 当前已有实现 | 地图 Feature 公开的 MapModel/WorldTransform/根组件类型已就绪；`src/shared/spatial`、`src/shared/diagnostics`、`src/shared/validation` 可复用；fleet-monitoring Feature 尚不存在 |
-| 当前待完成 | 以 `TASKS.md` 的 TASK-006 为准实现：实体键 `(mapId,agvKey)`、`agvKey` 字符串化、快照/增量/删除/心跳四类事件、严格派生状态与多告警、非法位置逐车隔离、10s STALE 跃迁、高频快照不进 React state/zustand |
+| 当前目标 | 得到可注入协议适配器和 WebSocket 工厂的可靠 VehicleDataSource，并在 React StrictMode 下安全连接到车队运行时；真实后端字段仍被限制在单一适配边界 |
+| 当前主要范围 | `features/fleet-monitoring/data-source/websocket/**`、`useVehicleDataSource`、稳定 Context/Provider、app 的 WS 选择接线和共置测试 |
+| 当前已有实现 | TASK-006 的 `VehicleDataSource` 合同、`createFleetRuntime`（事件归并/单调接收/1Hz freshness/脏集合）与低频 store 均就绪；`shared/diagnostics` 可复用 |
+| 当前待完成 | 以 `TASKS.md` 的 TASK-007 为准实现：connect/disconnect 幂等、1/2/4/8s→30s 指数退避 + 80%～120% 抖动、稳定 60s 重置、15s 静默主动重连、连接代次隔离与快照前拒绝孤立增量、同连接递增 sequence、协议接口从 unknown 映射、Hook 对称管理连接/订阅/ticker/AbortSignal |
 | 当前阻塞 | 无 |
-| 完成后可开始 | TASK-007（依赖 006）、TASK-008（依赖 003、006） |
+| 完成后可开始 | TASK-008（依赖 003、006，均已 DONE）、TASK-009（依赖 007、008） |
 
 Task 开始后，把本卡直接替换为实际进行中的工作：当前修改文件、当前成功验证、当前失败原因、当前剩余步骤和下一条可执行命令。Task 完成后删除已解决问题，只保留完成结果和新的当前指针。
 
@@ -131,16 +139,17 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 
 | 范围 | 当前命令或检查 | 当前结果 |
 |---|---|---|
-| Lint | `pnpm lint` | 通过（79 文件，0 警告 0 错误） |
+| Lint | `pnpm lint` | 通过（93 文件，0 警告 0 错误） |
 | TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
-| 单元测试 | `pnpm test:unit`（Vitest + jsdom，17 文件 153 例：TASK-002/003/004 全部保留，新增 mapNameAtlas 排布/收集/四边形/工厂降级 8 例、buildLandmarkData 数量/位置/缩放着色 4 例、buildExclusiveGroupsGeometry 合并/去重/锚点/隔离/释放 6 例、MapVisualizationFeature 语义层场景图/装饰开关/图集降级/条目隔离/全量释放 +3 例） | 通过（153/153） |
-| 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004 数据与几何事实全部保留；新增语义图层事实——59 充电桩矩阵与 charge 节点世界坐标一致、1,187 方垫按节点序逐块核对颜色与位置（1,185 浅黄 + 2 紫）、1,185+7+1 名称条目 key 唯一、图集布局容纳全部名称无丢弃、7 独占区锚点=成员包围盒中心、成员物理路径全部有效并合并为单个外沿几何（顶点数=段数×4）、dispose 幂等 | 通过 |
-| 架构检查 | `pnpm test:architecture`（真实 src 83 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| 单元测试 | `pnpm test:unit`（Vitest + jsdom，23 文件 229 例：TASK-002～005 全部保留；TASK-006 新增 76 例——validateVehicle 归一化/拒绝/字段级隔离 19 例、deriveVehicleState 表驱动组合与投影 24 例、applyVehicleEvents 四类事件/空快照/重复/删除/地图隔离/外壳拒绝 12 例、createFleetRuntime 单调时间/10s STALE/脏集合最小化 10 例、fleetMonitoringStore 幂等通知 4 例、vehicleFixture 集成 6 例） | 通过（229/229） |
+| 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004/005 数据、几何与语义图层事实全部保留 | 通过 |
+| 当前车辆夹具 | `vehicleFixture.integration.test.ts`：`json/vehicle.json` 重新校验——agvKey 19 位字符串原样保留、TRAFFIC_WAIT（D5）、LOW_BATTERY、LOADED、ONLINE、centerOffset=0.25、位置/尺寸合法、locked 1 + applying 3 原样保留、运行时 10s STALE 跃迁且冻结副徽标=TRAFFIC_WAIT | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 102 模块 0 违规；负例全部命中；正例零误报） | 通过 |
 | 构建 | `pnpm build`（含 `copyStaticAssets` 与 `verifyDist`） | 通过 |
 | dist 校验 | `pnpm verify:dist`（index/config/map 存在、相对路径引用、白名单与凭据检查、map.json 可解析） | 通过 |
 | 部署冒烟 | `pnpm smoke:dist`（根路径 `/`、子路径 `/monitor/`、模拟配置失败 `/broken/` 三挂载 HTTP 冒烟） | 通过 |
 | 差异检查 | `git diff --check` | 通过（无空白错误；仅 CRLF 提示） |
-| 浏览器自测 | Coding Agent 调用浏览器自动化技能（内嵌 Chromium，1280×720）访问 `pnpm dev`：唯一全屏 Canvas、无滚动、body 仅 `#root` 无任何 DOM 覆盖层；远/近景经 rAF 帧内 `toDataURL` 取证——远景 45° 初始取景下完整静态地图可见且全部名称按距离隐藏；近景充电站（世界 114.4,36.3）可见青色充电桩、底部光环与顶部呼吸灯、浅黄仓库方垫与 JS-PICK 系列合批名称（远处名称渐隐）；近景独占区可见成员路径蓝色低透明外沿与「独占区1~4」蓝色分组名称；近景停车点可见 2 个紫色方垫 + 白色 P 字形；呼吸动画以两帧像素差分取证（3,333 像素变化，场景唯一动画）；`renderer.info` 全场景 Draw Call = 16 | 通过 |
+| 浏览器自测 | TASK-006 为纯模型层（无应用组合/渲染/浏览器生命周期变化），按任务书无需浏览器自测；最近一次为 TASK-005（内嵌 Chromium 1280×720，远/近景 rAF 帧内取证：完整静态地图、名称距离显隐、呼吸动画、全场景 Draw Call=16） | 不适用 / 上次通过 |
 
 浏览器自测备注：内嵌浏览器面板在宿主窗口后台时节流 `requestAnimationFrame`，页面只呈现清屏色且 Canvas 停留在初始尺寸；标准截图命令会强制一帧使 R3F 应用 1280×720 全屏尺寸，但截图管道在节流页面上可能卡死。本轮改用「rAF 回调内同步 `readPixels`/`toDataURL`」完成取证，与 TASK-002/003 记录的环境节流现象一致，不影响真实部署浏览器。
 
