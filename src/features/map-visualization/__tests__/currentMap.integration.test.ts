@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /*
- * 当前地图集成测试（TASK-003 验收核心：A1/A3/E2 的数据事实锁定）。
+ * 当前地图集成测试（TASK-003 数据事实 + TASK-004 物理路径几何事实）。
  *
  * 职责：从当前输入 json/map.json 重新计算并锁定 SPEC §2.3 的全部数据不变量，
  *       输入发生合法变化时，直接更新本文件中的期望值（不保留旧值说明）。
@@ -10,17 +10,30 @@
  * 2. 4 个弱连通分量，节点数 2,001 / 1,187 / 796 / 307，每个分量都含充电站；
  * 3. 存在无出边的工作节点（死路拓扑是合法输入，Mock 不得崩溃）；
  * 4. 节点「1644」存在且坐标与当前车辆夹具对齐（A4 基准点）；
- * 5. 全部逻辑边物理长度为正有限值。
+ * 5. 全部逻辑边物理长度为正有限值；
+ * 6. 物理路径去重（TASK-004 / A1、A3）：5,068 条物理路径（3,351 LINE /
+ *    1,717 BEZIER）、4,197 条反向重复几何、约 44,559 个中心线段，
+ *    映射覆盖全部逻辑边。
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMapModel } from '@/features/map-visualization/model/createMapModel'
 import { validateMap } from '@/features/map-visualization/model/validateMap'
+import {
+  buildMapGeometry,
+  dedupePhysicalPaths,
+} from '@/features/map-visualization/scene/buildMapGeometry'
+import { NODE_COLORS } from '@/features/map-visualization/scene/mapAppearance'
+import * as THREE from 'three'
 
 // vitest 以仓库根为工作目录运行（jsdom 下 import.meta.url 非 file: 协议）
 const MAP_JSON_PATH = path.resolve(process.cwd(), 'json/map.json')
 const RAW_MAP: unknown = JSON.parse(readFileSync(MAP_JSON_PATH, 'utf8'))
+
+// 全文件共享同一份校验与建模结果（两个 describe 分别锁定数据事实与几何事实）
+const VALIDATED = validateMap(RAW_MAP)
+const MODEL = createMapModel(VALIDATED)
 
 const EXPECTED = {
   mapId: '9f80a2f295884fac8ae587c955d8d0ab',
@@ -32,14 +45,18 @@ const EXPECTED = {
   typeCounts: { work: 3045, warehouse: 1185, charge: 59, park: 2, unknown: 0 },
   componentSizes: [2001, 1187, 796, 307],
   node1644: { id: 'gMBuAPSj2df7eHU5211p1PEA3ZcM2qW9', x: 203.23966291396653, y: 4.558880330321202 },
+  physicalPathCount: 5068,
+  linePhysicalPaths: 3351,
+  bezierPhysicalPaths: 1717,
+  duplicateEdgeCount: 4197,
+  centerSegmentCount: 44559,
 } as const
 
 describe('当前地图（json/map.json）数据不变量', () => {
-  const validated = validateMap(RAW_MAP)
-  const { mapModel, worldTransform } = createMapModel(validated)
+  const { mapModel, worldTransform } = MODEL
 
   it('节点、逻辑边与独占区数量符合当前输入，且零丢失引用（校验异常为空）', () => {
-    expect(validated.anomalies).toEqual([])
+    expect(VALIDATED.anomalies).toEqual([])
     expect(mapModel.nodeList).toHaveLength(EXPECTED.nodeCount)
     expect(mapModel.edgeList).toHaveLength(EXPECTED.edgeCount)
     expect(mapModel.groupList).toHaveLength(EXPECTED.groupCount)
@@ -144,5 +161,88 @@ describe('当前地图（json/map.json）数据不变量', () => {
       46.5 - -79.38743879154408,
       6,
     )
+  })
+})
+
+describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 / A1、A3）', () => {
+  const { mapModel, worldTransform } = MODEL
+  const physical = dedupePhysicalPaths(mapModel)
+  const geometry = buildMapGeometry(mapModel, worldTransform)
+
+  it('归一化几何签名去重得到 5,068 条物理路径（3,351 LINE / 1,717 BEZIER），4,197 条反向重复几何被合并', () => {
+    expect(physical.physicalPaths).toHaveLength(EXPECTED.physicalPathCount)
+    expect(physical.duplicateEdgeCount).toBe(EXPECTED.duplicateEdgeCount)
+    const linePaths = physical.physicalPaths.filter((path) => path.edgeType === 'LINE')
+    expect(linePaths).toHaveLength(EXPECTED.linePhysicalPaths)
+    expect(physical.physicalPaths.length - linePaths.length).toBe(EXPECTED.bezierPhysicalPaths)
+  })
+
+  it('中心线段总数为 44,559；LINE 路径 2 个采样点、BEZIER 路径 25 个采样点', () => {
+    expect(physical.centerSegmentCount).toBe(EXPECTED.centerSegmentCount)
+    for (const path of physical.physicalPaths) {
+      if (path.edgeType === 'LINE') {
+        expect(path.points).toHaveLength(2)
+      } else {
+        expect(path.points).toHaveLength(24 + 1)
+      }
+      for (const point of path.points) {
+        expect(Number.isFinite(point.x)).toBe(true)
+        expect(Number.isFinite(point.y)).toBe(true)
+      }
+    }
+  })
+
+  it('逻辑边 → 物理路径映射覆盖全部 9,265 条逻辑边，无遗漏无重复', () => {
+    expect(physical.physicalPathIndexOfEdge.size).toBe(EXPECTED.edgeCount)
+    const covered = new Set<string>()
+    for (const path of physical.physicalPaths) {
+      for (const edgeId of path.logicalEdgeIds) {
+        expect(covered.has(edgeId)).toBe(false)
+        covered.add(edgeId)
+      }
+    }
+    expect(covered.size).toBe(EXPECTED.edgeCount)
+    for (const edgeId of mapModel.edges.keys()) {
+      expect(covered.has(edgeId)).toBe(true)
+    }
+  })
+
+  it('静态几何规模与节点实例数据正确（一个 InstancedMesh 渲染全部节点）', () => {
+    const centerline = geometry.pathsCenterline.getAttribute('position')
+    expect(centerline.count).toBe(EXPECTED.centerSegmentCount * 2)
+    const surface = geometry.pathsSurface.getAttribute('position')
+    // 每个中心线段展开为一个路面四边形（4 顶点 / 2 三角形）
+    expect(surface.count).toBe(EXPECTED.centerSegmentCount * 4)
+    expect(geometry.pathsSurface.getIndex()?.count).toBe(EXPECTED.centerSegmentCount * 6)
+
+    expect(geometry.nodeInstances.count).toBe(EXPECTED.nodeCount)
+    expect(geometry.nodeInstances.matrices).toHaveLength(EXPECTED.nodeCount * 16)
+    expect(geometry.nodeInstances.colors).toHaveLength(EXPECTED.nodeCount * 3)
+  })
+
+  it('节点「1644」实例矩阵与世界坐标一致（A4 基准点的渲染侧对齐）', () => {
+    const node = mapModel.nodes.get(EXPECTED.node1644.id)!
+    const index = mapModel.nodeList.indexOf(node)
+    const world = worldTransform.toWorldXZ(node.x, node.y)
+    const m = index * 16
+    // 实例矩阵为 Float32 存储，比较精度放宽到 float32 量级
+    expect(geometry.nodeInstances.matrices[m + 12]).toBeCloseTo(world.x, 4)
+    expect(geometry.nodeInstances.matrices[m + 14]).toBeCloseTo(world.z, 4)
+    // work 节点颜色为蓝绿色（颜色表与实例颜色一致）
+    const expected = new THREE.Color(NODE_COLORS.work)
+    expect(geometry.nodeInstances.colors[index * 3]).toBeCloseTo(expected.r, 5)
+    expect(geometry.nodeInstances.colors[index * 3 + 1]).toBeCloseTo(expected.g, 5)
+    expect(geometry.nodeInstances.colors[index * 3 + 2]).toBeCloseTo(expected.b, 5)
+  })
+
+  it('静态几何可幂等释放', () => {
+    const surfaceSpy = vi.spyOn(geometry.pathsSurface, 'dispose')
+    const centerlineSpy = vi.spyOn(geometry.pathsCenterline, 'dispose')
+    geometry.dispose()
+    expect(surfaceSpy).toHaveBeenCalledTimes(1)
+    expect(centerlineSpy).toHaveBeenCalledTimes(1)
+    expect(() => geometry.dispose()).not.toThrow()
+    surfaceSpy.mockRestore()
+    centerlineSpy.mockRestore()
   })
 })
