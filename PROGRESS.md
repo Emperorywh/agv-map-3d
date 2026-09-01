@@ -28,7 +28,7 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 9 个提交（TASK-003～TASK-011 待推送） |
+| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 10 个提交（TASK-003～TASK-011 待推送） |
 | HEAD | TASK-011 实施提交（TASK-010 提交之后） |
 | 未提交差异 | 无（PROGRESS.md 更新随 TASK-011 提交完成） |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
@@ -110,7 +110,7 @@
 - app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置、地图上下文与世界变换构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 与 `FleetMonitoringFeature` 并以 Provider 注入车队运行时。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
-- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（155 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（163 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
 - 尚无选择/告警环与交通资源（TASK-012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。标签的选中边框实例属性路径已就绪（选中交互接线属 TASK-012）。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
 
