@@ -176,6 +176,9 @@ export function App() {
         mapDescriptor={startup.phase === 'ready' ? startup.mapDescriptor : null}
         vehicleSource={vehicleSource}
         staleAfterMs={startup.phase === 'ready' ? startup.config.staleAfterMs : undefined}
+        worldTransform={
+          startup.phase === 'ready' ? (startup.mapDescriptor.initial?.worldTransform ?? null) : null
+        }
       />
     </Canvas>
   )

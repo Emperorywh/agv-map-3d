@@ -11,12 +11,12 @@
 | 字段 | 当前值 |
 |---|---|
 | 项目状态 | `IN_PROGRESS` |
-| 当前 Task | `TASK-010 AGV 程序化模型、槽位与实例批渲染` |
+| 当前 Task | `TASK-011 图集化 WebGL 车辆标签` |
 | 当前 Task 状态 | `TODO` |
-| 已完成工程 Task | `9 / 21` |
+| 已完成工程 Task | `10 / 21` |
 | 条件任务 | `TASK-021 WAITING_EXTERNAL` |
 | 验收 Gate | GATE-001、GATE-002、GATE-003 均为 `NOT_READY` |
-| 当前下一步 | 将 TASK-010 改为 `IN_PROGRESS` 后，实现实例槽位管理（初始 256/步长 256/硬上限 512）、`createVehicleGeometry`、`fleetAppearance`、`VehicleInstances`、`useFleetFrameSync`、`FleetMonitoringFeature` 根组件与 app 接线；`selectVehicleDataSource` 已按 Mock 分支就绪，Mock 数据流（60 台默认、250 台可调）已在真实浏览器验证流动 |
+| 当前下一步 | 将 TASK-011 改为 `IN_PROGRESS` 后，实现 `labelAtlas`（2048×2048 图集 + 256 个 256×64 名称槽，局部重绘）、标签 shader（状态色/电量/选中/告警走实例属性）、`VehicleLabels` 实例化 billboard（每 256 批次 ≤2 个 Draw Call）、远近显隐（8px/20px 分级 + 远景 20 个重点标签：选中>FAULT>STALE>OFFLINE>严重低电量>低定位）、STALE/OFFLINE 副徽标、中文名称与 `FleetMonitoringFeature` 接线；槽位表与帧同步 Hook 已提供图集槽位管理可复用的形态参考 |
 | 项目完成条件 | TASK-001～TASK-021 全部 `DONE`，GATE-001～GATE-003 全部通过，SPEC A1～F6 均有当前证据 |
 
 编号是推荐交付顺序，执行前必须核对真实依赖。`WAITING_EXTERNAL` 的 TASK-021 不阻塞 TASK-018～020；其他 Task 只有在自身依赖全部 `DONE` 后才能开始。
@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 7 个提交（TASK-003～TASK-009 待推送） |
-| HEAD | TASK-009 实施提交（TASK-008 提交之后） |
-| 未提交差异 | 无（PROGRESS.md 更新随 TASK-009 提交完成） |
+| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 8 个提交（TASK-003～TASK-010 待推送） |
+| HEAD | TASK-010 实施提交（TASK-009 提交之后） |
+| 未提交差异 | 无（PROGRESS.md 更新随 TASK-010 提交完成） |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -91,12 +91,20 @@
   - `data-source/mockDevBridge.ts` + app 接线：`window.__AGV_MOCK__`（setVehicleCount/setPaused/setScenarioEnabled/resetSimulation/getSeed/getStats）由 App 提交阶段 effect 在「开发模式 + Mock 数据源」时注册、卸载对称摘除——StrictMode 双渲染下 render 阶段注册会指向被丢弃实例（本轮实测复现并修复），effect 始终持有被提交且被连接的同一实例；生产构建 `import.meta.env.DEV` 静态替换为 false 后整块死代码消除（dist grep 0 命中，浏览器实测无该全局）。
   - `selectVehicleDataSource` Mock 分支：以 `mapModel` 为硬前置（Mock 必须在 MapModel 拓扑就绪后创建），缺失时降级 null 并记 `DATA_SOURCE_UNAVAILABLE`；WS 分支不依赖该屏障；本模块保持纯工厂，桥注册归 App effect。`App.tsx` 就绪态携带 mapModel 传入。
   - 确定性验证：同 seed + 注入时钟/随机源下 130s 完整事件序列（含 receivedAt）逐位一致，不同 seed 不同；真实地图集成测试锁定 200s 窗口覆盖全部验收事件（含充电）、删一增一后规模守恒、250 台压力规模可用。
-- app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置与地图上下文构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 并以 Provider 注入车队运行时。
+- TASK-010 已完成 AGV 程序化模型、槽位与实例批渲染（`src/features/fleet-monitoring/` 的 `model/instanceSlots.ts`、`scene/`、`components/`、`hooks/useFleetFrameSync.ts`）：
+  - `model/instanceSlots.ts`：实例槽位表——批次容量 256（250 台压力模式单批）、超容量按 256 步长扩批、硬上限默认 512；空闲栈 LIFO 复用（弹栈序即槽位升序），硬上限满时实体进 FIFO 等待队列并在槽位释放时原子转派（release 返回 `{freed, admitted}` 供渲染层对补录车立即全量写入）；`resolve(batch, slot)` 反向映射 O(1) 支持外壳拾取 `(batchId, instanceId)`→实体键；末批按硬上限截断，截断槽位永不分配。
+  - `scene/fleetAppearance.ts`：车辆视觉常量唯一事实源——主状态→车体色映射（STALE 冻结灰 / DISCONNECTED 深灰 / FRESH 业务色，与投影规则同序）、部件固定高度阶梯、方向楔占比与亮度系数、FAULT 信标自旋 4.5rad/s 与闪烁 1.6Hz、假阴影参数；充电色与 charge 节点、执行色与 work 节点同色系。
+  - `scene/createVehicleGeometry.ts`：纯函数布局 + 几何工厂——`computeVehiclePartLayout(snapshot, displayState)` 产出七部件（底盘/外壳/+x 方向楔/载荷平台/托盘/警示灯/车底假阴影）本地中心与全尺寸（每车 `length/width/loadLength/loadWidth` 分别进入矩阵，固定高度只进 y 分量）；`computeVehicleWorldPose` 按 §2.5 唯一口径合成 centerOffset 位移与 `rotation.y=-theta`；`visible = positionValid && dimensionValid`（非法车不放置）、`beaconActive` 当且仅当投影主状态为 FAULT；几何工厂产出共享单位盒、三角棱柱方向楔（非索引顶点 + computeVertexNormals，鼻尖 +x）、穹顶+扫掠叶片信标（mergeGeometries 手工合并）、水平阴影面片与七份材质，由 Feature 根组件单一持有、dispose 幂等。
+  - `hooks/useFleetFrameSync.ts`：运行时脏集合的唯一帧消费者——每帧 `consumeDirty` 一次，位姿差写六部件矩阵（信标由显示/动画路径负责）、显示差写外壳/楔实例颜色与平台托盘可见性、删除释放槽位并零缩放清场（转派时对补录车立即全量写入）；FAULT 信标逐帧写自旋矩阵与正弦亮度脉动实例颜色，熄灭为零缩放；(批次,部件) 脏标记合并为每帧至多一次 `needsUpdate`（未变化槽位不写）；扩批经 `onBatchCountChanged` 上抛 setState 挂载新批次，挂载后按批次数组身份触发一次全量重写——全量重写以运行时实体表为唯一事实源（重挂载/地图就绪后脏集合即使已被消费也完整收敛）；非法位置车不占槽位且整车零缩放；硬上限溢出记 `FLEET_RENDER_CAPACITY_EXCEEDED` 采样诊断（回落后可再告警）。
+  - `components/VehicleInstances.tsx`：批次挂载组件——每批次恒 7 个 InstancedMesh（200 台 = 7 Draw Call ≤ 8），实例矩阵零缩放初始化 + DynamicDrawUsage，`frustumCulled=false`，castShadow=false（车辆不投实时阴影，假阴影独立半透明贴片）；仅外壳保留 raycast 并携带 `userData.batchId`，其余部件 raycast 置空；批次数是唯一进入 React state 的结构值（key 携带批次数强制走干净卸载/挂载路径，规避 R3F primitive 换 object 的重建丢弃）。
+  - `components/FleetMonitoringFeature.tsx`：Feature 公开根组件——消费 `useFleetRuntime`，单一持有 `VehicleResources`（useMemo 创建、卸载幂等释放），`worldTransform=null`（地图未就绪）渲染 null 且不创建实例缓冲，运行时继续积累事件、就绪后首帧全量收敛。
+  - app 接线：`App.tsx` 就绪态把 bootstrap 产物的 `worldTransform` 传入 `AgvMonitorScene`，场景组合根在 `FleetRuntimeProvider` 内挂载 `FleetMonitoringFeature`（fleet-monitoring 不导入地图实现，坐标转换由 app 注入，SPEC §12.4）；`index.ts` 公开 `FleetMonitoringFeature` 与 props 类型。
+- app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置、地图上下文与世界变换构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 与 `FleetMonitoringFeature` 并以 Provider 注入车队运行时。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
-- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（143 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（154 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
-- 尚无车辆模型渲染与实例批（TASK-010）、标签/选择/交通资源（TASK-011/012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
+- 尚无车辆标签、选择/告警环与交通资源（TASK-011/012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
 
 ### 2.3 当前数据输入
 
@@ -132,7 +140,7 @@
 | TASK-007 | WebSocket 数据源与 React 生命周期 | 006 | `DONE` |
 | TASK-008 | Mock 拓扑、运动与充电内核 | 003、006 | `DONE` |
 | TASK-009 | Mock 数据源、确定性场景与启动接线 | 007、008 | `DONE` |
-| TASK-010 | AGV 程序化模型、槽位与实例批渲染 | 004、006、009 | `TODO` |
+| TASK-010 | AGV 程序化模型、槽位与实例批渲染 | 004、006、009 | `DONE` |
 | TASK-011 | 图集化 WebGL 车辆标签 | 010 | `TODO` |
 | TASK-012 | 选择、告警环与交通资源表达 | 010、011 | `TODO` |
 | TASK-013 | 相机、车辆跟随与完整交互 | 004、010、012 | `TODO` |
@@ -149,14 +157,14 @@
 
 | 字段 | 当前内容 |
 |---|---|
-| Task | `TASK-010 AGV 程序化模型、槽位与实例批渲染` |
+| Task | `TASK-011 图集化 WebGL 车辆标签` |
 | 状态 | `TODO` |
-| 当前目标 | Mock 车辆在实际地图上以程序化 AGV 批量渲染，所有车体属性在下一帧同步，形成 FleetMonitoringFeature 的可运行核心 |
-| 当前主要范围 | 实例槽位管理、`createVehicleGeometry`、`fleetAppearance`、`VehicleInstances`、`useFleetFrameSync`、`FleetMonitoringFeature` 根组件、app 接线和 R3F 集成测试 |
-| 当前已有实现 | TASK-006 车队运行时（快照/脏集合/`ReadonlyFleetRuntime`）、TASK-009 Mock 数据流（60 台默认已在真实浏览器验证流动）、`FleetRuntimeProvider`/`useFleetRuntime` Context 均就绪；`AgvMonitorScene` 已预留 FleetMonitoringFeature 组合位 |
-| 当前待完成 | 以 `TASKS.md` 的 TASK-010 为准实现：初始容量 256、按 256 扩容、默认硬上限 512；删除复用槽位，超上限保留快照并记录未渲染数；底盘/外壳/方向楔/载荷平台/托盘/警示灯/车底假阴影按每车尺寸及 centerOffset 进矩阵；FAULT 警示灯旋转闪烁、OFFLINE/STALE 熄灭；多子部件 InstancedMesh 每帧只提交脏批次；外壳拾取映射 `(batchId,instanceId)`；删除清理矩阵和槽位 |
+| 当前目标 | 每辆可渲染车辆拥有场景内名称、主状态和电量表达，标签在远近景、状态组合和批次扩容下保持可读且不使用 DOM |
+| 当前主要范围 | `VehicleLabels`、`labelAtlas`、标签 shader、标签实例属性、FleetMonitoringFeature 接线和共置测试 |
+| 当前已有实现 | TASK-010 实例批渲染完整就位：槽位表（256/256/512 + 空闲复用 + 等待队列转派 + 拾取反查）、七部件程序化车体、`useFleetFrameSync` 脏批次帧同步、`FleetMonitoringFeature` 根组件与 app 世界变换注入；60 台默认车队已在真实浏览器验证在地图路网上渲染并随事件移动 |
+| 当前待完成 | 以 `TASKS.md` 的 TASK-011 为准实现：每 256 容量批次 2048×2048 图集及 256 个 256×64 名称槽、名称变化只重绘目标单元；状态/电量/选中/告警走实例属性与 shader；billboard 朝相机；投影 8px/20px 分级显隐；远景最多 20 个重点标签（选中、FAULT、STALE、OFFLINE、严重低电量、低定位优先级）；STALE/OFFLINE/UNKNOWN 保留最后业务状态副徽标；中文名称可用；单个 256 批次 ≤2 标签 Draw Call |
 | 当前阻塞 | 无 |
-| 完成后可开始 | TASK-011（依赖 010） |
+| 完成后可开始 | TASK-012（依赖 010、011） |
 
 Task 开始后，把本卡直接替换为实际进行中的工作：当前修改文件、当前成功验证、当前失败原因、当前剩余步骤和下一条可执行命令。Task 完成后删除已解决问题，只保留完成结果和新的当前指针。
 
@@ -164,20 +172,20 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 
 | 范围 | 当前命令或检查 | 当前结果 |
 |---|---|---|
-| Lint | `pnpm lint` | 通过（129 文件，0 警告 0 错误） |
+| Lint | `pnpm lint` | 通过（140 文件，0 警告 0 错误） |
 | TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
-| 单元测试 | `pnpm test:unit`（Vitest + jsdom，39 文件 369 例：TASK-002～008 全部保留；TASK-009 新增 44 例——内核动态增删车 5 例（比例补足分量、序号永不复用、低电量前 N 台、增删序列可复现）、交通矩形 5 例（凸性/朝向/外扩形态/平移）、验收时间线 5 例（全事件覆盖、单调游标、循环窗口、reset）、Mock 数据源 20 例（连接状态机与四类事件、2Hz ±50% 抖动上下界、心跳、暂停不积累位移、确定性逐位一致与种子区分、E3 覆盖、开发控制、压力规模、AbortSignal、StrictMode 式重连、订阅者隔离）、开发桥 2 例、真实地图集成 4 例、选型 Mock 分支 2 例 | 通过（369/369） |
+| 单元测试 | `pnpm test:unit`（Vitest + jsdom，44 文件 411 例：TASK-002～009 全部保留；TASK-010 新增 42 例——实例槽位 12 例（幂等分配、0/1/200/250/256/257/512/513 容量边界、空闲复用、硬上限等待队列 FIFO 转派、截断批次、拾取映射互逆、500 步随机增删参考模型）、几何与布局 10 例（§2.5 centerOffset 世界位姿与角度符号、七部件固定高度阶梯与每车尺寸、非法位置/尺寸 visible=false、FAULT/STALE/OFFLINE 信标激活语义、方向楔 +x 鼻尖、信标叶片、单位几何、dispose 幂等）、帧同步与实例批 12 例（下一帧整车矩阵/颜色同步、theta=π/2 车头方向、未变化槽位零提交与脏批次合并、删除清场零缩放与槽位复用、FAULT 信标旋转闪烁与断连熄灭、STALE 冻结灰、非法位置不占槽位、250/257 批次扩容、513 超硬上限补录与诊断、worldTransform 注入收敛、StrictMode 双挂载、拾取元数据与 raycast 关闭）、Feature 根组件 2 例（50 条高频增量零 React 重渲染 + 场景对象身份不变、worldTransform=null 不挂载批次）、app 组合层 A4 对齐集成 4 例（当前车辆参考点与节点「1644」世界距离 <1mm、centerOffset=0.25 世界距离守恒且 rotation.y=-θ、TRAFFIC_WAIT 投影下车体可见/载货/信标熄灭/楔在 +x、每车尺寸进入部件矩阵——经两 Feature 公开入口在 app 层完成跨域事实验证） | 通过（411/411） |
 | 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004/005 数据、几何与语义图层事实全部保留；`mockDataSource.integration.test.ts`：默认 60 台位置落在当前地图坐标范围、200s 窗口覆盖全部验收事件（含充电约 172s）、固定 seed 事件序列逐位一致、250 台可用 | 通过 |
-| 当前车辆夹具 | `vehicleFixture.integration.test.ts`：`json/vehicle.json` 重新校验——TRAFFIC_WAIT（D5）、LOW_BATTERY、LOADED、ONLINE、locked 1 + applying 3、运行时 10s STALE 跃迁 | 通过 |
-| 架构检查 | `pnpm test:architecture`（真实 src 143 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| 当前车辆夹具 | `vehicleFixture.integration.test.ts`：`json/vehicle.json` 重新校验——TRAFFIC_WAIT（D5）、LOW_BATTERY、LOADED、ONLINE、locked 1 + applying 3、运行时 10s STALE 跃迁；`vehicleSceneAlignment.integration.test.ts`（app 组合层）：当前车辆与节点「1644」及方向、centerOffset、部件尺寸矩阵对齐（A4） | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 154 模块 0 违规；负例全部命中；正例零误报） | 通过 |
 | 构建 | `pnpm build`（含 `copyStaticAssets` 与 `verifyDist`） | 通过 |
 | dist 校验 | `pnpm verify:dist`（index/config/map 存在、相对路径引用、白名单与凭据检查、map.json 可解析） | 通过 |
 | 部署冒烟 | `pnpm smoke:dist`（根路径与子路径静态冒烟） | 通过 |
 | 生产无 Mock 全局 | `grep -c "__AGV_MOCK__" dist/assets/*.js` | 0 命中（死代码消除生效） |
 | 差异检查 | `git diff --check` | 通过（无空白错误；仅 CRLF 提示） |
-| 浏览器自测 | TASK-009 启动接线自测（Chromium，dev 与生产构建各一轮）：唯一全屏 Canvas（1280×720）且零 DOM 覆盖层；dev+Mock 下 `window.__AGV_MOCK__` 存在，`getStats` 显示 snapshot 1 / update 1769+ / heartbeat 5 且 simTimeSeconds 持续推进；`setVehicleCount` 60→61→60 生效；`setPaused(true)` 期间 simTime 精确冻结（29.0406→29.0406）且无新事件、恢复后继续推进；完整地图持续渲染（dev 与生产截图取证）；生产构建 `__AGV_MOCK__` 实测不存在 | 通过（TASK-009） |
+| 浏览器自测 | TASK-010 车辆渲染自测（Chromium 内嵌面板，dev 模式）：唯一全屏 Canvas（1280×720）且零 DOM 覆盖层；完整地图 + 60 台 Mock 车辆以状态色（IDLE 蓝/TRAFFIC_WAIT 琥珀/EXECUTING 绿等）沿路网渲染并随事件移动（间隔 10s 截图点阵位移 + simTime 81.5→92.3、update 4854→5514）；开发桥压测 `setVehicleCount(250)` 后路网车点密度同步增加、场景无退化；`setPaused(true)` 期间 simTime 精确冻结（322.4905→322.4905）且零 update，恢复后 60 台继续流动；远距取景下车体为单像素级（初始 45° 取景覆盖全厂区，近景交互相机属 TASK-013），车体七部件形态由 R3F 测试渲染器矩阵级断言覆盖 | 通过（TASK-010） |
 
-浏览器自测备注：内嵌浏览器面板被宿主窗口遮挡时 `requestAnimationFrame` 完全饿死（实测 120ms 0 帧），R3F 子树（独立 reconciler）的 props 提交随渲染循环延迟——App 主树已就绪而 Provider 迟迟收不到数据源，强制帧（截图）后连接立即完成并正常流动；该现象属已知环境特性，不影响真实前台部署浏览器，后台节流的产品语义归 TASK-015。`config.json` 当前为 `dataSource=mock`。
+浏览器自测备注：内嵌浏览器面板被宿主窗口遮挡时 `requestAnimationFrame` 完全饿死（实测 1000ms 0 帧），Mock 数据链（setTimeout）与 R3F 渲染随之停滞；面板置为可见后数据流恢复，每张强制截图触发一次 BeginFrame 渲染帧（画面随之更新）。该现象属已知环境特性，不影响真实前台部署浏览器，后台节流的产品语义归 TASK-015。`config.json` 当前为 `dataSource=mock`。当前车辆夹具与节点「1644」的 §2.5 对齐在数据层由 TASK-006 锁定、渲染路径口径（centerOffset 合成、rotation.y 符号）由本轮几何单测以合成变换锁定，车辆沿真实路网行驶为浏览器目视证据。
 
 本节只保留当前 Task 的最终有效验证状态。重跑后直接替换结果；失败被修复后删除已失效的失败描述，不追加验证流水账。
 

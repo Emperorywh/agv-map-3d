@@ -70,6 +70,27 @@ vi.mock('@/features/map-visualization', async (importOriginal) => {
   }
 })
 
+/** 捕获传给车队 Feature 的世界变换（TASK-010 接线：app 注入坐标转换） */
+const fleetCapture = vi.hoisted(() => ({
+  worldTransform: undefined as unknown,
+}))
+
+vi.mock('@/features/fleet-monitoring', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/fleet-monitoring')>()
+  return {
+    ...actual,
+    // jsdom 无 R3F 宿主：场景子组件以 DOM 替身验证 App 层接线合同
+    FleetRuntimeProvider: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    FleetMonitoringFeature: (props: { worldTransform: unknown }) => {
+      fleetCapture.worldTransform = props.worldTransform
+      return <div data-testid="fleet-feature" />
+    },
+  }
+})
+
 vi.mock('@/app/bootstrap/bootstrapApplication', () => ({
   bootstrapApplication: vi.fn(),
 }))
@@ -157,6 +178,7 @@ afterEach(() => {
   vi.useRealTimers()
   mockBootstrap.mockReset()
   capture.mapDescriptor = undefined
+  fleetCapture.worldTransform = undefined
   selectCapture.options = []
   selectCapture.returnValue = null
 })
@@ -213,6 +235,9 @@ describe('App DOM 外壳', () => {
     }
     expect(descriptor.mapUrl).toBe('http://t/json/map.json')
     expect(descriptor.initial.mapModel).toBe(result.mapModel)
+    // TASK-010 接线：世界变换与描述符同源注入车队 Feature（坐标唯一口径）
+    await waitFor(() => expect(fleetCapture.worldTransform).not.toBeNull())
+    expect(fleetCapture.worldTransform).toBe(result.worldTransform)
   })
 
   it('数据源选择按就绪配置执行一次，Mock 分支携带地图拓扑（TASK-009）', async () => {

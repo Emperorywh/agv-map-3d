@@ -52,6 +52,25 @@ export {
 export { DEFAULT_STALE_AFTER_MS } from './model/createFleetRuntime'
 export type { DirtyBatch, FleetDiff, ReadonlyFleetEntity, ReadonlyFleetRuntime } from './model/createFleetRuntime'
 export { FleetRuntimeProvider } from './components/FleetRuntimeProvider'
+export { FleetMonitoringFeature } from './components/FleetMonitoringFeature'
+export type { FleetMonitoringFeatureProps } from './components/FleetMonitoringFeature'
+export { SLOT_BATCH_CAPACITY, SLOT_CAPACITY_STEP, SLOT_HARD_CAP } from './model/instanceSlots'
+export type { VehicleSlot } from './model/instanceSlots'
+export {
+  computeVehiclePartLayout,
+  computeVehicleWorldPose,
+  createVehicleResources,
+  INSTANCE_COLOR_PARTS,
+  VEHICLE_PART_KINDS,
+} from './scene/createVehicleGeometry'
+export type {
+  PartPlacement,
+  VehiclePartKind,
+  VehiclePartLayout,
+  VehicleResources,
+  VehicleWorldPose,
+} from './scene/createVehicleGeometry'
+export { shellColorOf } from './scene/fleetAppearance'
 export {
   WS_MAX_CONSECUTIVE_DECODE_FAILURES,
   WS_READY_STATE_CONNECTING,
