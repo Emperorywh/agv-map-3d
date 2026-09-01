@@ -11,12 +11,12 @@
 | 字段 | 当前值 |
 |---|---|
 | 项目状态 | `IN_PROGRESS` |
-| 当前 Task | `TASK-008 Mock 拓扑、运动与充电内核` |
+| 当前 Task | `TASK-009 Mock 数据源、确定性场景与启动接线` |
 | 当前 Task 状态 | `TODO` |
-| 已完成工程 Task | `7 / 21` |
+| 已完成工程 Task | `8 / 21` |
 | 条件任务 | `TASK-021 WAITING_EXTERNAL` |
 | 验收 Gate | GATE-001、GATE-002、GATE-003 均为 `NOT_READY` |
-| 当前下一步 | 将 TASK-008 改为 `IN_PROGRESS` 后，实现固定种子、可复现的 Mock 仿真内核（四分量分配、有向 Dijkstra、LINE/BEZIER 弧长运动、寻充与死路安全停车），不创建计时器、React 或 Three 对象 |
+| 当前下一步 | 将 TASK-009 改为 `IN_PROGRESS` 后，实现 MockVehicleDataSource（2Hz ±50% 抖动、四类显式事件）、确定性验收场景时间线、`window.__AGV_MOCK__` 开发桥与 `selectVehicleDataSource`/bootstrap 的 Mock 分支接线 |
 | 项目完成条件 | TASK-001～TASK-021 全部 `DONE`，GATE-001～GATE-003 全部通过，SPEC A1～F6 均有当前证据 |
 
 编号是推荐交付顺序，执行前必须核对真实依赖。`WAITING_EXTERNAL` 的 TASK-021 不阻塞 TASK-018～020；其他 Task 只有在自身依赖全部 `DONE` 后才能开始。
@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 5 个提交（TASK-003～TASK-007 待推送） |
-| HEAD | TASK-007 实施提交（TASK-006 提交之后） |
-| 未提交差异 | 无（工作区干净；TASK-007 已随提交完成） |
+| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 6 个提交（TASK-003～TASK-008 待推送） |
+| HEAD | TASK-008 实施提交（TASK-007 提交之后） |
+| 未提交差异 | 无（PROGRESS.md 更新随 TASK-008 提交完成） |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -75,12 +75,20 @@
   - `hooks/FleetRuntimeContext.ts` + `components/FleetRuntimeProvider.tsx`：Feature 内部稳定 Context——Provider 生命周期内只创建一次 createFleetRuntime（useRef 惰性初始化），低频 status 进 React state、高频事件只写运行时；连接失败仅记 `VEHICLE_SOURCE_CONNECT_FAILED` 诊断，无任何连接 DOM。
   - app 接线：`bootstrap/selectVehicleDataSource.ts` 按 config.dataSource 选型（ws→绑定 mapId 的 WS 数据源，adapter/socketFactory 可注入；mock→TASK-009 实现前显式降级 null 并记 `DATA_SOURCE_UNAVAILABLE`）；`App.tsx` 就绪态携带 config/mapId 并 useMemo 构造数据源；`AgvMonitorScene` 以 `FleetRuntimeProvider` 包裹场景子树（TASK-010 起车辆组件经 useFleetRuntime 消费同一运行时）。
   - `index.ts` 公开合同扩展：WS 数据源工厂与可调常量、协议适配边界类型、`createUnmappedProtocolAdapter`、`FleetRuntimeProvider`；Context 对象与消费 Hook 保持 Feature 内部。
+- TASK-008 已完成 Mock 拓扑、运动与充电内核（`src/features/mock-simulation/`，纯函数领域内核——无计时器、无数据源生命周期、无 React/Three 对象）：
+  - `model/prng.ts`：mulberry32 确定性 PRNG——`DEFAULT_MOCK_SEED=20260901`，`randomInRange`/`randomInt` 防御式回退不抛异常；内核全部随机决策（建车「边→进度→电量→速度→载荷」、到站「电量裁决→出边随机」）消费同一条固定种子流，调用顺序稳定。
+  - `model/pathfinding.ts`：有向 Dijkstra（二叉最小堆 + 距离/插入序决胜）——只沿 `outEdgeIds` 扩展绝不逆行；代价正有限用 `edge.cost`，否则回退物理长度，二者皆不可用按不可通行隔离；`findNearestChargePath` 本分量 charge 多目标早停，可达性天然不跨分量；起点即目标返回空路径。
+  - `model/arcLengthTable.ts`：边弧长遍历表——LINE 线性插值恒定朝向；BEZIER 复用 map-visualization 公开入口的 `sampleCubicBezier`（新增导出，与物理长度/渲染几何三方同一 24 段口径）建立累计弧长表，弧长绝对落点与推进分区无关，theta 取解析切线方向（退化按段弦向→整曲线弦向→0 回退）；端点守恒、越界钳制、零长边退化表。
+  - `model/motion.ts`：两级速度裁决——目标速度 [0.5,1.5]m/s 采样，载荷/空载分别受正有限的 `maxLoadSpeed/maxFreeSpeed` 钳制，缺失或非法视为不限速，结果永不为负。
+  - `model/simulationKernel.ts`：`createMockSimulationKernel(mapModel, options)`——按分量逻辑边数量最大余额法（`allocateByEdgeProportion`）分配车辆并从本分量有向边池随机生成初始位姿；「剩余时间驱动」推进循环按各边限速换算里程、跨边重估限速、单步换边上限 64 次防极短边链；电量按里程消耗，到站低于 25% 触发本分量最近充电寻路、到站充至 90% 恢复任务；死路停在节点、寻充失败停在当前位置，均进入 `IDLE_BLOCKED` 并写入 Mock 数据告警（`MOCK_DEAD_END`/`MOCK_NO_CHARGE_PATH`），不瞬移不跨分量；`step(dt)` 把单步时长钳制到 `maxStepSeconds`（缺省 1s），大时间差丢弃超额部分不累积位移；`getVehicleStates()` 零拷贝只读视图，TASK-009 发布事件前必须复制为不可变快照。
+  - `index.ts` 公开合同：内核工厂与只读状态类型、比例分配、有向寻路、弧长表、速度裁决与 PRNG 原语；TASK-009 的事件生产、场景时间线与交通矩形生成都以此为引擎。
+  - 架构规则校准（在同轮闭环）：`adapter-*-public-entry-only` 拆分为按 Feature 的两条规则并豁免自身目录——此前规则会把 adapter 类 Feature 的正常内部相对导入误判为跨 Feature 违规；负例仍各自命中，正例新增 mock-simulation 内部导入夹具证明零误报。
 - app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置与地图上下文构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 并以 Provider 注入车队运行时。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
 - 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（102 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
-- 尚无 Mock 拓扑与仿真（TASK-008/009）、车辆模型渲染与实例批（TASK-010）、标签/选择/交通资源（TASK-011/012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
+- 尚无 Mock 数据源与事件时间线（TASK-009）、车辆模型渲染与实例批（TASK-010）、标签/选择/交通资源（TASK-011/012）、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
 
 ### 2.3 当前数据输入
 
@@ -112,7 +120,7 @@
 | TASK-005 | 地图业务语义图层 | 004 | `DONE` |
 | TASK-006 | 车辆领域模型、事件合同与车队运行时 | 001、002 | `DONE` |
 | TASK-007 | WebSocket 数据源与 React 生命周期 | 006 | `DONE` |
-| TASK-008 | Mock 拓扑、运动与充电内核 | 003、006 | `TODO` |
+| TASK-008 | Mock 拓扑、运动与充电内核 | 003、006 | `DONE` |
 | TASK-009 | Mock 数据源、确定性场景与启动接线 | 007、008 | `TODO` |
 | TASK-010 | AGV 程序化模型、槽位与实例批渲染 | 004、006、009 | `TODO` |
 | TASK-011 | 图集化 WebGL 车辆标签 | 010 | `TODO` |
@@ -131,14 +139,14 @@
 
 | 字段 | 当前内容 |
 |---|---|
-| Task | `TASK-008 Mock 拓扑、运动与充电内核` |
+| Task | `TASK-009 Mock 数据源、确定性场景与启动接线` |
 | 状态 | `TODO` |
-| 当前目标 | 形成纯函数、固定种子、可复现的 Mock 仿真内核，能够在真实有向地图上分配车辆、行驶、寻充和安全处理死路；不创建计时器、数据源生命周期、React 或 Three 对象 |
-| 当前主要范围 | `features/mock-simulation/model/**`（pathfinding/motion/PRNG/弧长表/仿真领域状态）与共置测试 |
-| 当前已有实现 | TASK-003 的 MapModel（有向出边、弱连通分量 2,001/1,187/796/307、逻辑边物理长度）与 TASK-006 的 `VehicleDataSource` 事件合同均就绪；已知死路拓扑：1 个无出边 work 节点（名称「44」） |
-| 当前待完成 | 以 `TASKS.md` 的 TASK-008 为准实现：按逻辑边比例覆盖四个分量；Dijkstra 严守方向、代价非法回退物理长度；LINE 线性推进、BEZIER 弧长参数化 + 切线 theta；目标速度 0.5～1.5m/s 受载荷/空载限速；低于 25% 电量寻本分量 charge 充至 90%；大时间差不累积位移；死路/无路径安全停车并产生 Mock 数据告警；随机调用顺序稳定 |
+| 当前目标 | 运行时选择 `dataSource=mock` 后，应用通过统一 VehicleDataSource 持续产生可复现车队事件，并保证验收事件在固定窗口内发生；Mock 必须在 MapModel 拓扑就绪后创建，WS 初始化不受该屏障限制 |
+| 当前主要范围 | Mock simulation 生命周期、MockVehicleDataSource、acceptanceScenario、开发控制桥、`selectVehicleDataSource`/`bootstrapApplication` 的 Mock 分支和集成测试 |
+| 当前已有实现 | TASK-008 仿真内核（分配/推进/寻充/死路安全停车，固定种子可复现）、TASK-007 的 `useVehicleDataSource`/`FleetRuntimeProvider`/`selectVehicleDataSource`（mock 分支当前降级 null 并记 `DATA_SOURCE_UNAVAILABLE`）均就绪 |
+| 当前待完成 | 以 `TASKS.md` 的 TASK-009 为准实现：默认 seed 20260901、60 台可调 250；2Hz ±50% 抖动；显式 snapshot/update/remove/heartbeat；connect/disconnect/requestSnapshot 幂等；暂停不积累位移；确定性时间线覆盖接单/完成、故障/恢复、掉线/恢复、暂停、交通等待、充电、低定位、增车删车；交通矩形按占用路径生成有效点序；`window.__AGV_MOCK__` 仅开发且 Mock 模式存在；Mock 在 MapModel 就绪后创建 |
 | 当前阻塞 | 无 |
-| 完成后可开始 | TASK-009（依赖 007、008，007 已 DONE） |
+| 完成后可开始 | TASK-010（依赖 004、006、009，004/006 已 DONE） |
 
 Task 开始后，把本卡直接替换为实际进行中的工作：当前修改文件、当前成功验证、当前失败原因、当前剩余步骤和下一条可执行命令。Task 完成后删除已解决问题，只保留完成结果和新的当前指针。
 
@@ -146,19 +154,19 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 
 | 范围 | 当前命令或检查 | 当前结果 |
 |---|---|---|
-| Lint | `pnpm lint` | 通过（105 文件，0 警告 0 错误） |
+| Lint | `pnpm lint` | 通过（120 文件，0 警告 0 错误） |
 | TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
-| 单元测试 | `pnpm test:unit`（Vitest + jsdom，28 文件 270 例：TASK-002～005 全部保留；TASK-007 新增 41 例——protocolAdapter 默认拒绝合同 3 例、WebSocketVehicleDataSource fake socket/timer 21 例（四类事件与上下文补全、重复/回退序号、孤立增量拒绝、heartbeat 通行不建基线、代次隔离、1/2/4/8s→30s ×0.8/×1.2 抖动退避、60s 稳定重置、15s 静默主动重连、手动断开清理计时器与恢复、连续解码失败 ERROR/清零计数/显式恢复、重连全量对齐、connect 幂等、AbortSignal 三阶段取消、六态状态机）、useVehicleDataSource 9 例（挂载连接/卸载断开、StrictMode 双执行收敛活跃连接峰值≤1、事件只应用一次、1Hz ticker STALE 跃迁、heartbeat 不刷新、快速 source 切换、null 稳态、options 不重建、卸载竞态）、FleetRuntimeProvider 4 例（运行时单实例、状态经 Context 低频可达、事件落运行时、缺 Provider 抛错）、selectVehicleDataSource 4 例（ws 选型与 wsUrl 透传、adapter 注入、mock/wsUrl 缺失降级 null + 诊断）、fakeWebSocket 共置夹具（FakeWebSocket + 测试 JSON 信封适配器，复用生产 validateVehicle） | 通过（270/270） |
+| 单元测试 | `pnpm test:unit`（Vitest + jsdom，34 文件 325 例：TASK-002～007 全部保留；TASK-008 新增 55 例——PRNG 固定种子复现与边界 7 例、有向寻路（严格方向/单向不可达/代价回退物理长度/最近充电点/跨分量）9 例、弧长表（LINE 线性、BEZIER 端点守恒与切线朝向、越界钳制、与 MapEdge.length 同口径、真实地图抽样）8 例、速度裁决 7 例、仿真内核（逐步全等复现、种子区分、最大余额分配、限速钳制、弧长分区不变、大时间差钳制、极短边换边上限、死路停车、无充电路径停车、完整充电循环、充电后继续行驶、零 dt、空车队）16 例、真实地图集成（四分量比例分配、分量边池归属、150s 推进拓扑守恒、真实地图可复现、低电量寻充充电循环、节点「1644」寻充链连续性、死路「44」安全返回、朝死路可规划）8 例 | 通过（325/325） |
 | 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004/005 数据、几何与语义图层事实全部保留 | 通过 |
 | 当前车辆夹具 | `vehicleFixture.integration.test.ts`：`json/vehicle.json` 重新校验——TRAFFIC_WAIT（D5）、LOW_BATTERY、LOADED、ONLINE、locked 1 + applying 3、运行时 10s STALE 跃迁 | 通过 |
-| 架构检查 | `pnpm test:architecture`（真实 src 114 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 134 模块 0 违规；负例全部命中；正例零误报。本轮按规则本意校准：`adapter-*-public-entry-only` 拆分为按 Feature 两条并豁免自身目录，新增 mock-simulation 内部导入正例夹具） | 通过 |
 | 构建 | `pnpm build`（含 `copyStaticAssets` 与 `verifyDist`） | 通过 |
 | dist 校验 | `pnpm verify:dist`（index/config/map 存在、相对路径引用、白名单与凭据检查、map.json 可解析） | 通过 |
 | 部署冒烟 | `pnpm smoke:dist`（TASK-002 基线；本轮未改动部署链，未重跑） | 上次通过 |
 | 差异检查 | `git diff --check` | 通过（无空白错误；仅 CRLF 提示） |
-| 浏览器自测 | TASK-007 浏览器验证项「地图在 WS 无数据或断连时仍保留」：内嵌 Chromium 1280×720，`config.json` 临时切至 `dataSource=ws`、`wsUrl=ws://127.0.0.1:9/`（连接拒绝）后实测——唯一 1280×720 全屏 Canvas、无滚动、无任何 DOM 覆盖层（仅 R3F 空容器 div）；map.json 正常加载且截图取证完整静态地图（地坪/网格/去重路径/节点/仓库/充电语义）持续渲染；页内挂钩 WebSocket 构造器观测到重连循环持续（两次尝试间隔 ≈26s，处于 30s 封顶×抖动区间），无连接 UI | 通过 |
+| 浏览器自测 | TASK-008 为纯领域内核，验证项全部为单元/集成测试，无浏览器行为项；最近一次浏览器自测结论为 TASK-007 轮「地图在 WS 无数据或断连时仍保留」（内嵌 Chromium 实测唯一全屏 Canvas、无 DOM 覆盖层、静态地图持续渲染、无连接 UI），下轮涉及浏览器行为的 Task 为 TASK-009 启动接线 | 上轮通过（TASK-007） |
 
-浏览器自测备注：内嵌浏览器面板在宿主窗口后台时节流 `requestAnimationFrame`，标准截图会强制一帧使 R3F 应用全屏尺寸；本轮以「截图强制帧 + 帧内 WebGL readPixels/挂钩 WebSocket 构造器」完成取证，与 TASK-002/003/005 记录的环境节流现象一致，不影响真实部署浏览器。`config.json` 自测后已恢复（dataSource=mock），工作区无残留差异。
+浏览器自测备注：内嵌浏览器面板在宿主窗口后台时节流 `requestAnimationFrame`，标准截图会强制一帧使 R3F 应用全屏尺寸；此前轮次以「截图强制帧 + 帧内 WebGL readPixels/挂钩 WebSocket 构造器」完成取证，不影响真实部署浏览器。`config.json` 当前为 `dataSource=mock`。
 
 本节只保留当前 Task 的最终有效验证状态。重跑后直接替换结果；失败被修复后删除已失效的失败描述，不追加验证流水账。
 

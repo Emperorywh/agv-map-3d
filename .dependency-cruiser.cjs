@@ -6,7 +6,7 @@
  * 1. 所有模块只能从 `src/features/<name>/index.ts` 公开入口导入其他 Feature；
  * 2. map-visualization、fleet-monitoring、render-quality 三者之间禁止任何互相导入；
  * 3. mock-simulation 与 camera-navigation 只允许导入 map-visualization、
- *    fleet-monitoring 的 index.ts（未来按 SPEC 以 import type 使用公开类型）；
+ *    fleet-monitoring 的 index.ts（自身 Feature 内部导入不受此约束）；
  * 4. shared 不得依赖 app 或任何 Feature（反向依赖）；
  * 5. Feature 不得依赖 app（反向依赖）；
  * 6. 整个 src 禁止循环依赖。
@@ -46,18 +46,24 @@ const forbidden = [
     to: { path: '^src/features/', pathNot: `^src/features/${feature}/` },
   })),
 
-  // mock-simulation / camera-navigation 只能通过两个宿主 Feature 的 index.ts 复用公开类型
-  {
-    name: 'adapter-feature-public-entry-only',
+  // mock-simulation / camera-navigation 各自只允许通过两个宿主 Feature 的
+  // index.ts 复用公开类型；自身 Feature 内部的相对导入（model/**、共置测试
+  // 夹具互引等）是正常 Feature 结构，不属于跨 Feature 边界，按自身目录豁免
+  ...['mock-simulation', 'camera-navigation'].map((feature) => ({
+    name: `adapter-${feature}-public-entry-only`,
     severity: 'error',
     comment:
-      'mock-simulation 与 camera-navigation 只允许导入 map-visualization、fleet-monitoring 的 index.ts',
-    from: { path: '^src/features/(mock-simulation|camera-navigation)/' },
+      `${feature} 只允许导入 map-visualization、fleet-monitoring 的 index.ts；` +
+      '自身 Feature 内部导入不受此约束',
+    from: { path: `^src/features/${feature}/` },
     to: {
       path: '^src/features/',
-      pathNot: '^src/features/(map-visualization|fleet-monitoring)/index\\.ts$',
+      pathNot: [
+        `^src/features/${feature}/`,
+        '^src/features/(map-visualization|fleet-monitoring)/index\\.ts$',
+      ],
     },
-  },
+  })),
 
   // app 只能从 Feature 的 index.ts 公开入口导入
   {

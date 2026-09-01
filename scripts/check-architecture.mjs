@@ -26,7 +26,8 @@ const EXPECTED_VIOLATIONS = {
   'feature-map-visualization-deep-import-forbidden': 2,
   'core-feature-render-quality-no-cross-feature-import': 1,
   // camera→render-quality/index 与 mock-simulation→map-visualization/internal 各一次
-  'adapter-feature-public-entry-only': 2,
+  'adapter-camera-navigation-public-entry-only': 1,
+  'adapter-mock-simulation-public-entry-only': 1,
   'shared-independence': 1,
   'no-feature-to-app-import': 1,
 }
