@@ -10,13 +10,13 @@
 
 | 字段 | 当前值 |
 |---|---|
-| 项目状态 | `PLANNED` |
-| 当前 Task | `TASK-001 工程、单 Canvas 与自动验证基线` |
+| 项目状态 | `IN_PROGRESS` |
+| 当前 Task | `TASK-002 运行时配置、诊断、静态资源与部署基线` |
 | 当前 Task 状态 | `TODO` |
-| 已完成工程 Task | `0 / 21` |
+| 已完成工程 Task | `1 / 21` |
 | 条件任务 | `TASK-021 WAITING_EXTERNAL` |
 | 验收 Gate | GATE-001、GATE-002、GATE-003 均为 `NOT_READY` |
-| 当前下一步 | 完整读取 TASK-001、SPEC、当前代码和 Git 差异，将 TASK-001 改为 `IN_PROGRESS` 后完成该 Task 的代码、接线与验证 |
+| 当前下一步 | 将 TASK-002 改为 `IN_PROGRESS` 后，建立 `bootstrapApplication` 骨架、运行时配置校验、结构化诊断、`public/config.json`、静态资源复制与 dist 校验脚本 |
 | 项目完成条件 | TASK-001～TASK-021 全部 `DONE`，GATE-001～GATE-003 全部通过，SPEC A1～F6 均有当前证据 |
 
 编号是推荐交付顺序，执行前必须核对真实依赖。`WAITING_EXTERNAL` 的 TASK-021 不阻塞 TASK-018～020；其他 Task 只有在自身依赖全部 `DONE` 后才能开始。
@@ -28,21 +28,21 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx` |
-| HEAD | `15e81cef1959e210b2d78a4f58faa48fcfd0623e` |
-| 规划文档 | `TASKS.md`、`PROGRESS.md` 存在未提交的当前工作区修改 |
-| 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 存在已暂存差异 |
+| 分支 | `rxx`，跟踪 `origin/rxx`，领先 1 个提交 |
+| HEAD | `15e274de329934b142bede106eef19fc12a5c8e8` |
+| 未提交差异 | TASK-001 的全部工作区修改：新增 `src/app/**`、`tests/e2e`、`scripts/**`、`.dependency-cruiser.cjs`、`.github/workflows/ci.yml`、`vitest.config.ts`、`vitest.setup.ts`、`playwright.config.ts`、`src/vite-env.d.ts`；修改 `src/main.tsx`、`index.html`、`package.json`、`pnpm-lock.yaml`、`tsconfig.*.json`、`vite.config.ts`、`.gitignore`；删除 Vite 演示页与演示资源 |
+| 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 所有未提交差异均必须保留。每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
 
 ### 2.2 当前实现
 
-- `src/main.tsx`、`src/App.tsx`、`src/App.css` 和 `src/index.css` 仍是 Vite React 演示模板。
-- 当前没有 `src/app`、`src/features`、`src/shared`、`tests`、运行时 `public/config.json` 或静态资源脚本。
-- 当前没有地图、车辆、Mock、WebSocket、相机、质量控制、失败恢复或性能实现。
-- `package.json` 只有 `dev/build/lint/preview`；没有 typecheck、unit、E2E、architecture 或 dist 校验脚本。
-- 当前没有 Vitest、Playwright 或测试配置；`@react-three/drei` 和 zustand 也不是直接依赖。
-- Git 忽略的现有 `dist` 是与当前规格冲突的陈旧产物，不是源码或验收证据。
+- 应用骨架可启动、可构建：`src/main.tsx` 以 StrictMode 挂载 `src/app/App.tsx`；App 只装配唯一 `100vw × 100dvh` 的 R3F Canvas，场景内为 `src/app/scene/AgvMonitorScene.tsx` 组合锚点（无业务 3D 对象）。
+- `src/app/styles/global.css` 只含视口重置与清屏底色；Vite 演示页、演示样式和演示资源已全部移除。
+- 工具链齐备：`@/ -> src/` 别名在 `tsconfig.app.json`、`vite.config.ts`、`vitest.config.ts` 三处一致；脚本含 `lint/typecheck/test:unit/test:e2e/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、Playwright（Chromium，dev server webServer）、dependency-cruiser 均已接入。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`，并用 `scripts/architecture/fixtures/` 正负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
+- 尚无运行时配置、诊断、地图、车辆、Mock、WebSocket、相机、质量控制、失败恢复或性能实现；对应实现分属后续 Task。
 
 ### 2.3 当前数据输入
 
@@ -64,7 +64,7 @@
 
 | Task | 当前任务名称 | 真实依赖 | 状态 |
 |---|---|---|---|
-| TASK-001 | 工程、单 Canvas 与自动验证基线 | 无 | `TODO` |
+| TASK-001 | 工程、单 Canvas 与自动验证基线 | 无 | `DONE` |
 | TASK-002 | 运行时配置、诊断、静态资源与部署基线 | 001 | `TODO` |
 | TASK-003 | 统一坐标、地图校验与不可变 MapModel | 002 | `TODO` |
 | TASK-004 | 可运行核心地图场景与恢复生命周期 | 003 | `TODO` |
@@ -90,14 +90,14 @@
 
 | 字段 | 当前内容 |
 |---|---|
-| Task | `TASK-001 工程、单 Canvas 与自动验证基线` |
+| Task | `TASK-002 运行时配置、诊断、静态资源与部署基线` |
 | 状态 | `TODO` |
-| 当前目标 | 建立依赖、测试、架构检查、快速 CI 和唯一全屏 Canvas 应用骨架 |
-| 当前主要范围 | package/lock、TS/Vite/Vitest/Playwright、架构脚本、CI、`src/main.tsx`、`src/app/**`、模板样式和资源 |
-| 当前已有实现 | 只有 Vite React 模板及现有基础依赖 |
-| 当前待完成 | 以 `TASKS.md` 的 TASK-001 为准完成全部代码、接线、正负测试和 build |
+| 当前目标 | 同一构建产物可从根路径或子路径读取公开配置和地图资源；配置失败保持唯一清屏 Canvas 并产生可测试的结构化诊断 |
+| 当前主要范围 | `src/app/bootstrap/**`、`src/shared/validation/**`、`src/shared/diagnostics/**`、`public/config.json`、静态资源复制/校验脚本、Vite 构建接线和部署冒烟测试 |
+| 当前已有实现 | TASK-001 的单 Canvas 骨架、测试工具链、架构检查与快速 CI |
+| 当前待完成 | 以 `TASKS.md` 的 TASK-002 为准完成配置校验、诊断、`verify:dist`、根/子路径冒烟与全部验证 |
 | 当前阻塞 | 无 |
-| 完成后可开始 | TASK-002；TASK-006 也将满足其 TASK-001 前置，但推荐先完成 TASK-002 |
+| 完成后可开始 | TASK-003、TASK-006 |
 
 Task 开始后，把本卡直接替换为实际进行中的工作：当前修改文件、当前成功验证、当前失败原因、当前剩余步骤和下一条可执行命令。Task 完成后删除已解决问题，只保留完成结果和新的当前指针。
 
@@ -105,12 +105,14 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 
 | 范围 | 当前命令或检查 | 当前结果 |
 |---|---|---|
-| 模板 lint | `pnpm lint` | 通过 |
-| 模板 TypeScript | `pnpm exec tsc -b --pretty false` | 通过；独立 `typecheck` 脚本尚未建立 |
-| 模板构建 | `pnpm exec vite build --outDir <隔离临时目录>` | 通过；未把陈旧 `dist` 作为证据 |
-| 单元测试 | Vitest 配置和脚本 | 尚不存在，由 TASK-001 建立 |
-| E2E | Playwright 配置和脚本 | 尚不存在，由 TASK-001 建立 |
-| 架构检查 | 依赖边界配置和脚本 | 尚不存在，由 TASK-001 建立 |
+| Lint | `pnpm lint` | 通过（0 警告 0 错误） |
+| TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
+| 单元测试 | `pnpm test:unit`（Vitest + jsdom，`src/app/__tests__` 共 3 例） | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 15 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| E2E | `pnpm test:e2e`（Playwright Chromium，`tests/e2e/app-shell.spec.ts`） | 通过（唯一全屏 Canvas、无滚动、无覆盖层、无文案） |
+| 构建 | `pnpm build` | 通过 |
+| 锁定安装 | `pnpm install --frozen-lockfile` | 通过 |
+| 工作区 | `git diff --check` | 通过 |
 
 本节只保留当前 Task 的最终有效验证状态。重跑后直接替换结果；失败被修复后删除已失效的失败描述，不追加验证流水账。
 

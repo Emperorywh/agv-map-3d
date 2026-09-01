@@ -1,0 +1,21 @@
+/*
+ * 全局样式：只允许包含视口与全局重置规则（SPEC §12.1）。
+ * 关键不变量（SPEC §7.1）：
+ * 1. html、body、#root 占满视口、无外边距、无内边距；
+ * 2. 禁止页面滚动，任何情况下不得出现滚动条；
+ * 3. 不得在此写入任何业务组件样式。
+ */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  /* 场景清屏色：Canvas 未就绪或加载失败时页面保持纯色，不出现空白闪烁 */
+  background-color: #0b0d10;
+}

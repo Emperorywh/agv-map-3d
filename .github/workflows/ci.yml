@@ -1,0 +1,41 @@
+# 快速 CI 流水线（TASK-001）。
+# 职责：在 push 与 PR 上自动执行全部快速验证，防止架构与骨架回归。
+# 完整 CI（E2E 冒烟、性能短跑、soak 分析器）由 TASK-020 扩展，不在此处。
+name: fast-ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    name: lint + typecheck + unit + architecture + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖（锁定 lockfile）
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: 单元测试
+        run: pnpm test:unit
+
+      - name: 架构依赖边界检查
+        run: pnpm test:architecture
+
+      - name: 构建
+        run: pnpm build
