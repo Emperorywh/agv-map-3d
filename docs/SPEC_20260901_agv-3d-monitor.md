@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | 文档编号 | SPEC-20260901-agv-3d-monitor |
-| 版本 | v1.3 |
+| 版本 | v1.4 |
 | 日期 | 2026-09-01 |
 | 状态 | 可实施；真实 WebSocket 字段映射需联调 |
 | 技术基线 | React 19.2 · @react-three/fiber 9.6 · three 0.185 · TypeScript 6 · Vite 8 |
@@ -562,7 +562,7 @@ interface VehicleDataSource {
 - 每个 Feature 只通过根目录 `index.ts` 暴露最小公开 API。外部模块不得导入其内部文件，Feature 内部也不创建汇总所有文件的多级 barrel。
 - `app` 是唯一组合根，只负责启动、依赖选择、Feature 编排和全屏 Canvas 装配，不承载地图去重、状态派生、协议映射、寻路或实例槽位管理等业务算法。
 - `shared` 只保存稳定、无业务含义且被多个 Feature 复用的能力。包含 `Vehicle`、`Map`、`Alert`、`Traffic` 等业务词汇的实现不得放入 `shared`；代码只有在至少两个独立 Feature 中出现真实复用且语义一致时才可提升到 `shared`。
-- Feature 单元测试、集成测试和夹具与被测实现共置；只有跨 Feature 的端到端测试和性能验收保留在根目录 `tests`。
+- Feature 单元测试、集成测试和夹具与被测实现共置；只有跨 Feature 的性能与压力采集脚本保留在根目录 `tests`。真实用户行为、启动恢复和跨 Feature 协作不由浏览器测试套件验证，而由实施 Task 的 Coding Agent 使用浏览器自动化技能在真实浏览器中自测。
 - 页面没有 Feature 级 DOM 样式。若后续业务范围允许新增 DOM 组件，其 `Component.module.css` 必须与组件共置；WebGL 材质、shader、颜色和几何外观保存在所属 Feature 的 `scene` 目录。
 
 ### 12.2 最终目录
@@ -671,7 +671,6 @@ src/
 │   └── validation/                               # 有限数值等无业务校验原语
 └── vite-env.d.ts
 tests/
-├── e2e/                                          # 跨 Feature 交互与失败恢复
 └── performance/                                  # 启动、帧时间、Draw Call 和 24h 脚本
 ```
 
@@ -722,16 +721,18 @@ tests/
 ### 12.6 工程验证
 
 - Feature 内的 `__tests__` 覆盖其纯模型、Hook 生命周期和 R3F 组件集成；夹具只服务该 Feature 时必须共置。
-- 根目录 `tests/e2e` 只覆盖真实用户交互、启动恢复和跨 Feature 协作，`tests/performance` 承担 §6 的统一基准。
+- 真实用户交互、启动恢复和跨 Feature 协作由实施 Task 的 Coding Agent 使用浏览器自动化技能在真实浏览器中自测，并留下截图与结论；`tests/performance` 承担 §6 的统一基准。
 - React StrictMode 测试必须证明数据源不会重复连接、计时器不会泄漏、事件监听不会重复注册。
 - 依赖边界测试必须证明公开入口可用、内部路径不可跨 Feature 导入、`shared` 无业务依赖且整个 `src` 无循环依赖。
 - 高频更新集成测试必须证明车辆消息不会导致 `App`、地图静态层或全部车辆 React 组件逐条重渲染。
 
-运行依赖包括 `@react-three/drei` 和 `zustand`；zustand 仅用于 Feature 自有的低频状态。开发验证依赖包括 Vitest、Playwright 和静态依赖边界检查工具。地图复制、压缩检查、依赖边界检查和产物完整性检查纳入 `dev/build` 或 CI 脚本，不依赖人工执行。
+运行依赖包括 `@react-three/drei` 和 `zustand`；zustand 仅用于 Feature 自有的低频状态。开发验证依赖包括 Vitest 和静态依赖边界检查工具；浏览器行为自测使用环境提供的浏览器自动化技能，性能与压力采集所需的浏览器驱动由对应 Task 引入。地图复制、压缩检查、依赖边界检查和产物完整性检查纳入 `dev/build` 或 CI 脚本，不依赖人工执行。
 
 ---
 
 ## 13. 验收标准
+
+验收证据可来自自动化测试或实施 Task 的 Coding Agent 的浏览器自测；涉及真实浏览器行为的项目必须附当前浏览器自测结论和截图。
 
 ### A. 数据与几何
 
@@ -781,7 +782,7 @@ tests/
 - [ ] F3 `App` 和 `AgvMonitorScene` 只负责组合；协议映射、地图建模、车辆状态派生、寻路和质量策略均由对应 Feature 独立拥有并测试。
 - [ ] F4 React StrictMode 下重复挂载不会造成重复数据源连接、重复计时器、重复事件监听或 GPU 资源泄漏。
 - [ ] F5 2Hz 车辆事件持续输入时，高频快照和实例矩阵更新不进入 React state；`App`、地图静态层和未变化车辆不会随每条消息重渲染。
-- [ ] F6 Feature 专属组件、Hook、WebGL 外观、测试和夹具均在该 Feature 内共置；跨 Feature 的测试仅保留端到端与性能验收。
+- [ ] F6 Feature 专属组件、Hook、WebGL 外观、测试和夹具均在该 Feature 内共置；跨 Feature 的自动化测试仅保留性能与压力验收，其余跨 Feature 行为通过浏览器自测验证。
 
 ---
 

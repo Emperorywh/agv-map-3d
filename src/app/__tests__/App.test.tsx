@@ -8,7 +8,8 @@
  * 1. App 渲染的 DOM 中只存在一个 canvas 元素；
  * 2. Canvas 尺寸为 100vw × 100dvh；
  * 3. 不存在按钮、标题、面板等任何 DOM 覆盖层。
- * 真实浏览器行为（WebGL、清屏色、无滚动）由 tests/e2e 覆盖。
+ * 真实浏览器行为（WebGL、清屏色、无滚动）不由自动化套件覆盖，
+ * 由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测。
  */
 import { StrictMode } from 'react'
 import type React from 'react'

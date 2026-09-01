@@ -2,9 +2,9 @@
 
 状态日期：2026-09-01
 
-任务书版本：`TASKS.md` v2.0
+任务书版本：`TASKS.md` v2.1
 
-规格版本：`SPEC-20260901-agv-3d-monitor` v1.3
+规格版本：`SPEC-20260901-agv-3d-monitor` v1.4
 
 ## 1. 当前执行状态
 
@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`，领先 1 个提交 |
-| HEAD | `15e274de329934b142bede106eef19fc12a5c8e8` |
-| 未提交差异 | TASK-001 的全部工作区修改：新增 `src/app/**`、`tests/e2e`、`scripts/**`、`.dependency-cruiser.cjs`、`.github/workflows/ci.yml`、`vitest.config.ts`、`vitest.setup.ts`、`playwright.config.ts`、`src/vite-env.d.ts`；修改 `src/main.tsx`、`index.html`、`package.json`、`pnpm-lock.yaml`、`tsconfig.*.json`、`vite.config.ts`、`.gitignore`；删除 Vite 演示页与演示资源 |
+| 分支 | `rxx`，跟踪 `origin/rxx`，与远端一致 |
+| HEAD | `84ef3418cabfc32a5fe726aa16f43b2b8e6006f2`（TASK-001 已提交） |
+| 未提交差异 | 浏览器自测策略调整（当前变更）：删除 `playwright.config.ts` 与 `tests/e2e/`，移除 `test:e2e` 脚本和 `@playwright/test` 依赖；修改 `TASKS.md`、`docs/SPEC_20260901_agv-3d-monitor.md`、`PROGRESS.md`、`package.json`、`pnpm-lock.yaml`、`tsconfig.node.json`、`.github/workflows/ci.yml`、`src/app/__tests__/App.test.tsx` |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 所有未提交差异均必须保留。每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -39,7 +39,8 @@
 
 - 应用骨架可启动、可构建：`src/main.tsx` 以 StrictMode 挂载 `src/app/App.tsx`；App 只装配唯一 `100vw × 100dvh` 的 R3F Canvas，场景内为 `src/app/scene/AgvMonitorScene.tsx` 组合锚点（无业务 3D 对象）。
 - `src/app/styles/global.css` 只含视口重置与清屏底色；Vite 演示页、演示样式和演示资源已全部移除。
-- 工具链齐备：`@/ -> src/` 别名在 `tsconfig.app.json`、`vite.config.ts`、`vitest.config.ts` 三处一致；脚本含 `lint/typecheck/test:unit/test:e2e/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、Playwright（Chromium，dev server webServer）、dependency-cruiser 均已接入。
+- 工具链齐备：`@/ -> src/` 别名在 `tsconfig.app.json`、`vite.config.ts`、`vitest.config.ts` 三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
+- 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
 - 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`，并用 `scripts/architecture/fixtures/` 正负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
 - 尚无运行时配置、诊断、地图、车辆、Mock、WebSocket、相机、质量控制、失败恢复或性能实现；对应实现分属后续 Task。
@@ -109,7 +110,7 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 | TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
 | 单元测试 | `pnpm test:unit`（Vitest + jsdom，`src/app/__tests__` 共 3 例） | 通过 |
 | 架构检查 | `pnpm test:architecture`（真实 src 15 模块 0 违规；负例全部命中；正例零误报） | 通过 |
-| E2E | `pnpm test:e2e`（Playwright Chromium，`tests/e2e/app-shell.spec.ts`） | 通过（唯一全屏 Canvas、无滚动、无覆盖层、无文案） |
+| 浏览器自测 | Coding Agent 调用浏览器自动化技能访问 dev server（真实 Chromium，1280×720） | 通过（唯一 canvas 占满视口、无滚动、无覆盖层、无可见文案，截图为清屏底色） |
 | 构建 | `pnpm build` | 通过 |
 | 锁定安装 | `pnpm install --frozen-lockfile` | 通过 |
 | 工作区 | `git diff --check` | 通过 |

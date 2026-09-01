@@ -1,8 +1,8 @@
 # AGV 3D 实时监控大屏实施任务书
 
-任务书版本：v2.0
+任务书版本：v2.1
 
-适用规格：`docs/SPEC_20260901_agv-3d-monitor.md` v1.3
+适用规格：`docs/SPEC_20260901_agv-3d-monitor.md` v1.4
 
 ## 1. 项目终态
 
@@ -57,7 +57,7 @@
 - 能由一个 Coding Agent 在单个上下文中可靠完成。
 - 形成业务或技术上内聚的完整增量，不只创建长期未接线的零件。
 - 新能力在该 Task 内接入实际调用路径、Feature 根组件或应用组合层。
-- 具备自动化验证；涉及用户行为或浏览器生命周期时，在该 Task 内同步增加对应 E2E。
+- 具备自动化验证；涉及用户行为或浏览器生命周期时，由执行该 Task 的 Coding Agent 在真实浏览器中完成自测。
 - 对后续 Task 暴露稳定、最小、已测试的公共合同。
 
 Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文件白名单。为完成目标，可以同步调整直接相关的公开类型、Feature 根组件、app 接线、共置测试、构建脚本和 `PROGRESS.md`；不得借机实现后续 Task 或修改无关模块。若发现目标本身必须发生实质变化，应停止并请求用户或 Planner 调整当前任务书。
@@ -82,7 +82,7 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - `pnpm test:architecture`
 - `git diff --check`
 
-涉及应用组合、R3F 渲染、构建或部署的 Task 还必须执行 `pnpm build`。涉及真实用户行为、网络失败或浏览器生命周期的 Task 必须执行对应 Playwright 用例。验证失败时修复当前 Task 范围内的问题并重新验证；只有剩余问题实质超出当前目标时才标记 `BLOCKED`。
+涉及应用组合、R3F 渲染、构建或部署的 Task 还必须执行 `pnpm build`。涉及真实用户行为、网络失败或浏览器生命周期的 Task，由执行 Task 的 Coding Agent 在同一上下文中调用当前环境提供的浏览器自动化技能（如 `browser-use` 的 `web-gui-tester` / `control-browser`），启动应用并在真实浏览器中按本 Task 验证项逐条自测：检查 DOM 与 WebGL 场景状态、截图取证、模拟点击、键盘、滚轮、标签页隐藏和网络中断等行为；自测结论记入 `PROGRESS.md` 当前验证状态。验证失败时修复当前 Task 范围内的问题并重新验证；只有剩余问题实质超出当前目标时才标记 `BLOCKED`。
 
 ## 4. 工程 Task
 
@@ -91,9 +91,9 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 依赖：无。
 - 对应规格：§7.1、§7.4、§12.1～§12.6；D2、F1～F6。
 - 完整增量：得到可启动、可构建、可测试的单 Canvas 应用骨架，并用自动检查锁定 Feature-Based 架构和禁止 DOM 覆盖层的约束。
-- 主要范围：依赖与锁文件、TypeScript/Vite/Vitest/Playwright 配置、架构检查脚本、快速 CI、`src/main.tsx`、`src/app/**`、模板样式和资源。
-- 必做：加入 `@react-three/drei`、zustand、Vitest、Testing Library、jsdom、R3F test renderer、Playwright 和依赖边界工具；统一 `@/ -> src/` 别名；建立 `typecheck/test:unit/test:e2e/test:architecture`；负例证明深层导入、反向依赖和循环依赖会失败；移除 Vite 演示页；从第一帧只挂载一个 `100vw × 100dvh` Canvas；StrictMode 下无重复副作用。
-- 验证：依赖锁定安装、lint、typecheck、单元工具链、架构正负例、Playwright 用例列表、单 Canvas DOM 断言和 build 全部通过；页面无滚动、模板文案、按钮或覆盖层。
+- 主要范围：依赖与锁文件、TypeScript/Vite/Vitest 配置、架构检查脚本、快速 CI、`src/main.tsx`、`src/app/**`、模板样式和资源。
+- 必做：加入 `@react-three/drei`、zustand、Vitest、Testing Library、jsdom、R3F test renderer 和依赖边界工具；统一 `@/ -> src/` 别名；建立 `typecheck/test:unit/test:architecture`；负例证明深层导入、反向依赖和循环依赖会失败；移除 Vite 演示页；从第一帧只挂载一个 `100vw × 100dvh` Canvas；StrictMode 下无重复副作用。
+- 验证：依赖锁定安装、lint、typecheck、单元工具链、架构正负例和 build 全部通过；由 Coding Agent 调用浏览器自动化技能在真实浏览器中自测：唯一全屏 Canvas、无滚动、无模板文案、无按钮或覆盖层。
 - 不做：不加载配置、地图或车辆，不创建业务 3D 对象。
 
 ### TASK-002 运行时配置、诊断、静态资源与部署基线
@@ -121,9 +121,9 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 依赖：TASK-003。
 - 对应规格：§2.2、§5.1、§5.4、§6.3、§7.4、§10.3、§11.10；A1～A3、B2、C6、D2、F3、F4。
 - 完整增量：真实地图在唯一 Canvas 内显示工业地坪、去重物理路径和全部节点；地图首次失败保持清屏色，已有场景刷新失败时保留旧场景并自动恢复。
-- 主要范围：地图几何构建、Ground/PhysicalPaths/Nodes 图层、MapVisualizationFeature 根组件和 Hook、灯光与环境、资源所有权、app 组合接线及地图 E2E。
+- 主要范围：地图几何构建、Ground/PhysicalPaths/Nodes 图层、MapVisualizationFeature 根组件和 Hook、灯光与环境、资源所有权、app 组合接线及地图浏览器自测。
 - 必做：按正反向归一几何签名得到 5,068 条物理路径；BEZIER 固定采样 24 段；保留逻辑边到物理路径映射；地面按 bounds 加 10m；路径和节点静态合批；一个 InstancedMesh 渲染 4,291 节点；方向光、RoomEnvironment/PMREM、ACESFilmic 和静态 shadow camera 正确接入；加载重试可取消，恢复时原子替换模型和 GPU 资源；创建者明确释放 geometry、material、texture 和 render target。
-- 验证：5,068 条物理路径、4,197 条重复几何、约 44,559 个中心线段、节点类型/矩阵/颜色、Draw Call、静态重渲染计数、失败重试、旧场景保留、StrictMode 和资源释放测试通过；应用可见核心地图且 build 通过。
+- 验证：5,068 条物理路径、4,197 条重复几何、约 44,559 个中心线段、节点类型/矩阵/颜色、Draw Call、静态重渲染计数、失败重试、旧场景保留、StrictMode 和资源释放测试通过；浏览器自测确认应用可见核心地图，build 通过。
 - 不做：不渲染仓库名称、充电地标、停车符号、独占区或车辆。
 
 ### TASK-005 地图业务语义图层
@@ -211,7 +211,7 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 依赖：TASK-004、TASK-010、TASK-012。
 - 对应规格：§5.5、§8、§12.3；D4、F3、F4。
 - 完整增量：用户可以在唯一 Canvas 中完成轨道浏览、车辆选择、双击跟随、拖拽退出和空格俯瞰，跨 Feature 协作只发生在 app 组合层。
-- 主要范围：`camera-navigation/**`、Fleet 与 camera 的公开回调/只读适配器、AgvMonitorScene 桥接和交互 E2E。
+- 主要范围：`camera-navigation/**`、Fleet 与 camera 的公开回调/只读适配器、AgvMonitorScene 桥接和交互浏览器自测。
 - 必做：OrbitControls 旋转/平移/滚轮缩放并启用阻尼；最小 2m、最大地图对角线 3 倍；初始约 45° 自动取景；双击进入跟随并保留相对偏移；相机每帧读取只读目标；手动拖拽或目标删除立即退出；单击只选择不移动；Esc/空白只取消选择；空格退出跟随并回地图中心；只接受主鼠标指针；监听器对称清理。
 - 验证：bounds 变化、距离限制、自动取景数学、完整交互序列、单击/双击去抖、拖拽竞争、车辆删除、键盘默认行为、重复挂载监听、公开入口和跨 Feature 依赖检查全部通过。
 - 不做：Feature 互读 Store、全局事件总线、列表/按钮定位、位置插值或触摸手势。
@@ -233,7 +233,7 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 完整增量：页面隐藏时停止渲染但继续接收每车最新快照，回前台后一帧内与最新状态对齐，不回放或累积中间运动。
 - 主要范围：Fleet 数据生命周期、帧同步、Canvas frameloop、可见性控制、相机/选择恢复和浏览器生命周期测试。
 - 必做：`visibilitychange` 监听对称清理；隐藏期间只保留最新状态；WebSocket 和 Mock 均不断开；ticker 暂停或恢复时立即重算 freshness；回前台强制全量 diff 和脏槽位提交；被删除的选择/跟随目标按既有语义清理；不累积仿真位移。
-- 验证：模拟后台 10min、多次 update/remove、回前台一帧矩阵与最新快照一致、无累计位移、选择/相机状态正确、监听不重复且隐藏期间确实无渲染；对应 E2E 通过。
+- 验证：模拟后台 10min、多次 update/remove、回前台一帧矩阵与最新快照一致、无累计位移、选择/相机状态正确、监听不重复且隐藏期间确实无渲染；对应浏览器自测通过。
 - 不做：不回放中间事件，不显示后台状态 UI。
 
 ### TASK-016 WebGL 上下文丢失与恢复
@@ -241,9 +241,9 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 依赖：TASK-005、TASK-010、TASK-011、TASK-012、TASK-014。
 - 对应规格：§7.4、§11.9、§12.5；C5、F4。
 - 完整增量：唯一 Canvas 遭遇 WebGL 上下文丢失后暂停提交，并利用各 Feature 已有资源所有权和最新模型/快照恢复完整场景；连续三次失败后安全停止渲染。
-- 主要范围：Canvas 上下文控制、app 恢复编排、各资源所有者的最小 recreate/dispose 适配、恢复集成测试和 E2E。
+- 主要范围：Canvas 上下文控制、app 恢复编排、各资源所有者的最小 recreate/dispose 适配、恢复集成测试和浏览器自测。
 - 必做：context lost 时 `preventDefault`；暂停帧提交；按地图、环境、车辆、标签、环、交通资源的确定顺序恢复；恢复期间继续保留最新数据；重复释放幂等；部分重建失败回滚；失败计数作用域明确；连续三次失败后记录结构化错误并停止渲染；页面仍只有原 Canvas；StrictMode 无监听和 GPU 资源泄漏。
-- 验证：浏览器事件及真实 `WEBGL_lose_context` 路径覆盖一次成功恢复、恢复中车辆更新、部分失败、连续三次失败、重复挂载和 dispose/recreate 计数；恢复 E2E 和 build 通过。
+- 验证：浏览器事件及真实 `WEBGL_lose_context` 路径覆盖一次成功恢复、恢复中车辆更新、部分失败、连续三次失败、重复挂载和 dispose/recreate 计数；恢复浏览器自测和 build 通过。
 - 不做：不预建脱离真实资源所有者的万能注册表，不创建第二 Canvas、DOM 兜底、自动刷新或新业务外观。
 
 ### TASK-017 启动编排、失败恢复与跨 Feature 回归
@@ -251,9 +251,9 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 依赖：TASK-007、TASK-009、TASK-013、TASK-015、TASK-016。
 - 对应规格：§7.4、§8、§10.3、§11、§12.2、§12.3；B3、C1～C6、D2～D5、F3～F6。
 - 完整增量：完成最终启动状态机和跨 Feature 故障恢复回归，确保每个此前已接入的垂直增量在真实浏览器组合中共同工作。
-- 主要范围：bootstrapApplication、selectVehicleDataSource、AgvMonitorScene、开发/测试隔离接口、`tests/e2e/**` 和发现的当前组合缺陷所属文件。
+- 主要范围：bootstrapApplication、selectVehicleDataSource、AgvMonitorScene、开发/测试隔离接口、跨 Feature 浏览器自测场景清单和发现的当前组合缺陷所属文件。
 - 必做：配置完成后，WS 可与地图加载并行初始化，Mock 在 MapModel 就绪后初始化；记录 config、map、index、geometry、instances、appInteractive 阶段；配置失败、首次地图失败、旧地图刷新失败、地图恢复、WS 缺 URL、断网 60s、空数据、后台 10min、WebGL 恢复都保持唯一 Canvas；地图恢复直接使用最新车辆快照；覆盖单击、双击、空白、Esc、拖拽、滚轮、空格、snapshot/update/remove、TRAFFIC_WAIT 和多告警语义。
-- 验证：`pnpm test:e2e` 在 Chromium 通过；可用时同步运行本机 Edge channel；1280、1080p 和 4K 布局断言通过；网络和时间使用确定 fake/route；全量快速流水线和 build 通过。
+- 验证：Coding Agent 调用浏览器自动化技能在 Chromium 完成完整启动、交互与故障恢复自测，可用时在 Edge 复核；1280、1080p 和 4K 视口布局核对通过；断网与时间控制通过 Mock 配置或浏览器模拟能力触发；全量快速流水线和 build 通过。
 - 不做：不创建产品测试面板，不用 DOM 文字代替 WebGL 状态断言，不新增规格外功能。
 
 ### TASK-018 性能基准、指标采集与针对性调优
@@ -261,7 +261,7 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 依赖：TASK-017。
 - 对应规格：§6.1～§6.5、§10.3；B1～B3、B5。
 - 完整增量：得到可复现、机器可读的 100/200 台、1080p/4K 和冷缓存性能基准工具，并在当前执行环境完成冒烟及当前结果报告；正式目标硬件结论由 GATE-001 给出。
-- 主要范围：`tests/performance/**`、性能 Playwright 配置、只读诊断指标导出、Mock/相机测试配置、性能脚本，以及为达到结构预算所需的直接渲染优化。
+- 主要范围：`tests/performance/**`、性能浏览器采集配置、只读诊断指标导出、Mock/相机测试配置、性能脚本，以及为达到结构预算所需的直接渲染优化。
 - 必做：固定 seed、当前完整地图、规定近景机位和 DPR=1；禁用自动降级验证默认，再启用验证质量；交互就绪后预热 30s，再采样 120s；排除页面隐藏、上下文丢失和测试布置帧；报告 P50/P95、renderer calls/triangles/textures、长任务、启动阶段和原始样本；冷缓存至少运行 5 次并保留每次结果；压缩静态服务器参与冷启动；Spector.js 交叉验证步骤固定；不通过隐藏标签规避负载。
 - 验证：短时性能冒烟可重复；200 台车辆相关 Draw Call≤12、默认近景总数≤150；报告能够自动判定 SPEC B1～B3/B5，但只有符合 §6.1 的机器结果才能把 GATE-001 标为通过。
 - 不做：不篡改阈值、不降低核心语义、不把当前机器结果冒充目标硬件结论。
@@ -282,7 +282,7 @@ Task 的“主要范围”是所有权边界，不是阻止正常实现的逐文
 - 对应规格：§10、§12.6；E4、E5、F2。
 - 完整增量：部署方和联调方能够仅依据当前文档安装、构建、测试、部署和识别尚未通过的外部 Gate；CI 自动保护全部快速验证。
 - 主要范围：`README.md`、`docs/` 下当前部署/协议/验收文档、静态服务器配置、CI workflow、package 验证脚本和交付收敛脚本。
-- 必做：记录当前有效的开发/构建/测试命令、config 全字段、安全边界、根/子路径、JSON gzip/Brotli、map 版本缓存、config no-cache、CORS、WS 映射边界、性能/soak 运行方法和 Gate 状态；CI 执行 lint、typecheck、unit、architecture、build、dist、E2E 冒烟、性能短跑和 soak 分析器测试；发布包缺少应用、配置或地图时失败。
+- 必做：记录当前有效的开发/构建/测试命令、config 全字段、安全边界、根/子路径、JSON gzip/Brotli、map 版本缓存、config no-cache、CORS、WS 映射边界、性能/soak 运行方法和 Gate 状态；CI 执行 lint、typecheck、unit、architecture、build、dist、性能短跑和 soak 分析器测试；发布包缺少应用、配置或地图时失败。
 - 验证：全新目录按 README 可安装、构建和预览；根路径与子路径启动；CI 配置语法和全部快速流水线通过；文档只保留当前状态，不含追加式日志或已失效方案。
 - 不做：不宣称未完成的真实 WS、目标硬件性能或 24h 结果，不嵌入凭据。
 
