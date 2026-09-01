@@ -1,14 +1,14 @@
 /**
  * 车辆实例批次图层（SPEC §4、§5.2、§6.3、§11.13、§12.5；TASK-010）。
  *
- * 职责：把程序化 AGV 以「批次 × 七部件 InstancedMesh」挂载到场景——持有
- *       实例槽位表（初始 256、按 256 扩批、硬上限 512），按当前批次数挂载
- *       对应数量的批次对象，并把逐帧提交交给 useFleetFrameSync（脏集合的
- *       唯一帧消费者）。批次扩容只发生在车队超过当前容量时（≤1 次重建），
- *       属结构性低频变化，允许进入 React state。
+ * 职责：把程序化 AGV 以「批次 × 七部件 InstancedMesh」挂载到场景——按当前
+ *       批次数挂载对应数量的批次对象，并把逐帧提交交给 useFleetFrameSync
+ *       （脏集合的唯一帧消费者）。实例槽位表与批次数由 FleetMonitoringFeature
+ *       持有并与车辆标签图层共享（TASK-011：标签槽位 = 车体槽位），批次扩
+ *       容经 onBatchCountChanged 上抛，属结构性低频变化，允许进入 React state。
  * 边界：本组件只拥有各批次的 InstancedMesh 实例缓冲；几何与材质归
  *       VehicleResources 所有者（FleetMonitoringFeature），本组件绝不释放
- *       它们；槽位表由本组件创建并随卸载丢弃（矩阵等高频状态不进 React）。
+ *       它们；槽位表归 Feature 根组件（矩阵等高频状态不进 React）。
  *       外壳网格携带 userData.batchId，供拾取层把 (batchId, instanceId)
  *       映射回实体键（映射本体在槽位表 resolve，选择接线属 TASK-012）。
  * 关键不变量：
@@ -25,16 +25,13 @@
  * 5. 高频车辆事件不触碰本组件的任何 React 状态（扩批除外），实例矩阵与
  *    脏集合永远在 Hook 自有对象中（SPEC §4/§12.5）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 import type { FleetRuntime } from '../model/createFleetRuntime'
-import {
-  createInstanceSlotTable,
-  SLOT_BATCH_CAPACITY,
-  SLOT_HARD_CAP,
-} from '../model/instanceSlots'
+import type { InstanceSlotTable } from '../model/instanceSlots'
+import { SLOT_BATCH_CAPACITY } from '../model/instanceSlots'
 import {
   INSTANCE_COLOR_PARTS,
   VEHICLE_PART_KINDS,
@@ -53,8 +50,12 @@ export interface VehicleInstancesProps {
   worldTransform: WorldTransform | null
   /** 共用几何与材质（Feature 根组件单一所有者） */
   resources: VehicleResources
-  /** 渲染硬上限；默认 512（SPEC §4），测试可注入小容量 */
-  hardCap?: number
+  /** 实例槽位表（Feature 根组件持有，与标签图层共享） */
+  table: InstanceSlotTable
+  /** 当前批次数（Feature 根组件持有的结构值，与标签图层一致） */
+  batchCount: number
+  /** 批次数变化上抛（Feature 根组件 setState 挂载新批次） */
+  onBatchCountChanged?: (batchCount: number) => void
   /** 硬上限溢出诊断通道（未渲染数上抛） */
   diagnostics?: DiagnosticsReporter
 }
@@ -63,18 +64,11 @@ export function VehicleInstances({
   runtime,
   worldTransform,
   resources,
-  hardCap = SLOT_HARD_CAP,
+  table,
+  batchCount,
+  onBatchCountChanged,
   diagnostics,
 }: VehicleInstancesProps) {
-  // 槽位表与批次数：槽位表跨渲染恒定；批次数是唯一会进入 state 的结构值
-  const tableRef = useRef<ReturnType<typeof createInstanceSlotTable> | null>(null)
-  if (tableRef.current === null) {
-    tableRef.current = createInstanceSlotTable({ hardCap })
-  }
-  const table = tableRef.current
-
-  const [batchCount, setBatchCount] = useState(1)
-
   // 批次网格按 batchCount 构建：容量、零缩放初始化、命名与拾取元数据一次完成
   const batches = useMemo(
     () => createBatches(resources, batchCount),
@@ -87,7 +81,7 @@ export function VehicleInstances({
     table,
     worldTransform,
     batches,
-    onBatchCountChanged: setBatchCount,
+    onBatchCountChanged,
     diagnostics,
   })
 

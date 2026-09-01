@@ -1,23 +1,26 @@
 /**
- * 车辆场景视觉常量（SPEC §2.6、§5.2、§5.4、§7.3；TASK-010）。
+ * 车辆场景视觉常量（SPEC §2.6、§5.2、§5.4、§6.4、§7.2、§7.3；TASK-010/011）。
  *
  * 职责：集中定义程序化通用 AGV 的全部外观常量——各部件的固定尺寸与颜色、
- *       主状态 → 车体色的映射表、警示灯旋转/闪烁参数、车底假阴影参数——供
- *       几何构建与帧同步层共同引用，保证车辆视觉语言只有一份事实源。
+ *       主状态 → 车体色的映射表、警示灯旋转/闪烁参数、车底假阴影参数，以及
+ *       车辆标签的尺寸、LOD 投影阈值、重点标签上限与边框配色——供几何构建、
+ *       图集、材质与帧同步层共同引用，保证车辆视觉语言只有一份事实源。
  * 边界：只包含数值与颜色常量及纯映射表，不创建任何 Three.js 对象；地图侧
- *       静态外观属 map-visualization 的 mapAppearance，车辆标签与光环常量
- *       待 TASK-011/012 在本模块扩展。
+ *       静态外观属 map-visualization 的 mapAppearance；L1/L2 告警环几何表达
+ *       属 TASK-012，届时复用本模块的 LABEL_BORDER_* 配色保持语义一致。
  * 关键不变量：
  * 1. 主状态色映射覆盖 VehiclePrimaryDisplayState 全部取值且次序与投影规则
  *    一致：STALE 冻结灰、DISCONNECTED 深灰、FRESH 业务色（SPEC §2.6）；
- *    状态不得只靠颜色表达——方向由 +x 方向楔表达、故障由旋转警示灯表达，
- *    文字徽标与光环属后续 Task；
+ *    状态不得只靠颜色表达——方向由 +x 方向楔表达、故障由旋转警示灯表达、
+ *    文字由图集化标签表达（TASK-011）；
  * 2. 充电色与地图 charge 节点同色系（#31d9e8），执行色与 work 节点同色系，
  *    保持全场景色彩语义统一；
  * 3. 部件固定高度为厘米级经验值（与当前车宽 0.7m 量级协调），不随车辆
  *    长宽缩放——每车尺寸只进入矩阵的 x/z 分量；
  * 4. 警示灯只在 FAULT（FRESH + ONLINE）时旋转闪烁；OFFLINE/STALE 熄灭
- *    （SPEC §5.2），熄灭用零缩放矩阵表达（不存在 instanceColor.a）。
+ *    （SPEC §5.2），熄灭用零缩放矩阵表达（不存在 instanceColor.a）；
+ * 5. 标签 LOD 阈值与重点上限来自 SPEC §6.4：投影 ≥8px 显示名称、≥20px 增加
+ *    电量条与完整状态，远景最多 20 个重点标签（优先级截断属 labelLod）。
  */
 
 /** 图层高度：车辆贴花 lowest 优先级低于地图名称层，假阴影贴地避免 z-fighting */
@@ -96,3 +99,45 @@ export const SHELL_STATE_COLORS: Record<string, string> = {
 export function shellColorOf(primary: string): string {
   return SHELL_STATE_COLORS[primary] ?? SHELL_STATE_COLORS.UNKNOWN
 }
+
+/* ==================== 车辆标签外观（SPEC §5.1、§6.4、§7.2；TASK-011） ==================== */
+
+/**
+ * 标签四边形世界尺寸：高度固定，宽度 = 高度 × 名称单元宽高比（256×64 = 4:1）。
+ * 标签锚点高于车顶与警示灯（约 0.25m），近景不遮挡车体主体。
+ */
+export const LABEL_HEIGHT_M = 0.6
+export const LABEL_ASPECT = 4
+/** 标签世界宽度：由名称单元宽高比推出（帧同步与测试共用同一事实源） */
+export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
+export const LABEL_ANCHOR_Y_M = 0.8
+
+/**
+ * LOD 投影阈值（SPEC §6.4，边界含）：车体投影长度 ≥8px 显示全部名称，
+ * ≥20px 增加电量条和完整状态芯片；低于 8px 仅重点车可见（远景）。
+ */
+export const LABEL_NAME_MIN_PX = 8
+export const LABEL_FULL_MIN_PX = 20
+/** 远景重点标签上限：按优先级截断，最多 20 个（SPEC §6.4） */
+export const LABEL_IMPORTANT_MAX = 20
+
+/**
+ * 标签边框配色（SPEC §7.3 的标签内表达；3D 告警环属 TASK-012，须复用同色）：
+ * 选中白、L1 黄、L2 红。电量条颜色按电量档位在 shader 内取值（同阈值常量）。
+ */
+export const LABEL_BORDER_SELECTED_COLOR = '#ffffff'
+export const LABEL_BORDER_L1_COLOR = '#ffd21e'
+export const LABEL_BORDER_L2_COLOR = '#ff2d2d'
+
+/** 电量条颜色：与告警阈值同口径（<15 红、[15,30) 黄、≥30 绿） */
+export const LABEL_BATTERY_OK_COLOR = '#3fbf6f'
+export const LABEL_BATTERY_LOW_COLOR = '#f5a524'
+export const LABEL_BATTERY_CRITICAL_COLOR = '#ff2d2d'
+
+/**
+ * 标签字体栈：与地图名称同一族（中文可用）。字体常量在 fleet-monitoring 内
+ * 独立声明——map-visualization 的 mapAppearance 属另一 Feature 的内部模块，
+ * 跨 Feature 只允许公开入口导入（SPEC §12.2），此处不做深层引用。
+ */
+export const LABEL_FONT_FAMILY =
+  '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'

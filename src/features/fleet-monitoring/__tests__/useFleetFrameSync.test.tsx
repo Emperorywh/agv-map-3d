@@ -9,7 +9,7 @@
  * 5. 容量边界 200/250/257 台的批次数与 Draw Call 数、513 台超硬上限行为；
  * 6. StrictMode 式重挂载后场景从运行时全量收敛。
  */
-import { StrictMode } from 'react'
+import { StrictMode, useRef, useState } from 'react'
 import { act } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
@@ -23,6 +23,7 @@ import {
 } from '@/shared/spatial'
 import { createDiagnosticsReporter, type DiagnosticRecord } from '@/shared/diagnostics'
 import { createFleetRuntime } from '../model/createFleetRuntime'
+import { createInstanceSlotTable } from '../model/instanceSlots'
 import {
   computeVehiclePartLayout,
   createVehicleResources,
@@ -130,6 +131,36 @@ function spyNeedsUpdate(attr: THREE.BufferAttribute): { count: () => number } {
   return { count: () => writes }
 }
 
+/**
+ * 测试装配组件：镜像 FleetMonitoringFeature 的生产接线——槽位表 useRef 惰性
+ * 创建、批次数 useState 持有并经 onBatchCountChanged 上抛（TASK-011 起槽位
+ * 表与批次数上提到 Feature 根组件，与标签图层共享）。
+ */
+function TestVehicleInstances(options: {
+  runtime: ReturnType<typeof createFleetRuntime>
+  worldTransform: WorldTransform | null
+  resources: VehicleResources
+  hardCap?: number
+  diagnostics?: ReturnType<typeof createDiagnosticsReporter>
+}) {
+  const tableRef = useRef<ReturnType<typeof createInstanceSlotTable> | null>(null)
+  if (tableRef.current === null) {
+    tableRef.current = createInstanceSlotTable({ hardCap: options.hardCap })
+  }
+  const [batchCount, setBatchCount] = useState(1)
+  return (
+    <VehicleInstances
+      runtime={options.runtime}
+      worldTransform={options.worldTransform}
+      resources={options.resources}
+      table={tableRef.current}
+      batchCount={batchCount}
+      onBatchCountChanged={setBatchCount}
+      diagnostics={options.diagnostics}
+    />
+  )
+}
+
 /** 挂载车辆实例图层（独立资源实例；测试结束时统一清理） */
 async function mountFleet(options: {
   runtime: ReturnType<typeof createFleetRuntime>
@@ -143,7 +174,7 @@ async function mountFleet(options: {
 }> {
   const resources = createVehicleResources()
   const tree = (
-    <VehicleInstances
+    <TestVehicleInstances
       runtime={options.runtime}
       worldTransform={options.worldTransform ?? makeWorld()}
       resources={resources}
@@ -461,7 +492,7 @@ describe('VehicleInstances 逐帧同步（TASK-010）', () => {
     cleanups.push(() => resources.dispose())
     const world = makeWorld()
     const renderer = await ReactThreeTestRenderer.create(
-      <VehicleInstances runtime={runtime} worldTransform={null} resources={resources} />,
+      <TestVehicleInstances runtime={runtime} worldTransform={null} resources={resources} />,
     )
     cleanups.push(() => renderer.unmount())
     await act(async () => {})
@@ -471,7 +502,7 @@ describe('VehicleInstances 逐帧同步（TASK-010）', () => {
 
     // 地图就绪（worldTransform 注入）：下一帧全量重写收敛到运行时真相
     await renderer.update(
-      <VehicleInstances runtime={runtime} worldTransform={world} resources={resources} />,
+      <TestVehicleInstances runtime={runtime} worldTransform={world} resources={resources} />,
     )
     await advance(renderer)
     expect(renderedCount(findMesh(renderer, 'fleet-shell-b0') as THREE.InstancedMesh)).toBe(1)
