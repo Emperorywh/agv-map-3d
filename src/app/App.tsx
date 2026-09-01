@@ -1,15 +1,20 @@
-// 应用组合根（SPEC §7.1、§10.3、§12.3；TASK-004 接入启动编排）。
-// 职责：持有启动状态（bootstrapApplication：config + 地图首载），就绪后以
-//       地图视图描述符装配唯一全屏 Canvas 内的场景组合根 AgvMonitorScene；
-//       地图阶段失败时按指数退避在后台自动重试（清屏色不变），配置阶段失败
-//       为终态（保持清屏色，不渲染任何错误 DOM）。
+// 应用组合根（SPEC §7.1、§10.3、§12.3；TASK-004 接入启动编排，TASK-007 接入
+// 数据源选择）。
+// 职责：持有启动状态（bootstrapApplication：config + 地图首载），就绪后按
+//       配置构造车辆数据源（WS / Mock 选择），以地图视图描述符 + 数据源装配
+//       唯一全屏 Canvas 内的场景组合根 AgvMonitorScene；地图阶段失败时按指数
+//       退避在后台自动重试（清屏色不变），配置阶段失败为终态（保持清屏色，
+//       不渲染任何错误 DOM）。
 // 关键不变量（SPEC §7.1 / §7.4 / D2）：
 // 1. 整个应用自始至终只挂载一个 Canvas，尺寸 100vw × 100dvh；Canvas 外无
-//    任何 DOM 覆盖层（无加载/错误/进度 UI）；
+//    任何 DOM 覆盖层（无加载/错误/进度/连接状态 UI）；
 // 2. 启动可取消：effect 清理中止进行中的启动流程并清除重试计时器，
 //    StrictMode 的 setup→cleanup→setup 只保留最后一次流程的结果；
-// 3. App 只做组合与启动状态持有，不承载地图校验、几何构建等业务算法；
-// 4. ACESFilmic 色调映射在 Canvas 上显式声明（SPEC §5.4 的唯一色调映射口径）。
+// 3. App 只做组合与启动状态持有，不承载地图校验、几何构建、协议映射等
+//    业务算法；数据源实例按配置构造一次（useMemo），连接生命周期由 Feature
+//    内 Provider 的 Hook 管理；
+// 4. 数据源为 null（Mock 未实现 / wsUrl 缺失）是合法稳态：静态地图照常装配；
+// 5. ACESFilmic 色调映射在 Canvas 上显式声明（SPEC §5.4 的唯一色调映射口径）。
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas } from '@react-three/fiber'
@@ -19,7 +24,10 @@ import {
   StructuredError,
 } from '@/shared/diagnostics'
 import type { MapViewDescriptor } from '@/features/map-visualization'
+import type { VehicleDataSource } from '@/features/fleet-monitoring'
+import type { RuntimeConfig } from './bootstrap/loadRuntimeConfig'
 import { bootstrapApplication } from './bootstrap/bootstrapApplication'
+import { selectVehicleDataSource } from './bootstrap/selectVehicleDataSource'
 import { AgvMonitorScene } from './scene/AgvMonitorScene'
 
 /** 启动重试基础间隔与上限（毫秒）：指数退避 1s→2s→4s…≤30s */
@@ -27,20 +35,26 @@ const STARTUP_RETRY_BASE_MS = 1000
 const STARTUP_RETRY_MAX_MS = 30000
 
 /**
- * 启动状态机（TASK-004 阶段）：
+ * 启动状态机（TASK-004 阶段 + TASK-007 数据源选择）：
  * - pending：启动进行中或地图阶段后台重试中，页面保持清屏色；
- * - ready：config 与地图均就绪，携带场景描述符（含 bootstrap 种子）；
+ * - ready：config 与地图均就绪，携带场景描述符（含 bootstrap 种子）、配置与
+ *   地图上下文（数据源选择输入）；
  * - config-failed：配置阶段终态失败，保持清屏色，无自动重试（SPEC §7.4）。
- * 后续启动编排扩展（数据源并行、阶段指标、恢复矩阵）归 TASK-017。
+ * 后续启动编排扩展（数据源并行初始化、阶段指标、恢复矩阵）归 TASK-017。
  */
 type StartupState =
   | { phase: 'pending' }
-  | { phase: 'ready'; mapDescriptor: MapViewDescriptor }
+  | {
+      phase: 'ready'
+      mapDescriptor: MapViewDescriptor
+      config: RuntimeConfig
+      mapId: string
+    }
   | { phase: 'config-failed' }
 
 export function App() {
   const [startup, setStartup] = useState<StartupState>({ phase: 'pending' })
-  // 诊断通道仅创建一次，同时供启动编排与重试上报使用
+  // 诊断通道仅创建一次，同时供启动编排、重试与数据源选择上报使用
   const diagnostics = useMemo(() => createDiagnosticsReporter(), [])
 
   useEffect(() => {
@@ -66,6 +80,8 @@ export function App() {
                 worldTransform: result.worldTransform,
               },
             },
+            config: result.config,
+            mapId: result.mapModel.mapId,
           })
         })
         .catch((error: unknown) => {
@@ -106,6 +122,19 @@ export function App() {
     }
   }, [diagnostics])
 
+  // 数据源按就绪配置构造一次（useMemo 依赖 startup 只在 ready 时变化一次）；
+  // 返回 null（Mock 未实现 / wsUrl 缺失）即「无车队数据」稳态，地图照常渲染
+  const vehicleSource: VehicleDataSource | null = useMemo(() => {
+    if (startup.phase !== 'ready') {
+      return null
+    }
+    return selectVehicleDataSource({
+      config: startup.config,
+      mapId: startup.mapId,
+      diagnostics,
+    })
+  }, [startup, diagnostics])
+
   return (
     <Canvas
       style={{ width: '100vw', height: '100dvh' }}
@@ -114,6 +143,8 @@ export function App() {
     >
       <AgvMonitorScene
         mapDescriptor={startup.phase === 'ready' ? startup.mapDescriptor : null}
+        vehicleSource={vehicleSource}
+        staleAfterMs={startup.phase === 'ready' ? startup.config.staleAfterMs : undefined}
       />
     </Canvas>
   )
