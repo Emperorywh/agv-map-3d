@@ -1,11 +1,12 @@
 /*
- * 数据源选择测试（TASK-007 / SPEC §10.3、§12.3）。
+ * 数据源选择测试（TASK-007/009 / SPEC §10.3、§12.3）。
  *
  * 职责：锁定 app 组合层的数据源选型合同——ws 配置产出绑定地图上下文的
- *       WebSocket 数据源（注入点透传），mock 配置与 wsUrl 缺失显式降级为
- *       null 并记诊断；本模块不发起连接。
+ *       WebSocket 数据源（注入点透传）；mock 配置产出以 MapModel 拓扑为引擎
+ *       的 Mock 数据源（MapModel 缺失显式降级 null 并记诊断）；__AGV_MOCK__
+ *       开发桥只在「开发模式 + Mock」时注册到注入目标。本模块不发起连接。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { DiagnosticRecord } from '@/shared/diagnostics'
 import { createDiagnosticsReporter, StructuredError } from '@/shared/diagnostics'
 import type { RuntimeConfig } from '../loadRuntimeConfig'
@@ -15,8 +16,49 @@ import type {
   WebSocketProtocolAdapter,
 } from '@/features/fleet-monitoring'
 import { WS_READY_STATE_OPEN, type WebSocketLike } from '@/features/fleet-monitoring'
+import { createMapModel, validateMap, type MapModel } from '@/features/map-visualization'
 
 const MAP = 'm1'
+
+/** 最小合成地图：两个 work 节点 + 一条 LINE 边（Mock 内核可用） */
+function buildTinyMapModel(): MapModel {
+  return createMapModel(
+    validateMap({
+      mapId: MAP,
+      nodes: [
+        { id: 'a', name: 'A', type: 'work', mapId: MAP, highPrecision: false, x: 0, y: 0, angle: null },
+        { id: 'b', name: 'B', type: 'work', mapId: MAP, highPrecision: false, x: 3, y: 4, angle: null },
+      ],
+      edges: [
+        {
+          id: 'e1',
+          mapId: MAP,
+          edgeType: 'LINE',
+          sx: 0,
+          sy: 0,
+          ex: 3,
+          ey: 4,
+          cx: null,
+          cy: null,
+          dx: null,
+          dy: null,
+          isBackEdge: false,
+          cost: 5,
+          maxLoadSpeed: 1,
+          maxFreeSpeed: 1,
+          maxLoadRotationSpeed: null,
+          maxFreeRotationSpeed: null,
+          loadSecurity: null,
+          freeSecurity: null,
+          snodeId: 'a',
+          enodeId: 'b',
+        },
+      ],
+      zones: [],
+      nodeEdgeGroups: [],
+    }),
+  ).mapModel
+}
 
 function makeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
@@ -102,7 +144,7 @@ describe('selectVehicleDataSource（TASK-007）', () => {
     expect(decoded).toHaveLength(0) // 未收到消息时不调用
   })
 
-  it('dataSource=mock：TASK-009 实现前显式降级为 null 并记 DATA_SOURCE_UNAVAILABLE', () => {
+  it('dataSource=mock 但 MapModel 缺失：显式降级为 null 并记 DATA_SOURCE_UNAVAILABLE', () => {
     const { records, reporter } = recordingDiagnostics()
     const source = selectVehicleDataSource({
       config: makeConfig({ dataSource: 'mock', wsUrl: null }),
@@ -113,6 +155,31 @@ describe('selectVehicleDataSource（TASK-007）', () => {
     expect(records.map((record) => record.code)).toEqual([
       'DATA_SOURCE_UNAVAILABLE',
     ])
+  })
+
+  it('dataSource=mock 且 MapModel 就绪：产出 Mock 数据源，连接即得全量快照', async () => {
+    vi.useFakeTimers()
+    try {
+      const { reporter } = recordingDiagnostics()
+      const source = selectVehicleDataSource({
+        config: makeConfig({ dataSource: 'mock', wsUrl: null }),
+        mapId: MAP,
+        mapModel: buildTinyMapModel(),
+        diagnostics: reporter,
+      })
+      expect(source).not.toBeNull()
+      const events: unknown[] = []
+      source!.onEvent((event) => events.push(event))
+      await source!.connect()
+      expect(source!.status).toBe('OPEN')
+      const snapshot = events[0] as { type: string; vehicles: unknown[] }
+      expect(snapshot.type).toBe('snapshot')
+      expect(snapshot.vehicles.length).toBeGreaterThan(0)
+      source!.disconnect()
+      expect(source!.status).toBe('CLOSED')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('dataSource=ws 但 wsUrl 缺失：纵深防御降级为 null，不抛出中断启动', () => {

@@ -52,6 +52,12 @@ const capture = vi.hoisted(() => ({
   mapDescriptor: undefined as unknown,
 }))
 
+/** 捕获数据源选择入参（保持 App 外壳测试与 Mock 内核实现解耦） */
+const selectCapture = vi.hoisted(() => ({
+  options: [] as unknown[],
+  returnValue: null as unknown,
+}))
+
 vi.mock('@/features/map-visualization', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/features/map-visualization')>()
@@ -66,6 +72,13 @@ vi.mock('@/features/map-visualization', async (importOriginal) => {
 
 vi.mock('@/app/bootstrap/bootstrapApplication', () => ({
   bootstrapApplication: vi.fn(),
+}))
+
+vi.mock('@/app/bootstrap/selectVehicleDataSource', () => ({
+  selectVehicleDataSource: (options: unknown) => {
+    selectCapture.options.push(options)
+    return selectCapture.returnValue
+  },
 }))
 
 const mockBootstrap = vi.mocked(bootstrapApplication)
@@ -144,6 +157,8 @@ afterEach(() => {
   vi.useRealTimers()
   mockBootstrap.mockReset()
   capture.mapDescriptor = undefined
+  selectCapture.options = []
+  selectCapture.returnValue = null
 })
 
 describe('App DOM 外壳', () => {
@@ -198,6 +213,54 @@ describe('App DOM 外壳', () => {
     }
     expect(descriptor.mapUrl).toBe('http://t/json/map.json')
     expect(descriptor.initial.mapModel).toBe(result.mapModel)
+  })
+
+  it('数据源选择按就绪配置执行一次，Mock 分支携带地图拓扑（TASK-009）', async () => {
+    const result = buildBootstrapResult()
+    mockBootstrap.mockResolvedValue(result)
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    await waitFor(() => expect(selectCapture.options.length).toBeGreaterThan(0))
+    const options = selectCapture.options[0] as {
+      config: { dataSource: string }
+      mapId: string
+      mapModel: MapModel
+    }
+    expect(options.config.dataSource).toBe('mock')
+    expect(options.mapId).toBe(result.mapModel.mapId)
+    // Mock 必须在 MapModel 拓扑就绪后创建：选择入参携带同一模型引用
+    expect(options.mapModel).toBe(result.mapModel)
+  })
+
+  it('__AGV_MOCK__ 注册到已提交的 Mock 数据源实例，卸载后对称摘除（TASK-009）', async () => {
+    mockBootstrap.mockResolvedValue(buildBootstrapResult())
+    // 带 devControl 的假 Mock 数据源：无计时器、连接立即兑现
+    const devControl = { getStats: () => ({ fleetSize: 1 }) }
+    const fakeMockSource = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn(),
+      requestSnapshot: vi.fn(),
+      status: 'OPEN' as const,
+      onEvent: vi.fn().mockReturnValue(() => {}),
+      onStatusChange: vi.fn().mockReturnValue(() => {}),
+      devControl,
+    }
+    selectCapture.returnValue = fakeMockSource
+
+    const { unmount } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    // StrictMode setup→cleanup→setup 收敛后，桥指向同一提交实例的控制接口
+    await waitFor(() =>
+      expect((globalThis as Record<string, unknown>)['__AGV_MOCK__']).toBe(devControl),
+    )
+    unmount()
+    expect((globalThis as Record<string, unknown>)['__AGV_MOCK__']).toBeUndefined()
   })
 
   it('配置阶段失败为终态：保持 null 描述符且不重试', async () => {

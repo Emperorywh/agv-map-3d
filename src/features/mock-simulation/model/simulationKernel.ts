@@ -10,10 +10,12 @@
  *       MockVehicleDataSource）、不依赖 React/Three.js；高频内部状态以普通
  *       对象原地更新（与 createFleetRuntime 同策略），绝不进入 React state。
  *       车辆速度不使用加速度惯性（位置直接由弧长推进决定）。
+ *       动态增删车（TASK-009 的验收时间线与开发桥使用）也收敛在本内核：
+ *       车队成员资格是仿真领域状态，数据源层只做事件发布。
  * 关键不变量：
  * 1. 可复现：同一 mapModel + 同一 options + 同一 step 调用序列 ⇒ 内核状态
  *   逐步全等（PRNG 消费顺序固定：建车「边→进度→电量→速度→载荷」，到站
- *   「电量裁决→出边随机」）；
+ *   「电量裁决→出边随机」；动态增车消费同一建车流）；
  * 2. 拓扑守恒：车辆只沿其所在分量的有向逻辑边移动，绝不瞬移、绝不逆行、
  *   绝不跨分量（寻充路径由有向 Dijkstra 给出，天然不离开本分量）；
  * 3. 大时间差不累积位移：单步时长被钳制到 maxStepSeconds，超出部分直接
@@ -64,6 +66,13 @@ export interface MockSimulationOptions {
   initialBatteryMinPercent?: number
   /** 初始电量采样区间上限（百分比）。缺省 100 */
   initialBatteryMaxPercent?: number
+  /**
+   * 前 N 台车辆（按全局建车序）的初始电量低于寻充阈值——用于验收时间线内
+   * 「确定出现充电事件」（SPEC §9.3 不依赖概率碰巧命中）。缺省 0（不干预）。
+   */
+  lowBatteryVehicleCount?: number
+  /** 低于寻充阈值车辆的电量采样下限（百分比）。缺省 5 */
+  lowBatteryMinPercent?: number
   /** 车辆带载荷的概率 [0,1]。缺省 0.5 */
   loadedProbability?: number
 }
@@ -79,6 +88,8 @@ export interface ResolvedMockSimulationConfig {
   readonly chargeTargetPercent: number
   readonly initialBatteryMinPercent: number
   readonly initialBatteryMaxPercent: number
+  readonly lowBatteryVehicleCount: number
+  readonly lowBatteryMinPercent: number
   readonly loadedProbability: number
 }
 
@@ -106,12 +117,20 @@ export interface MockVehicleRuntimeState {
   readonly anchorNodeId: string
 }
 
-/** 内核公开视图：确定性推进 + 只读车队状态 */
+/** 内核公开视图：确定性推进 + 动态增删车 + 只读车队状态 */
 export interface MockSimulationKernel {
   readonly mapId: string
   readonly config: ResolvedMockSimulationConfig
   /** 推进仿真：dt ≤ 0 为无操作；dt 超过 maxStepSeconds 时只推进钳制值 */
   step(dtSeconds: number): void
+  /**
+   * 动态增车：在「现有车辆数/逻辑边数」最低的分量（并列取最小序号）创建
+   * 一辆车并返回其只读状态；所有分量都无边池时返回 null。agvKey 序号全局
+   * 递增不复用（删除过的编号永不重生）。
+   */
+  addVehicle(): MockVehicleRuntimeState | null
+  /** 动态删车：按 agvKey 移除；键不存在时幂等返回 false */
+  removeVehicle(agvKey: string): boolean
   /** 只读车队状态（内部对象零拷贝暴露；发布到事件前必须复制为不可变快照） */
   getVehicleStates(): readonly MockVehicleRuntimeState[]
 }
@@ -214,6 +233,8 @@ export function createMockSimulationKernel(
     chargeTargetPercent: MOCK_CHARGE_TARGET_PERCENT,
     initialBatteryMinPercent: options.initialBatteryMinPercent ?? 30,
     initialBatteryMaxPercent: options.initialBatteryMaxPercent ?? 100,
+    lowBatteryVehicleCount: Math.max(0, Math.floor(options.lowBatteryVehicleCount ?? 0)),
+    lowBatteryMinPercent: options.lowBatteryMinPercent ?? 5,
     loadedProbability: options.loadedProbability ?? 0.5,
   }
   const prng: MockPrng = createMockPrng(config.seed)
@@ -234,12 +255,14 @@ export function createMockSimulationKernel(
     componentEdgePools.map((pool) => pool.length),
     config.vehicleCount,
   )
-  let serial = 0
+  // agvKey 序号全局递增、删除后永不复用：同配置建车顺序逐位一致（不变量 1），
+  // 且「增删车反复进行」不会产生与在册车辆冲突的键
+  let nextSerial = 1
   for (let componentIndex = 0; componentIndex < allocation.length; componentIndex += 1) {
     const pool = componentEdgePools[componentIndex]
     for (let n = 0; n < allocation[componentIndex]; n += 1) {
-      serial += 1
-      vehicles.push(createVehicle(componentIndex, pool, serial))
+      vehicles.push(createVehicle(componentIndex, pool, nextSerial))
+      nextSerial += 1
     }
   }
 
@@ -254,7 +277,7 @@ export function createMockSimulationKernel(
     if (!edge) {
       // 纵深防御：池中边必然存在；失效则降级为停靠起点的静止车辆
       return {
-        agvKey: formatAgvKey(serialNumber),
+        agvKey: formatMockAgvKey(serialNumber),
         componentIndex,
         mode: 'IDLE_BLOCKED',
         blockedReason: 'DEAD_END',
@@ -271,16 +294,22 @@ export function createMockSimulationKernel(
       }
     }
     const progress = randomInRange(prng, 0, edge.length)
-    const battery = randomInRange(
-      prng,
-      config.initialBatteryMinPercent,
-      config.initialBatteryMaxPercent,
-    )
+    // 电量采样：前 lowBatteryVehicleCount 台（全局建车序）落在寻充阈值之下，
+    // 保证验收时间线内确定出现充电；其余按常规区间。两种路径都只消费一次
+    // PRNG 抽取，流顺序不变（不变量 1）
+    const battery =
+      serialNumber <= config.lowBatteryVehicleCount
+        ? randomInRange(prng, config.lowBatteryMinPercent, config.lowBatterySeekPercent)
+        : randomInRange(
+            prng,
+            config.initialBatteryMinPercent,
+            config.initialBatteryMaxPercent,
+          )
     const targetSpeed = sampleTargetSpeed(prng)
     const loaded = prng() < config.loadedProbability
     const sample = tables.get(edge.id)!.sample(progress)
     return {
-      agvKey: formatAgvKey(serialNumber),
+      agvKey: formatMockAgvKey(serialNumber),
       componentIndex,
       mode: 'CRUISE',
       blockedReason: null,
@@ -478,6 +507,50 @@ export function createMockSimulationKernel(
     }
   }
 
+  /**
+   * 动态增车：选择「现有车辆数/逻辑边数」比例最低的分量（并列取最小序号），
+   * 使车队规模变化后仍趋近按拓扑量的均衡分布；建车消费与初始建车同一条
+   * PRNG 流（边→进度→电量→速度→载荷），调用时机由调用方决定且必须确定。
+   */
+  const addVehicle = (): MockVehicleRuntimeState | null => {
+    let bestIndex = -1
+    let bestRatio = Number.POSITIVE_INFINITY
+    for (let i = 0; i < componentEdgePools.length; i += 1) {
+      const poolLength = componentEdgePools[i].length
+      if (poolLength <= 0) {
+        continue
+      }
+      let count = 0
+      for (const vehicle of vehicles) {
+        if (vehicle.componentIndex === i) {
+          count += 1
+        }
+      }
+      const ratio = count / poolLength
+      if (ratio < bestRatio) {
+        bestRatio = ratio
+        bestIndex = i
+      }
+    }
+    if (bestIndex < 0) {
+      return null
+    }
+    const vehicle = createVehicle(bestIndex, componentEdgePools[bestIndex], nextSerial)
+    nextSerial += 1
+    vehicles.push(vehicle)
+    return vehicle
+  }
+
+  /** 动态删车：按 agvKey 幂等移除；键不存在（含已删除）返回 false */
+  const removeVehicle = (agvKey: string): boolean => {
+    const index = vehicles.findIndex((vehicle) => vehicle.agvKey === agvKey)
+    if (index < 0) {
+      return false
+    }
+    vehicles.splice(index, 1)
+    return true
+  }
+
   return {
     mapId: mapModel.mapId,
     config,
@@ -493,15 +566,29 @@ export function createMockSimulationKernel(
         advanceVehicle(vehicle, effectiveDt)
       }
     },
+    addVehicle,
+    removeVehicle,
     getVehicleStates(): readonly MockVehicleRuntimeState[] {
       return vehicles
     },
   }
 }
 
-/** agvKey 编号格式：mock-agv-0001（连续四位，按分量顺序分配） */
-function formatAgvKey(serial: number): string {
-  return `mock-agv-${String(serial).padStart(4, '0')}`
+/** agvKey 前缀：与编号格式 mock-agv-0001 配对使用 */
+const AGV_KEY_PREFIX = 'mock-agv-'
+
+/** agvKey 编号格式：mock-agv-0001（至少四位，按全局建车序分配） */
+export function formatMockAgvKey(serial: number): string {
+  return `${AGV_KEY_PREFIX}${String(serial).padStart(4, '0')}`
+}
+
+/** 从 agvKey 解析建车序号；非本内核键格式返回 null（不猜测） */
+export function parseMockAgvSerial(agvKey: string): number | null {
+  if (!agvKey.startsWith(AGV_KEY_PREFIX)) {
+    return null
+  }
+  const serial = Number.parseInt(agvKey.slice(AGV_KEY_PREFIX.length), 10)
+  return Number.isFinite(serial) ? serial : null
 }
 
 /** 建车降级路径使用的兜底目标速度（米/秒，区间下限） */

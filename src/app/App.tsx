@@ -13,7 +13,9 @@
 // 3. App 只做组合与启动状态持有，不承载地图校验、几何构建、协议映射等
 //    业务算法；数据源实例按配置构造一次（useMemo），连接生命周期由 Feature
 //    内 Provider 的 Hook 管理；
-// 4. 数据源为 null（Mock 未实现 / wsUrl 缺失）是合法稳态：静态地图照常装配；
+// 4. 数据源为 null（Mock 缺地图拓扑 / wsUrl 缺失）是合法稳态：静态地图照常
+//    装配；Mock 数据源在 MapModel 拓扑就绪后创建（就绪态携带 mapModel），
+//    WS 数据源不受该屏障限制；
 // 5. ACESFilmic 色调映射在 Canvas 上显式声明（SPEC §5.4 的唯一色调映射口径）。
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
@@ -23,8 +25,13 @@ import {
   isAbortError,
   StructuredError,
 } from '@/shared/diagnostics'
-import type { MapViewDescriptor } from '@/features/map-visualization'
+import type { MapModel, MapViewDescriptor } from '@/features/map-visualization'
 import type { VehicleDataSource } from '@/features/fleet-monitoring'
+import {
+  MOCK_DEV_BRIDGE_KEY,
+  registerMockDevBridge,
+  type MockVehicleDataSource,
+} from '@/features/mock-simulation'
 import type { RuntimeConfig } from './bootstrap/loadRuntimeConfig'
 import { bootstrapApplication } from './bootstrap/bootstrapApplication'
 import { selectVehicleDataSource } from './bootstrap/selectVehicleDataSource'
@@ -49,6 +56,8 @@ type StartupState =
       mapDescriptor: MapViewDescriptor
       config: RuntimeConfig
       mapId: string
+      /** 地图模型：Mock 数据源创建的硬前置（内核需要真实拓扑） */
+      mapModel: MapModel
     }
   | { phase: 'config-failed' }
 
@@ -82,6 +91,7 @@ export function App() {
             },
             config: result.config,
             mapId: result.mapModel.mapId,
+            mapModel: result.mapModel,
           })
         })
         .catch((error: unknown) => {
@@ -123,7 +133,7 @@ export function App() {
   }, [diagnostics])
 
   // 数据源按就绪配置构造一次（useMemo 依赖 startup 只在 ready 时变化一次）；
-  // 返回 null（Mock 未实现 / wsUrl 缺失）即「无车队数据」稳态，地图照常渲染
+  // 返回 null（Mock 缺地图拓扑 / wsUrl 缺失）即「无车队数据」稳态，地图照常渲染
   const vehicleSource: VehicleDataSource | null = useMemo(() => {
     if (startup.phase !== 'ready') {
       return null
@@ -131,9 +141,30 @@ export function App() {
     return selectVehicleDataSource({
       config: startup.config,
       mapId: startup.mapId,
+      mapModel: startup.mapModel,
       diagnostics,
     })
   }, [startup, diagnostics])
+
+  // __AGV_MOCK__ 开发桥（SPEC §9.3：只在开发和 Mock 模式暴露）：在提交阶段
+  // 注册到「实际被连接的数据源实例」——StrictMode 双渲染会丢弃其中一个
+  // render 产物，只有 effect 拿到的实例与连接生命周期一致。生产构建中
+  // import.meta.env.DEV 被静态替换为 false，注册块连同 Mock 全局键名字符串
+  // 被死代码消除，生产产物无 Mock 全局。清理时对称摘除，卸载后不留残留。
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return
+    }
+    if (vehicleSource === null || !('devControl' in vehicleSource)) {
+      return
+    }
+    registerMockDevBridge((vehicleSource as MockVehicleDataSource).devControl, {
+      dev: true,
+    })
+    return () => {
+      delete (globalThis as Record<string, unknown>)[MOCK_DEV_BRIDGE_KEY]
+    }
+  }, [vehicleSource])
 
   return (
     <Canvas

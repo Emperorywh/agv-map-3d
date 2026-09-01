@@ -357,3 +357,80 @@ describe('createMockSimulationKernel', () => {
     expect(() => kernel.step(1)).not.toThrow()
   })
 })
+
+describe('动态增删车（TASK-009 车队生命周期）', () => {
+  /** 两个分量：3 条边的分量 0 与 1 条边的分量 1（比例分配天然偏斜） */
+  function buildTwoComponents() {
+    return buildModel({
+      nodes: [
+        makeNode({ id: 'a1', name: 'A1', mapId: 'm1', x: 0, y: 0 }),
+        makeNode({ id: 'a2', name: 'A2', mapId: 'm1', x: 10, y: 0 }),
+        makeNode({ id: 'a3', name: 'A3', mapId: 'm1', x: 20, y: 0 }),
+        makeNode({ id: 'a4', name: 'A4', mapId: 'm1', x: 30, y: 0 }),
+        makeNode({ id: 'b1', name: 'B1', mapId: 'm1', x: 0, y: 100 }),
+        makeNode({ id: 'b2', name: 'B2', mapId: 'm1', x: 10, y: 100 }),
+      ],
+      edges: [
+        makeLineEdge({ id: 'e-a1', sx: 0, sy: 0, ex: 10, ey: 0, snodeId: 'a1', enodeId: 'a2' }),
+        makeLineEdge({ id: 'e-a2', sx: 10, sy: 0, ex: 20, ey: 0, snodeId: 'a2', enodeId: 'a3' }),
+        makeLineEdge({ id: 'e-a3', sx: 20, sy: 0, ex: 30, ey: 0, snodeId: 'a3', enodeId: 'a4' }),
+        makeLineEdge({ id: 'e-b1', sx: 0, sy: 100, ex: 10, ey: 100, snodeId: 'b1', enodeId: 'b2' }),
+      ],
+    })
+  }
+
+  it('addVehicle 使车队 +1，新键序号全局递增且位置落在有向边上', () => {
+    const kernel = createMockSimulationKernel(buildTwoComponents(), { vehicleCount: 2, seed: 7 })
+    const before = kernel.getVehicleStates().length
+    const added = kernel.addVehicle()
+    expect(added).not.toBeNull()
+    expect(kernel.getVehicleStates()).toHaveLength(before + 1)
+    expect(added!.agvKey).toBe('mock-agv-0003')
+    expect(Number.isFinite(added!.position.x)).toBe(true)
+    expect(Number.isFinite(added!.position.y)).toBe(true)
+  })
+
+  it('addVehicle 优先补足「车辆数/逻辑边数」比例最低的分量', () => {
+    // 初始分配 [2,0]：分量 0 比例 2/3，分量 1 比例 0 → 增车应进入分量 1
+    const kernel = createMockSimulationKernel(buildTwoComponents(), { vehicleCount: 2, seed: 7 })
+    const added = kernel.addVehicle()!
+    expect(added.componentIndex).toBe(1)
+  })
+
+  it('removeVehicle 按 agvKey 幂等删除，序号永不复用', () => {
+    const kernel = createMockSimulationKernel(buildTwoComponents(), { vehicleCount: 2, seed: 7 })
+    expect(kernel.removeVehicle('mock-agv-0002')).toBe(true)
+    expect(kernel.removeVehicle('mock-agv-0002')).toBe(false)
+    expect(kernel.removeVehicle('不存在的键')).toBe(false)
+    const added = kernel.addVehicle()!
+    // 删除过的 0002 不复生：新车拿到 0003
+    expect(added.agvKey).toBe('mock-agv-0003')
+  })
+
+  it('前 N 台车辆初始电量低于寻充阈值，其余落在常规区间', () => {
+    const kernel = createMockSimulationKernel(buildTwoComponents(), {
+      vehicleCount: 3,
+      seed: 7,
+      lowBatteryVehicleCount: 2,
+    })
+    const states = kernel.getVehicleStates()
+    expect(states[0].batteryPercent).toBeLessThan(25)
+    expect(states[1].batteryPercent).toBeLessThan(25)
+    expect(states[2].batteryPercent).toBeGreaterThanOrEqual(30)
+  })
+
+  it('动态增删序列可复现：同配置同调用序列逐位一致，不同种子不同', () => {
+    const run = (seed: number): string => {
+      const kernel = createMockSimulationKernel(buildTwoComponents(), { vehicleCount: 2, seed })
+      kernel.addVehicle()
+      kernel.step(1)
+      kernel.removeVehicle('mock-agv-0001')
+      kernel.step(2)
+      kernel.addVehicle()
+      kernel.step(3)
+      return JSON.stringify(kernel.getVehicleStates())
+    }
+    expect(run(7)).toBe(run(7))
+    expect(run(7)).not.toBe(run(8))
+  })
+})
