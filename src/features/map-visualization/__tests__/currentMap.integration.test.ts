@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /*
- * 当前地图集成测试（TASK-003 数据事实 + TASK-004 物理路径几何事实）。
+ * 当前地图集成测试（TASK-003 数据事实 + TASK-004 物理路径几何 + TASK-005 语义图层事实）。
  *
  * 职责：从当前输入 json/map.json 重新计算并锁定 SPEC §2.3 的全部数据不变量，
  *       输入发生合法变化时，直接更新本文件中的期望值（不保留旧值说明）。
@@ -13,7 +13,10 @@
  * 5. 全部逻辑边物理长度为正有限值；
  * 6. 物理路径去重（TASK-004 / A1、A3）：5,068 条物理路径（3,351 LINE /
  *    1,717 BEZIER）、4,197 条反向重复几何、约 44,559 个中心线段，
- *    映射覆盖全部逻辑边。
+ *    映射覆盖全部逻辑边；
+ * 7. 语义图层（TASK-005 / A1、A2）：59 个充电桩实例、1,187 块地面方垫
+ *    （1,185 仓库 + 2 停车）、1,185 个仓库名称锚点、7 个独占区名称锚点，
+ *    分组成员物理路径全部有效且外沿合并为单个几何。
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -24,7 +27,19 @@ import {
   buildMapGeometry,
   dedupePhysicalPaths,
 } from '@/features/map-visualization/scene/buildMapGeometry'
-import { NODE_COLORS } from '@/features/map-visualization/scene/mapAppearance'
+import { buildExclusiveGroupsGeometry } from '@/features/map-visualization/scene/buildExclusiveGroupsGeometry'
+import { buildLandmarkData } from '@/features/map-visualization/scene/buildLandmarkData'
+import {
+  collectMapNameLabels,
+  layoutNameAtlas,
+} from '@/features/map-visualization/scene/mapNameAtlas'
+import {
+  MAP_NAME_CANVAS_MAX_HEIGHT,
+  MAP_NAME_CANVAS_WIDTH,
+  MAP_NAME_FONT_PX,
+  MAP_NAME_PADDING_PX,
+  NODE_COLORS,
+} from '@/features/map-visualization/scene/mapAppearance'
 import * as THREE from 'three'
 
 // vitest 以仓库根为工作目录运行（jsdom 下 import.meta.url 非 file: 协议）
@@ -244,5 +259,139 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
     expect(() => geometry.dispose()).not.toThrow()
     surfaceSpy.mockRestore()
     centerlineSpy.mockRestore()
+  })
+})
+
+describe('当前地图（json/map.json）语义图层事实（TASK-005 / A1、A2）', () => {
+  const { mapModel, worldTransform } = MODEL
+  const geometry = buildMapGeometry(mapModel, worldTransform)
+  const landmarks = buildLandmarkData(mapModel, worldTransform)
+  const exclusive = buildExclusiveGroupsGeometry(mapModel, worldTransform, geometry.physical)
+
+  it('充电语义数量正确：59 个充电桩实例，位置与 charge 节点世界坐标一致', () => {
+    expect(landmarks.chargeCount).toBe(59)
+    expect(landmarks.chargeMatrices).toHaveLength(59 * 16)
+    const chargeNodes = mapModel.nodeList.filter((node) => node.category === 'charge')
+    expect(chargeNodes).toHaveLength(59)
+    // 抽验首个充电节点：矩阵平移列与统一世界坐标一致
+    const world = worldTransform.toWorldXZ(chargeNodes[0].x, chargeNodes[0].y)
+    expect(landmarks.chargeMatrices[12]).toBeCloseTo(world.x, 4)
+    expect(landmarks.chargeMatrices[14]).toBeCloseTo(world.z, 4)
+  })
+
+  it('地面标识数量正确：1,187 块方垫（1,185 仓库浅黄 + 2 停车紫），颜色按节点序逐块核对', () => {
+    expect(landmarks.padCount).toBe(1185 + 2)
+    expect(landmarks.padMatrices).toHaveLength((1185 + 2) * 16)
+    expect(landmarks.padColors).toHaveLength((1185 + 2) * 3)
+    expect(landmarks.warehouseNameAnchors).toHaveLength(1185)
+    expect(landmarks.parkAnchors).toHaveLength(2)
+
+    // 按节点遍历序逐块核对：颜色与类别色表一致（节点序与方垫序同源）
+    let padIndex = 0
+    let warehouseCount = 0
+    let parkCount = 0
+    for (const node of mapModel.nodeList) {
+      if (node.category !== 'warehouse' && node.category !== 'park') {
+        continue
+      }
+      const expected = new THREE.Color(NODE_COLORS[node.category])
+      expect(landmarks.padColors[padIndex * 3]).toBeCloseTo(expected.r, 5)
+      expect(landmarks.padColors[padIndex * 3 + 1]).toBeCloseTo(expected.g, 5)
+      expect(landmarks.padColors[padIndex * 3 + 2]).toBeCloseTo(expected.b, 5)
+      // 矩阵平移列与节点世界坐标一致
+      const world = worldTransform.toWorldXZ(node.x, node.y)
+      expect(landmarks.padMatrices[padIndex * 16 + 12]).toBeCloseTo(world.x, 4)
+      expect(landmarks.padMatrices[padIndex * 16 + 14]).toBeCloseTo(world.z, 4)
+      if (node.category === 'warehouse') {
+        warehouseCount += 1
+      } else {
+        parkCount += 1
+      }
+      padIndex += 1
+    }
+    expect(padIndex).toBe(1187)
+    expect(warehouseCount).toBe(1185)
+    expect(parkCount).toBe(2)
+  })
+
+  it('名称条目收集完整：1,185 仓库 + 7 分组 + 1 停车字形，key 全部唯一', () => {
+    const labels = collectMapNameLabels(mapModel)
+    expect(labels).toHaveLength(1185 + 7 + 1)
+    const keys = new Set(labels.map((label) => label.key))
+    expect(keys.size).toBe(labels.length)
+    // 仓库名称全部为 ASCII 短名（当前输入），分组名称为「独占区1~7」
+    expect(labels[0].key.startsWith('node:')).toBe(true)
+    expect(labels[1185]).toMatchObject({ text: '独占区1' })
+    expect(labels[1192]).toMatchObject({ key: '__park_glyph__', text: 'P' })
+  })
+
+  it('名称图集布局可容纳当前全部名称：无丢弃、画布尺寸不超过上限', () => {
+    const labels = collectMapNameLabels(mapModel)
+    // 近似真实字体度量：ASCII 每字符 11px、CJK 每字符 20px（确定性可复现）
+    const layout = layoutNameAtlas(labels, {
+      fontPx: MAP_NAME_FONT_PX,
+      paddingPx: MAP_NAME_PADDING_PX,
+      canvasWidth: MAP_NAME_CANVAS_WIDTH,
+      maxHeight: MAP_NAME_CANVAS_MAX_HEIGHT,
+      measure: (text) => {
+        let total = 0
+        for (const char of text) {
+          total += char.charCodeAt(0) > 0x2e80 ? 20 : 11
+        }
+        return total
+      },
+    })
+    expect(layout.droppedKeys).toEqual([])
+    expect(layout.cells.size).toBe(labels.length)
+    expect(layout.height).toBeLessThanOrEqual(MAP_NAME_CANVAS_MAX_HEIGHT)
+  })
+
+  it('7 个独占区：名称锚点齐全，成员物理路径全部有效并合并为单个外沿几何', () => {
+    expect(exclusive.nameAnchors).toHaveLength(7)
+    // 全部分组成员边 → 物理路径映射必然存在（校验后地图无悬空引用），
+    // 去重后的物理路径数 = 直接从索引重算的集合大小
+    const direct = new Set<number>()
+    for (const group of mapModel.groupList) {
+      for (const edgeId of group.memberEdgeIds) {
+        direct.add(geometry.physical.physicalPathIndexOfEdge.get(edgeId)!)
+      }
+    }
+    expect(exclusive.usedPhysicalPathCount).toBe(direct.size)
+    expect(exclusive.usedPhysicalPathCount).toBeGreaterThan(0)
+
+    // 单个合并几何：顶点数 = 物理路径中心线段数 × 4（每段一个条带四边形）
+    let expectedVertices = 0
+    for (const pathIndex of direct) {
+      expectedVertices += (geometry.physical.physicalPaths[pathIndex].points.length - 1) * 4
+    }
+    const position = exclusive.outline.getAttribute('position')
+    expect(position.count).toBe(expectedVertices)
+    expect(exclusive.outline.getIndex()?.count).toBe((expectedVertices / 4) * 6)
+
+    // 锚点为成员节点包围盒中心：抽验首分组（单调世界坐标范围）
+    const first = mapModel.groupList[0]
+    let minX = Infinity
+    let maxX = -Infinity
+    let minZ = Infinity
+    let maxZ = -Infinity
+    for (const nodeId of first.memberNodeIds) {
+      const node = mapModel.nodes.get(nodeId)!
+      const world = worldTransform.toWorldXZ(node.x, node.y)
+      minX = Math.min(minX, world.x)
+      maxX = Math.max(maxX, world.x)
+      minZ = Math.min(minZ, world.z)
+      maxZ = Math.max(maxZ, world.z)
+    }
+    const anchor = exclusive.nameAnchors.find((item) => item.groupId === first.id)!
+    expect(anchor.x).toBeCloseTo((minX + maxX) / 2, 6)
+    expect(anchor.z).toBeCloseTo((minZ + maxZ) / 2, 6)
+  })
+
+  it('语义层构建产物可幂等释放', () => {
+    const outlineSpy = vi.spyOn(exclusive.outline, 'dispose')
+    exclusive.dispose()
+    expect(outlineSpy).toHaveBeenCalledTimes(1)
+    expect(() => exclusive.dispose()).not.toThrow()
+    outlineSpy.mockRestore()
   })
 })

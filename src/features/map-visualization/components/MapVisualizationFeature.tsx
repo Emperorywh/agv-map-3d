@@ -1,19 +1,22 @@
 /**
- * 地图可视化 Feature 公开根组件（SPEC §5.1、§5.4、§12.3；TASK-004）。
+ * 地图可视化 Feature 公开根组件（SPEC §5.1、§5.4、§12.3；TASK-004/005）。
  *
  * 职责：协调地图场景的全部静态表达——清屏底色、环境与灯光（方向光 +
- *       RoomEnvironment/PMREM + 静态阴影相机）、工业地坪、去重物理路径与
- *       节点实例层；地图生命周期由 useMapVisualization 驱动。
+ *       RoomEnvironment/PMREM + 静态阴影相机）、工业地坪、去重物理路径、
+ *       节点实例层，以及 TASK-005 的业务语义层（充电桩/呼吸灯、仓库与停车
+ *       地面标识、名称合批、独占区蓝色外沿与近景名称）；地图生命周期由
+ *       useMapVisualization 驱动，名称图集由本组件经 useMapNameAtlas 单一持有。
  * 边界：本组件是 Feature 的唯一公开根；不解析协议、不读运行时配置文件、
- *       不做几何去重等业务算法（在 scene/model 层）。仓库/充电/停车地标与
- *       独占区语义层属 TASK-005，车辆属 fleet-monitoring。
+ *       不做几何去重等业务算法（在 scene/model 层）。车辆属 fleet-monitoring。
  * 关键不变量：
  * 1. 尚无有效视图（首次加载失败、重试中）时只渲染清屏底色与灯光，不出现
  *    任何地图对象或 DOM 兜底（SPEC §7.4）；
  * 2. 视图原子替换时所有图层以同一 view 对象为源，同一渲染提交内完成整体
- *    换新，不出现新旧混排；
+ *    换新，不出现新旧混排；名称图集随视图重建并释放旧实例；
  * 3. 灯光阴影相机按当前地图包围盒静态配置（SPEC §5.4），不逐帧更新；
- * 4. 初始取景为最小可见性接线（45° 俯视取景数学），交互相机与跟随由
+ * 4. decorationsEnabled 只影响装饰动画（呼吸灯），不隐藏任何业务语义对象
+ *    （SPEC §6.5：质量降级不隐藏核心语义）；
+ * 5. 初始取景为最小可见性接线（45° 俯视取景数学），交互相机与跟随由
  *    camera-navigation Feature（TASK-013）接管后移除。
  */
 import { useEffect, useMemo } from 'react'
@@ -26,9 +29,14 @@ import {
   type MapViewDescriptor,
 } from '../hooks/useMapVisualization'
 import {
+  useMapNameAtlas,
+  type MapNameAtlasFactory,
+} from '../hooks/useMapNameAtlas'
+import {
   createRoomEnvironment,
   type SceneEnvironmentFactory,
 } from '../scene/createSceneEnvironment'
+import { createMapNameAtlas } from '../scene/mapNameAtlas'
 import {
   DEFAULT_SHADOW_MAP_SIZE,
   DIRECTIONAL_LIGHT_INTENSITY,
@@ -38,6 +46,8 @@ import {
 import { GroundLayer } from './GroundLayer'
 import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { NodesLayer } from './NodesLayer'
+import { LandmarksLayer } from './LandmarksLayer'
+import { ExclusiveGroupsLayer } from './ExclusiveGroupsLayer'
 
 export interface MapVisualizationFeatureProps {
   /** 地图视图描述符；null 表示尚无可加载的地图（保持清屏色） */
@@ -48,6 +58,10 @@ export interface MapVisualizationFeatureProps {
   shadowMapSize?: number
   /** 环境工厂注入点；默认 RoomEnvironment+PMREM，测试注入替身 */
   environmentFactory?: SceneEnvironmentFactory
+  /** 名称图集工厂注入点；默认真实 Canvas 工厂，测试注入替身 */
+  nameAtlasFactory?: MapNameAtlasFactory
+  /** 装饰动画能力开关（呼吸灯等）；默认 true，TASK-014 质量控制接线 */
+  decorationsEnabled?: boolean
 }
 
 export function MapVisualizationFeature({
@@ -55,8 +69,15 @@ export function MapVisualizationFeature({
   diagnostics,
   shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
   environmentFactory = createRoomEnvironment,
+  nameAtlasFactory = createMapNameAtlasDefault,
+  decorationsEnabled = true,
 }: MapVisualizationFeatureProps) {
   const { view } = useMapVisualization(map, { diagnostics })
+  // 名称图集：随视图重建、失败降级为 null（名称缺失不阻断地图）
+  const nameAtlas = useMapNameAtlas(view?.mapModel ?? null, {
+    factory: nameAtlasFactory,
+    diagnostics,
+  })
 
   return (
     <>
@@ -70,14 +91,38 @@ export function MapVisualizationFeature({
       />
       {view !== null ? (
         <>
-          <GroundLayer bounds={view.mapModel.sceneBounds} />
-          <PhysicalPathsLayer geometry={view.geometry} />
-          <NodesLayer data={view.geometry.nodeInstances} />
+          {/* key 绑定视图版本：视图原子替换时各图层整体卸载/重建，避免
+              R3F 对已挂载 primitive 换 object 时的重建丢弃问题（地图恢复
+              旧场景必然完整离场，与 useMapVisualization 的所有权释放配合） */}
+          <GroundLayer key={`ground-${view.version}`} bounds={view.mapModel.sceneBounds} />
+          <PhysicalPathsLayer key={`paths-${view.version}`} geometry={view.geometry} />
+          <NodesLayer key={`nodes-${view.version}`} data={view.geometry.nodeInstances} />
+          <LandmarksLayer
+            key={`landmarks-${view.version}`}
+            mapModel={view.mapModel}
+            worldTransform={view.worldTransform}
+            nameAtlas={nameAtlas}
+            decorationsEnabled={decorationsEnabled}
+          />
+          <ExclusiveGroupsLayer
+            key={`exclusive-${view.version}`}
+            mapModel={view.mapModel}
+            worldTransform={view.worldTransform}
+            physical={view.geometry.physical}
+            nameAtlas={nameAtlas}
+          />
           <InitialFraming bounds={view.mapModel.sceneBounds} />
         </>
       ) : null}
     </>
   )
+}
+
+/** 默认图集工厂（保持组件 props 默认值引用稳定） */
+function createMapNameAtlasDefault(
+  ...args: Parameters<MapNameAtlasFactory>
+): ReturnType<MapNameAtlasFactory> {
+  return createMapNameAtlas(...args)
 }
 
 interface SceneLightingProps {

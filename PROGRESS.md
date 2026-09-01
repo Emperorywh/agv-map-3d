@@ -11,12 +11,12 @@
 | 字段 | 当前值 |
 |---|---|
 | 项目状态 | `IN_PROGRESS` |
-| 当前 Task | `TASK-005 地图业务语义图层` |
+| 当前 Task | `TASK-006 车辆领域模型、事件合同与车队运行时` |
 | 当前 Task 状态 | `TODO` |
-| 已完成工程 Task | `4 / 21` |
+| 已完成工程 Task | `5 / 21` |
 | 条件任务 | `TASK-021 WAITING_EXTERNAL` |
 | 验收 Gate | GATE-001、GATE-002、GATE-003 均为 `NOT_READY` |
-| 当前下一步 | 将 TASK-005 改为 `IN_PROGRESS` 后，实现 59 充电桩（可关闭呼吸灯）、1,185 仓库地面标识与合批名称、2 停车符号、7 独占区蓝色外沿与近景名称，以及无效成员隔离与资源对称释放 |
+| 当前下一步 | 将 TASK-006 改为 `IN_PROGRESS` 后，实现经校验的 VehicleSnapshot、统一 VehicleDataEvent 合同与不依赖 React 的高频车队运行时（snapshot/update/remove/heartbeat、10s STALE、多告警、高频快照不进 React state） |
 | 项目完成条件 | TASK-001～TASK-021 全部 `DONE`，GATE-001～GATE-003 全部通过，SPEC A1～F6 均有当前证据 |
 
 编号是推荐交付顺序，执行前必须核对真实依赖。`WAITING_EXTERNAL` 的 TASK-021 不阻塞 TASK-018～020；其他 Task 只有在自身依赖全部 `DONE` 后才能开始。
@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 2 个提交（TASK-003、TASK-004 待推送） |
-| HEAD | TASK-004 实施提交（TASK-003 提交之后） |
-| 未提交差异 | 无（工作区干净；TASK-004 已随提交完成） |
+| 分支 | `rxx`，跟踪 `origin/rxx`，领先远端 3 个提交（TASK-003、TASK-004、TASK-005 待推送） |
+| HEAD | TASK-005 实施提交（TASK-004 提交之后） |
+| 未提交差异 | 无（工作区干净；TASK-005 已随提交完成） |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -48,13 +48,24 @@
   - `components/PhysicalPathsLayer.tsx`：路面 Mesh + 中线 LineSegments 两个 Draw Call；只拥有材质，几何归 MapGeometry 所有。
   - `components/NodesLayer.tsx`：唯一 InstancedMesh 渲染全部节点，实例颜色按类别（work/warehouse/charge/park/unknown 兜底），矩阵与颜色静态上载一次。
   - `hooks/useMapVisualization.ts`：场景侧地图生命周期——优先消费 bootstrap 种子直接建模（不重复拉取 14.94MB）；mapUrl 变化触发刷新；失败按指数退避（1s→30s 封顶）后台重试且可取消；已有场景时刷新失败保留旧场景，恢复后单次 setState 原子替换，旧几何在新视图提交后由所有权 effect 释放；StrictMode 重复执行以 sourceUrl 幂等。
-  - `components/MapVisualizationFeature.tsx`：公开根组件——清屏底色常驻、方向光（阴影相机按包围盒静态配置）+ 环境工厂注入（失败降级无 IBL 并记诊断）、组合三个图层与临时 45° 初始取景（TASK-013 相机 Feature 接入后移除）。
-  - app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后以稳定描述符（含 bootstrap 种子）传入场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 并透传描述符。
+  - `components/MapVisualizationFeature.tsx`：公开根组件——清屏底色常驻、方向光（阴影相机按包围盒静态配置）+ 环境工厂注入（失败降级无 IBL 并记诊断）、组合地坪/路径/节点与 TASK-005 语义图层、临时 45° 初始取景（TASK-013 相机 Feature 接入后移除）。
+  - 缺陷闭环（在 TASK-005 内完成）：R3F 对已挂载 `<primitive>` 换 `object` 的重建依赖「兄弟序列尾部」探测，与 `{cond ? <primitive/> : null}` 组合时重建被静默丢弃（实测复现）——各图层 primitive 补挂资源代/视图版本 `key` 强制走卸载/挂载路径，修复地图恢复原子替换后场景可能引用已释放几何的隐患。
+- TASK-005 已完成地图业务语义图层：
+  - `scene/mapNameAtlas.ts`：地图专属 WebGL 名称资源唯一入口——`layoutNameAtlas` 货架式纯函数排布（容量不足逐项丢弃隔离，画布高度取 2 的幂）、`collectMapNameLabels` 收集当前地图 1,193 条名称（1,185 仓库浅黄 + 7 独占区浅蓝 + 1 停车白色 P 字形）、`createMapNameAtlas` Canvas 工厂（无 2D 上下文抛 `MAP_NAME_ATLAS_UNAVAILABLE` 降级）、`buildNameQuadGeometry` 世界坐标静态合批名称四边形（一个 Draw Call）。
+  - `scene/buildLandmarkData.ts`：单次遍历节点产出纯实例数据——59 组充电桩/光环/呼吸灯平移矩阵、1,187 块地面方垫矩阵（1,185 仓库浅黄 + 2 停车紫，颜色经 THREE.Color 与节点实例同口径）、1,185 仓库名称锚点与 2 停车锚点。
+  - `scene/buildExclusiveGroupsGeometry.ts`：7 个独占区的成员物理路径去重合并为单个低透明蓝色外沿 BufferGeometry（高度 `EXCLUSIVE_OUTLINE_Y` 位于路面之下只露出边缘），名称锚点取成员节点世界包围盒中心（7 个）；幽灵节点/边引用逐项跳过（纵深防御），dispose 幂等。
+  - `scene/semanticMaterials.ts`：MeshBasicMaterial + onBeforeCompile 两个补丁材质——名称距离淡出（仓库 30→70m、独占区 40→90m 平滑显隐，GPU 侧零 CPU 写入）与呼吸脉冲（uTime/uPulseEnabled uniforms，`decorationsEnabled=false` 时恒定全亮）；uniforms 创建即存在，useFrame 与测试可直接读写。
+  - `components/LandmarksLayer.tsx`：方垫/立柱/光环/呼吸灯/名称各 1 个合批对象（5 个 Draw Call），实例数据静态上载一次；呼吸动画每帧只写 uniforms；图集缺失或名称 key 未入图集时名称 Mesh 整体不创建，地标其余部分不受影响。
+  - `components/ExclusiveGroupsLayer.tsx`：外沿 1 Mesh + 分组名称 1 Mesh；外沿几何经 useMemo 构建并在卸载/视图更换时对称释放。
+  - `hooks/useMapNameAtlas.ts`：名称图集单一所有者——随视图重建、StrictMode 安全、工厂失败降级为 null 并记录 `MAP_NAME_ATLAS_FAILED` 诊断。
+  - `scene/mapAppearance.ts`：新增语义层外观常量（独占区外沿、充电桩/光环/呼吸灯、方垫、名称图集/文字/显隐区间），图层高度阶梯扩展至 `NAME_QUAD_Y`。
+  - `decorationsEnabled` 为 MapVisualizationFeature props（默认 true），TASK-014 质量控制接入时由组合层显式传入。
+- app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后以稳定描述符（含 bootstrap 种子）传入场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 并透传描述符。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
-- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（70 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（83 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
-- 尚无仓库/充电/停车地标与独占区语义层（TASK-005）、车辆模型与车队运行时（TASK-006/010）、Mock、WebSocket、相机交互、质量控制或后台/WebGL 恢复实现；对应实现分属后续 Task。
+- 尚无车辆模型与车队运行时（TASK-006/010）、WebSocket 数据源、Mock、相机交互、质量控制、后台节流或 WebGL 恢复实现；对应实现分属后续 Task。
 
 ### 2.3 当前数据输入
 
@@ -69,6 +80,7 @@
 | 中心线段 | 44,559（LINE×1 + BEZIER×24） |
 | 独占区 | 7（成员 25～32 节点 / 70～199 边，当前全部引用有效） |
 | 弱连通分量节点数 | 2,001 / 1,187 / 796 / 307，每个分量均含充电站 |
+| 地图名称条目 | 1,193（1,185 仓库 + 7 独占区 + 1 停车字形，TASK-005 图集输入） |
 | 死路拓扑 | 存在 1 个无出边 work 节点（名称「44」），Mock 须安全停车 |
 | 当前车辆位置 | 与节点名称“1644”相距约 0.000042m |
 | 当前车辆状态 | `TRAFFIC_WAIT`、`LOW_BATTERY`、loaded |
@@ -82,7 +94,7 @@
 | TASK-002 | 运行时配置、诊断、静态资源与部署基线 | 001 | `DONE` |
 | TASK-003 | 统一坐标、地图校验与不可变 MapModel | 002 | `DONE` |
 | TASK-004 | 可运行核心地图场景与恢复生命周期 | 003 | `DONE` |
-| TASK-005 | 地图业务语义图层 | 004 | `TODO` |
+| TASK-005 | 地图业务语义图层 | 004 | `DONE` |
 | TASK-006 | 车辆领域模型、事件合同与车队运行时 | 001、002 | `TODO` |
 | TASK-007 | WebSocket 数据源与 React 生命周期 | 006 | `TODO` |
 | TASK-008 | Mock 拓扑、运动与充电内核 | 003、006 | `TODO` |
@@ -104,14 +116,14 @@
 
 | 字段 | 当前内容 |
 |---|---|
-| Task | `TASK-005 地图业务语义图层` |
+| Task | `TASK-006 车辆领域模型、事件合同与车队运行时` |
 | 状态 | `TODO` |
-| 当前目标 | 核心地图增加全部充电、仓库、停车和独占区语义，形成完整可读的静态地图 Feature |
-| 当前主要范围 | LandmarksLayer、ExclusiveGroupsLayer、地图专属 WebGL 名称资源、外观常量、MapVisualizationFeature 接线和共置测试 |
-| 当前已有实现 | TASK-004 的 MapModel/WorldTransform/buildMapGeometry/三图层/灯光环境/生命周期 Hook 均就绪；`MapModel.components`、`groupList`、`nodes` 索引可直接支撑地标与独占区查询 |
-| 当前待完成 | 以 `TASKS.md` 的 TASK-005 为准实现 59 充电桩与可关闭呼吸灯、1,185 仓库地面标识与合批名称、2 停车紫色符号、7 独占区低透明蓝色外沿与成员 bounds 中心近景名称；无效成员逐项隔离；全部名称为 WebGL 内容；资源对称释放 |
+| 当前目标 | 形成经校验的 VehicleSnapshot、统一 VehicleDataEvent 合同和不依赖 React 的高频车队运行时，正确处理快照、增量、删除、新鲜度和多告警 |
+| 当前主要范围 | `features/fleet-monitoring/model/**`、`data-source/contract.ts`、Feature 公开合同、低频 Fleet store 和共置测试 |
+| 当前已有实现 | 地图 Feature 公开的 MapModel/WorldTransform/根组件类型已就绪；`src/shared/spatial`、`src/shared/diagnostics`、`src/shared/validation` 可复用；fleet-monitoring Feature 尚不存在 |
+| 当前待完成 | 以 `TASKS.md` 的 TASK-006 为准实现：实体键 `(mapId,agvKey)`、`agvKey` 字符串化、快照/增量/删除/心跳四类事件、严格派生状态与多告警、非法位置逐车隔离、10s STALE 跃迁、高频快照不进 React state/zustand |
 | 当前阻塞 | 无 |
-| 完成后可开始 | TASK-014（部分依赖）、后续车辆与交互 Task（按各自依赖） |
+| 完成后可开始 | TASK-007（依赖 006）、TASK-008（依赖 003、006） |
 
 Task 开始后，把本卡直接替换为实际进行中的工作：当前修改文件、当前成功验证、当前失败原因、当前剩余步骤和下一条可执行命令。Task 完成后删除已解决问题，只保留完成结果和新的当前指针。
 
@@ -119,16 +131,16 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 
 | 范围 | 当前命令或检查 | 当前结果 |
 |---|---|---|
-| Lint | `pnpm lint` | 通过（69 文件，0 警告 0 错误） |
+| Lint | `pnpm lint` | 通过（79 文件，0 警告 0 错误） |
 | TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
-| 单元测试 | `pnpm test:unit`（Vitest + jsdom，14 文件 126 例：TASK-002/003 全部保留，新增 buildMapGeometry 去重与几何、useMapVisualization 生命周期（种子/加载/退避重试/旧场景保留/原子替换/取消/StrictMode）、MapVisualizationFeature 场景组合与资源释放、当前地图物理路径集成断言） | 通过（126/126） |
-| 当前地图集成 | `currentMap.integration.test.ts`：数据事实全部保留；新增 5,068 物理路径（3,351 LINE / 1,717 BEZIER）、4,197 重复几何、44,559 中心线段、映射覆盖 9,265 逻辑边无遗漏、静态几何规模（路面 4 顶点/段、中线 2 顶点/段）、节点「1644」实例矩阵与世界坐标一致、几何可幂等释放 | 通过 |
-| 架构检查 | `pnpm test:architecture`（真实 src 70 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| 单元测试 | `pnpm test:unit`（Vitest + jsdom，17 文件 153 例：TASK-002/003/004 全部保留，新增 mapNameAtlas 排布/收集/四边形/工厂降级 8 例、buildLandmarkData 数量/位置/缩放着色 4 例、buildExclusiveGroupsGeometry 合并/去重/锚点/隔离/释放 6 例、MapVisualizationFeature 语义层场景图/装饰开关/图集降级/条目隔离/全量释放 +3 例） | 通过（153/153） |
+| 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004 数据与几何事实全部保留；新增语义图层事实——59 充电桩矩阵与 charge 节点世界坐标一致、1,187 方垫按节点序逐块核对颜色与位置（1,185 浅黄 + 2 紫）、1,185+7+1 名称条目 key 唯一、图集布局容纳全部名称无丢弃、7 独占区锚点=成员包围盒中心、成员物理路径全部有效并合并为单个外沿几何（顶点数=段数×4）、dispose 幂等 | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 83 模块 0 违规；负例全部命中；正例零误报） | 通过 |
 | 构建 | `pnpm build`（含 `copyStaticAssets` 与 `verifyDist`） | 通过 |
 | dist 校验 | `pnpm verify:dist`（index/config/map 存在、相对路径引用、白名单与凭据检查、map.json 可解析） | 通过 |
 | 部署冒烟 | `pnpm smoke:dist`（根路径 `/`、子路径 `/monitor/`、模拟配置失败 `/broken/` 三挂载 HTTP 冒烟） | 通过 |
 | 差异检查 | `git diff --check` | 通过（无空白错误；仅 CRLF 提示） |
-| 浏览器自测 | Coding Agent 调用浏览器自动化技能（内嵌 Chromium，1280×720）访问 `pnpm dev`：唯一全屏 Canvas（CSS 与绘制缓冲均 1280×720）、无滚动、无任何 DOM 覆盖层；`config.json` 与 `/json/map.json`（全量 14.94MB）均经真实 HTTP 200 加载并走完 bootstrap → loadMap → 建模 → 几何构建链路；强制渲染帧内像素采样 57,438/57,600（99.7%）为场景内容（非清屏色）；rAF 帧内 `toDataURL` 取证截图确认 45° 俯视下工业地坪、网格刻线、深灰物理路径网络与蓝绿/浅黄节点群完整可见 | 通过 |
+| 浏览器自测 | Coding Agent 调用浏览器自动化技能（内嵌 Chromium，1280×720）访问 `pnpm dev`：唯一全屏 Canvas、无滚动、body 仅 `#root` 无任何 DOM 覆盖层；远/近景经 rAF 帧内 `toDataURL` 取证——远景 45° 初始取景下完整静态地图可见且全部名称按距离隐藏；近景充电站（世界 114.4,36.3）可见青色充电桩、底部光环与顶部呼吸灯、浅黄仓库方垫与 JS-PICK 系列合批名称（远处名称渐隐）；近景独占区可见成员路径蓝色低透明外沿与「独占区1~4」蓝色分组名称；近景停车点可见 2 个紫色方垫 + 白色 P 字形；呼吸动画以两帧像素差分取证（3,333 像素变化，场景唯一动画）；`renderer.info` 全场景 Draw Call = 16 | 通过 |
 
 浏览器自测备注：内嵌浏览器面板在宿主窗口后台时节流 `requestAnimationFrame`，页面只呈现清屏色且 Canvas 停留在初始尺寸；标准截图命令会强制一帧使 R3F 应用 1280×720 全屏尺寸，但截图管道在节流页面上可能卡死。本轮改用「rAF 回调内同步 `readPixels`/`toDataURL`」完成取证，与 TASK-002/003 记录的环境节流现象一致，不影响真实部署浏览器。
 
