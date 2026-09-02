@@ -279,7 +279,12 @@ interface StaticLighting {
   target: THREE.Object3D
 }
 
-/** 按地图包围盒配置方向光：位置取对角线比例偏移，阴影正交相机静态覆盖全图 */
+/**
+ * 按地图包围盒配置方向光：位置取对角线比例偏移，阴影正交相机静态覆盖全图。
+ * 阴影相机按「灯光空间下的地图四角」包络（P0-8）：此前按 对角线/2 + margin 的
+ * 正方形覆盖 311m 见方，近半面积在地图之外；改按四角在光空间的 min/max 设
+ * left/right/top/bottom 与 near/far，有效分辨率显著提升（同贴图尺寸下）。
+ */
 function createStaticDirectionalLight(
   bounds: SceneBounds,
   shadowMapSize: number,
@@ -296,14 +301,54 @@ function createStaticDirectionalLight(
   // 动态阴影能力开关（SPEC §6.5 行动 3）：false 时不再投射阴影贴图
   light.castShadow = dynamicShadowsEnabled
   light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
-  const half = diagonal / 2 + LIGHT_SHADOW_MARGIN_M
+
+  // 光空间正交基（与 three.js lookAt 同构）：forward 指向目标，right/up 张成
+  // 垂直于视线的平面；地图四角（地面 y=0）投影到该基上取 min/max 包络
+  const forward = new THREE.Vector3(
+    bounds.centerWorldX - light.position.x,
+    -light.position.y,
+    bounds.centerWorldZ - light.position.z,
+  ).normalize()
+  const right = new THREE.Vector3()
+    .crossVectors(forward, new THREE.Vector3(0, 1, 0))
+    .normalize()
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize()
+
+  const margin = LIGHT_SHADOW_MARGIN_M
+  // 角点（y=0）相对灯光位置的 y 分量为常量 −灯高：left/right/top/bottom 的
+  // min/max 不受常量平移影响，但 near/far 是沿视线的绝对深度，必须计入
+  const cornerY = -light.position.y
+  let minRight = Infinity
+  let maxRight = -Infinity
+  let minUp = Infinity
+  let maxUp = -Infinity
+  let minDepth = Infinity
+  let maxDepth = -Infinity
+  for (const [cx, cz] of [
+    [bounds.minWorldX, bounds.minWorldZ],
+    [bounds.maxWorldX, bounds.minWorldZ],
+    [bounds.minWorldX, bounds.maxWorldZ],
+    [bounds.maxWorldX, bounds.maxWorldZ],
+  ] as const) {
+    const rx = cx - light.position.x
+    const rz = cz - light.position.z
+    const sx = rx * right.x + rz * right.z
+    const sy = rx * up.x + cornerY * up.y + rz * up.z
+    const depth = rx * forward.x + cornerY * forward.y + rz * forward.z
+    minRight = Math.min(minRight, sx)
+    maxRight = Math.max(maxRight, sx)
+    minUp = Math.min(minUp, sy)
+    maxUp = Math.max(maxUp, sy)
+    minDepth = Math.min(minDepth, depth)
+    maxDepth = Math.max(maxDepth, depth)
+  }
   const camera = light.shadow.camera
-  camera.left = -half
-  camera.right = half
-  camera.top = half
-  camera.bottom = -half
-  camera.near = 1
-  camera.far = diagonal * 2.5 + LIGHT_SHADOW_MARGIN_M
+  camera.left = minRight - margin
+  camera.right = maxRight + margin
+  camera.top = maxUp + margin
+  camera.bottom = minUp - margin
+  camera.near = Math.max(minDepth - margin, 1)
+  camera.far = maxDepth + margin
   camera.updateProjectionMatrix()
   light.shadow.bias = -0.0005
 

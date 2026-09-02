@@ -110,12 +110,27 @@ export function shellColorOf(primary: string): string {
 /**
  * 标签四边形世界尺寸：高度固定，宽度 = 高度 × 名称单元宽高比（256×64 = 4:1）。
  * 标签锚点高于车顶与警示灯（约 0.25m），近景不遮挡车体主体。
+ * 高度 0.48（P0-6）：宽度 1.92m = 默认车长 1.8m 的 1.07×，对齐 Reference 的
+ * 「芯片宽 ≈ 车长 1.1×」（v1 曾建议 0.6 → 过度裁剪文字可读性）。
  */
-export const LABEL_HEIGHT_M = 0.6
+export const LABEL_HEIGHT_M = 0.48
 export const LABEL_ASPECT = 4
 /** 标签世界宽度：由名称单元宽高比推出（帧同步与测试共用同一事实源） */
 export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
 export const LABEL_ANCHOR_Y_M = 0.8
+
+/**
+ * 标签背景底色（P0-6）：Reference 为深灰黑底 + 白色 ID + 左上角状态色小圆点
+ * + 底部电量条——状态信息由「点」承载，不由「底」承载；此前背景取
+ * 状态色 × 0.72，60 台 IDLE 车形成 60 个亮蓝芯片群落。
+ */
+export const LABEL_BACKGROUND_COLOR = '#1a1f26'
+/** 状态圆点几何（P0-6，标签背景 shader 内 SDF 绘制，颜色取 aStateColor）：
+ *  圆心/半径以标签 UV 表达——u 为宽度分量（0..1，全宽 = 高度的 ASPECT 倍），
+ *  v 为高度分量（0..1）；半径按高度计，绘制时 u 距离乘 ASPECT 还原等比圆。 */
+export const LABEL_STATE_DOT_CENTER_U = 0.04
+export const LABEL_STATE_DOT_CENTER_V = 0.78
+export const LABEL_STATE_DOT_RADIUS_V = 0.055
 
 /**
  * LOD 投影阈值（SPEC §6.4，边界含）：车体投影长度 ≥8px 显示全部名称，

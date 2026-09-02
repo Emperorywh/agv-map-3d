@@ -3,7 +3,7 @@
  *
  * 职责：
  * 1. collectMapNameLabels：从只读 MapModel 收集全部需要绘制的名称条目
- *    （1,185 个仓库名称、7 个独占区名称、停车符号字形），供图集一次性栅格化；
+ *    （独占区名称、停车符号字形；仓库节点名称已按 P0-5 移除），供图集一次性栅格化；
  * 2. layoutNameAtlas：纯函数货架式排布——按测量的文字宽度把条目装箱进
  *    固定宽度的图集画布，产出每个条目的像素矩形与归一化 UV 矩形；容量不足
  *    时丢弃放不下的条目（逐项隔离）而不是崩溃；
@@ -36,7 +36,6 @@ import {
   MAP_NAME_PADDING_PX,
   NAME_STROKE_COLOR,
   PARK_GLYPH_COLOR,
-  WAREHOUSE_NAME_COLOR,
 } from './mapAppearance'
 
 /** 一条待栅格化的名称：key 唯一锚定消费方（节点/分组/停车符号） */
@@ -158,17 +157,14 @@ export function layoutNameAtlas(
 export const PARK_GLYPH_KEY = '__park_glyph__'
 
 /**
- * 从 MapModel 收集全部地图名称条目：仓库节点名称（浅黄）、独占区分组名称
- * （浅蓝）与停车符号字形（白色 P，仅存在 park 节点时加入）。
- * 顺序稳定（节点序 → 分组序 → 停车符号），保证同一地图得到同一图集排布。
+ * 从 MapModel 收集全部地图名称条目：独占区分组名称（浅蓝）与停车符号字形
+ * （白色 P，仅存在 park 节点时加入）。
+ * 视觉差距分析 P0-5：warehouse 节点名称不再收集（Reference 中不存在仓库
+ * 名称文字；1185 个名称此前在中景形成黄色文字海）。
+ * 顺序稳定（分组序 → 停车符号），保证同一地图得到同一图集排布。
  */
 export function collectMapNameLabels(mapModel: MapModel): MapNameLabelSpec[] {
   const specs: MapNameLabelSpec[] = []
-  for (const node of mapModel.nodeList) {
-    if (node.category === 'warehouse') {
-      specs.push({ key: `node:${node.id}`, text: node.name, color: WAREHOUSE_NAME_COLOR })
-    }
-  }
   for (const group of mapModel.groupList) {
     specs.push({ key: `group:${group.id}`, text: group.name, color: GROUP_NAME_COLOR })
   }

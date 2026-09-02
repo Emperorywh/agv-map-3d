@@ -138,7 +138,11 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     }
     exitFollow()
     const perspective = camera as THREE.PerspectiveCamera
-    const pose = computeOverviewPose(currentBounds, perspective.fov)
+    // 四角投影包络需要视口纵横比（P0-1）：取画布实测尺寸，异常时退化为方视口
+    const width = gl.domElement.clientWidth
+    const height = gl.domElement.clientHeight
+    const aspect = width > 0 && height > 0 ? width / height : 1
+    const pose = computeOverviewPose(currentBounds, perspective.fov, aspect)
     perspective.near = pose.near
     perspective.far = pose.far
     perspective.updateProjectionMatrix()
@@ -147,7 +151,7 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     controlsNow.target.set(pose.target.x, 0, pose.target.z)
     camera.position.set(pose.position.x, pose.position.y, pose.position.z)
     controlsNow.update()
-  }, [camera, exitFollow])
+  }, [camera, gl, exitFollow])
 
   // OrbitControls 生命周期：随 (camera, gl) 创建，卸载对称释放（不变量 1）。
   // 本 effect 必须先于取景/命令 effect 声明，保证同一次提交内先创建实例。

@@ -17,8 +17,9 @@
  *    的部件关闭 raycast，仅外壳保留拾取（SPEC §5.2）；
  * 2. 全部实例矩阵初始为零缩放：空槽位与超容量等待的车辆绝不以默认单位阵
  *    出现在原点；count 恒等于批次容量，可见性完全由矩阵表达；
- * 3. 车辆不投实时阴影（castShadow=false），假阴影是独立半透明贴片（SPEC
- *    §5.4）；InstancedMesh 关闭视锥剔除（包围球不随实例动态变化）；
+ * 3. 车辆受光主体部件投射实时阴影（P0-8：castShadow=true），车底假阴影贴片
+ *    保留作接触暗部（SPEC §5.4；阴影开关由灯光 castShadow 总控）；
+ *    InstancedMesh 关闭视锥剔除（包围球不随实例动态变化）；
  * 4. key 携带批次数：批次数变化时全部批次走卸载/挂载路径——R3F 对已挂载
  *    primitive 换 object 依赖「兄弟序列尾部」探测，与条件子树组合时重建
  *    会被静默丢弃（TASK-005 实测），key 变化强制干净重建；
@@ -151,7 +152,9 @@ function createPartMesh(
   mesh.name = `fleet-${kind}-b${batchIndex}`
   mesh.count = capacity
   mesh.matrixAutoUpdate = false
-  mesh.castShadow = false
+  // P0-8 实时阴影：受光主体部件（底盘/外壳/楔/平台/托盘）投射阴影，假阴影
+  // 贴片与信标不投（贴片是接收暗部本体、信标悬空无意义）；地面 receiveShadow
+  mesh.castShadow = kind === 'chassis' || kind === 'shell' || kind === 'wedge' || kind === 'platform' || kind === 'pallet'
   mesh.receiveShadow = false
   mesh.frustumCulled = false
 

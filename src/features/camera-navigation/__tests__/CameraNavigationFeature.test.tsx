@@ -112,7 +112,8 @@ describe('CameraNavigationFeature 相机导航', () => {
     const { renderer, capture } = await mount({ commands, controls })
 
     expect(capture.current).not.toBeNull()
-    const pose = computeOverviewPose(BOUNDS_A, capture.current!.camera.fov)
+    // aspect=1：jsdom 画布无布局尺寸，Hook 内退化为方视口（与实现同口径）
+    const pose = computeOverviewPose(BOUNDS_A, capture.current!.camera.fov, 1)
     const camera = capture.current!.camera
     expect(camera.position.x).toBeCloseTo(pose.position.x, 4)
     expect(camera.position.y).toBeCloseTo(pose.position.y, 4)
@@ -353,7 +354,7 @@ describe('CameraNavigationFeature 相机导航', () => {
       />,
     )
     expect(controls.current!.maxDistance).toBeCloseTo(boundsB.diagonal * 3, 4)
-    const pose = computeOverviewPose(boundsB, capture.current!.camera.fov)
+    const pose = computeOverviewPose(boundsB, capture.current!.camera.fov, 1)
     expect(capture.current!.camera.position.y).toBeCloseTo(pose.position.y, 4)
     renderer.unmount()
   })

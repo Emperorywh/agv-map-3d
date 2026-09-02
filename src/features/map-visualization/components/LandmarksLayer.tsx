@@ -3,9 +3,10 @@
  *
  * 职责：把 buildLandmarkData 的纯数据一次性上载为静态合批 GPU 对象——
  *       - 地面标识方垫 InstancedMesh（仓库浅黄 + 停车紫，实例颜色区分）；
- *       - 充电桩立柱 InstancedMesh（青色）与底部光环 InstancedMesh；
+ *       - 充电桩立柱 InstancedMesh（青色，投射实时阴影 P0-8）与底部光环；
  *       - 充电呼吸灯 InstancedMesh（正弦亮度脉动，受 decorationsEnabled 开关）；
- *       - 名称四边形合批 Mesh（仓库名称 + 停车 P 字形，图集纹理 + 距离淡出）。
+ *       - 名称四边形合批 Mesh（停车 P 字形等，图集纹理 + 距离淡出；仓库节点
+ *         名称已按视觉差距分析 P0-5 整体移除，机制原样保留）。
  * 边界：实例/几何数据由 buildLandmarkData 提供，图集纹理由 Feature 根组件
  *       （单一所有者）注入，本组件只消费不释放图集；本组件创建的全部
  *       geometry/material/实例缓冲在卸载或数据更换时对称释放。
@@ -45,12 +46,11 @@ import {
   CHARGE_RING_INNER_M,
   CHARGE_RING_OPACITY,
   CHARGE_RING_OUTER_M,
+  LANDMARK_NAME_FADE_FAR_M,
+  LANDMARK_NAME_FADE_NEAR_M,
   LANDMARK_PAD_OPACITY,
   NAME_QUAD_Y,
   PARK_GLYPH_HEIGHT_M,
-  WAREHOUSE_NAME_FADE_FAR_M,
-  WAREHOUSE_NAME_FADE_NEAR_M,
-  WAREHOUSE_NAME_HEIGHT_M,
 } from '../scene/mapAppearance'
 
 export interface LandmarksLayerProps {
@@ -145,7 +145,7 @@ function createLandmarkResources(
   uploadStaticInstances(pads, data.padCount, data.padMatrices, data.padColors)
   owned.push(pads)
 
-  // —— 充电桩立柱：几何底部对齐地面，实例矩阵仅平移 ——
+  // —— 充电桩立柱：几何底部对齐地面，实例矩阵仅平移；投射实时阴影（P0-8） ——
   const pileGeometry = new THREE.BoxGeometry(
     CHARGE_PILE_WIDTH_M,
     CHARGE_PILE_HEIGHT_M,
@@ -157,6 +157,7 @@ function createLandmarkResources(
   owned.push(pileMaterial)
   const piles = new THREE.InstancedMesh(pileGeometry, pileMaterial, Math.max(data.chargeCount, 0))
   piles.name = 'map-charge-piles'
+  piles.castShadow = true
   uploadStaticInstances(piles, data.chargeCount, data.chargeMatrices, null)
   owned.push(piles)
 
@@ -196,17 +197,12 @@ function createLandmarkResources(
   uploadStaticInstances(lights, data.chargeCount, data.chargeMatrices, null)
   owned.push(lights)
 
-  // —— 名称四边形：仓库锚点 + 停车字形与图集单元 join 后静态合批 ——
+  // —— 名称四边形：停车字形与图集单元 join 后静态合批（P0-5：仓库节点名称
+  //    已整体移除——Reference 中不存在仓库名称文字，1185 个名称在中景形成
+  //    黄色文字海；名称机制（图集/淡出）原样保留给其余地标名称）
   let names: THREE.Mesh | null = null
   if (atlas !== null) {
     const inputs: NameQuadInput[] = []
-    for (const anchor of data.warehouseNameAnchors) {
-      const cell = atlas.cells.get(`node:${anchor.nodeId}`)
-      if (cell === undefined) {
-        continue
-      }
-      inputs.push({ x: anchor.x, z: anchor.z, cell, heightM: WAREHOUSE_NAME_HEIGHT_M })
-    }
     for (const anchor of data.parkAnchors) {
       const cell = atlas.cells.get(PARK_GLYPH_KEY)
       if (cell === undefined) {
@@ -218,8 +214,8 @@ function createLandmarkResources(
       const namesGeometry = buildNameQuadGeometry(inputs, NAME_QUAD_Y)
       const namesMaterial = createNameFadeMaterial(
         atlas.texture,
-        WAREHOUSE_NAME_FADE_NEAR_M,
-        WAREHOUSE_NAME_FADE_FAR_M,
+        LANDMARK_NAME_FADE_NEAR_M,
+        LANDMARK_NAME_FADE_FAR_M,
       )
       names = new THREE.Mesh(namesGeometry, namesMaterial)
       names.name = 'map-landmark-names'

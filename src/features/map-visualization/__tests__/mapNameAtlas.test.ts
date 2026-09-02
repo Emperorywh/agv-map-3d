@@ -142,19 +142,16 @@ describe('layoutNameAtlas 排布', () => {
 })
 
 describe('collectMapNameLabels 收集', () => {
-  it('只收集仓库名称、独占区名称与停车字形；顺序稳定、key 唯一', () => {
+  it('P0-5：仓库节点名称不再收集；只收集独占区名称与停车字形，顺序稳定、key 唯一', () => {
     const labels = collectMapNameLabels(buildModel().mapModel)
-    // 2 仓库名称 + 2 分组名称 + 1 停车字形；work/charge/unknown 不产生名称
+    // 2 分组名称 + 1 停车字形；warehouse/work/charge/unknown 均不产生名称
     expect(labels.map((label) => label.key)).toEqual([
-      'node:w1',
-      'node:w2',
       'group:g1',
       'group:g2',
       PARK_GLYPH_KEY,
     ])
-    expect(labels[0]).toMatchObject({ text: 'AMR-PICK001' })
-    expect(labels[2]).toMatchObject({ text: '独占区1' })
-    expect(labels[4]).toMatchObject({ text: 'P' })
+    expect(labels[0]).toMatchObject({ text: '独占区1' })
+    expect(labels[2]).toMatchObject({ text: 'P' })
   })
 
   it('无 park 节点时不产生停车字形条目', () => {
@@ -167,8 +164,7 @@ describe('collectMapNameLabels 收集', () => {
       }),
     )
     const labels = collectMapNameLabels(model.mapModel)
-    expect(labels).toHaveLength(1)
-    expect(labels[0].key).toBe('node:w1')
+    expect(labels).toHaveLength(0)
   })
 })
 

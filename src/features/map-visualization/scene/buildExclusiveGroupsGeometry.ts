@@ -23,7 +23,7 @@
 import * as THREE from 'three'
 import type { MapModel } from '../model/types'
 import type { WorldTransform } from '@/shared/spatial'
-import type { PhysicalPathIndex } from './buildMapGeometry'
+import { appendPolylineStrip, type PhysicalPathIndex } from './buildMapGeometry'
 import { EXCLUSIVE_OUTLINE_WIDTH_M, EXCLUSIVE_OUTLINE_Y } from './mapAppearance'
 
 /** 独占区名称锚点：成员节点包围盒中心（世界坐标） */
@@ -99,38 +99,19 @@ export function buildExclusiveGroupsGeometry(
       groupPathIndexes.push(pathIndex)
     }
 
-    // 物理路径 → 世界坐标外沿条带（与 TASK-004 路面同样的展开方式，更宽）
+    // 物理路径 → 世界坐标外沿条带（与 TASK-004 路面同一 strip 展开，更宽；
+    // 端帽同样补圆片，蓝色外沿包住路面的圆头端，路口处覆盖关系一致）
     for (const pathIndex of groupPathIndexes) {
       const path = physical.physicalPaths[pathIndex]
       const worldPoints = path.points.map((p) => worldTransform.toWorldXZ(p.x, p.y))
-      for (let i = 1; i < worldPoints.length; i += 1) {
-        const a = worldPoints[i - 1]
-        const b = worldPoints[i]
-        const segmentLength = Math.hypot(b.x - a.x, b.z - a.z)
-        if (segmentLength === 0) {
-          continue
-        }
-        const dirX = (b.x - a.x) / segmentLength
-        const dirZ = (b.z - a.z) / segmentLength
-        const normalX = -dirZ * halfWidth
-        const normalZ = dirX * halfWidth
-        const base = positions.length / 3
-        positions.push(
-          a.x + normalX,
-          EXCLUSIVE_OUTLINE_Y,
-          a.z + normalZ,
-          a.x - normalX,
-          EXCLUSIVE_OUTLINE_Y,
-          a.z - normalZ,
-          b.x - normalX,
-          EXCLUSIVE_OUTLINE_Y,
-          b.z - normalZ,
-          b.x + normalX,
-          EXCLUSIVE_OUTLINE_Y,
-          b.z + normalZ,
-        )
-        indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
-      }
+      appendPolylineStrip(
+        positions,
+        indices,
+        worldPoints,
+        halfWidth,
+        EXCLUSIVE_OUTLINE_Y,
+        { capStart: true, capEnd: true },
+      )
     }
   }
 

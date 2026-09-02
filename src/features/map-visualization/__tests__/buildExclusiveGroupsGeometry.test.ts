@@ -17,6 +17,13 @@ import { buildExclusiveGroupsGeometry } from '../scene/buildExclusiveGroupsGeome
 import { EXCLUSIVE_OUTLINE_Y } from '../scene/mapAppearance'
 import { makeGroup, makeLineEdge, makeNode } from './fixtures'
 
+/**
+ * 单段 LINE 物理路径条带的新顶点/索引合同（P0-4 共享顶点 strip + 双端圆帽）：
+ * 顶点 = 2 关节 × 2 + 2 端帽 ×（1 圆心 + 16 圆环）；索引 = 1 段 × 6 + 2 帽 × 16 × 3
+ */
+const LINE_PATH_VERTICES = 4 + 2 * 17
+const LINE_PATH_INDICES = 6 + 2 * 16 * 3
+
 /** 三节点夹具：a-b 与 b-a 为同一物理路径（反向重合），b-c 独立 */
 function buildModel() {
   return createMapModel(
@@ -50,8 +57,8 @@ describe('buildExclusiveGroupsGeometry 独占区几何', () => {
     expect(physical.physicalPaths).toHaveLength(2)
     expect(build.usedPhysicalPathCount).toBe(2)
     const position = build.outline.getAttribute('position')
-    expect(position.count).toBe(2 * 4)
-    expect(build.outline.getIndex()?.count).toBe(2 * 6)
+    expect(position.count).toBe(2 * LINE_PATH_VERTICES)
+    expect(build.outline.getIndex()?.count).toBe(2 * LINE_PATH_INDICES)
     // 条带高度烘焙在独占区阶梯
     expect(position.getY(0)).toBeCloseTo(EXCLUSIVE_OUTLINE_Y, 6)
   })
@@ -94,7 +101,7 @@ describe('buildExclusiveGroupsGeometry 独占区几何', () => {
     const a = worldTransform.toWorldXZ(0, 0)
     expect(fragile.nameAnchors[0]).toMatchObject({ groupId: 'gx', x: a.x, z: a.z })
     expect(fragile.usedPhysicalPathCount).toBe(1)
-    expect(fragile.outline.getAttribute('position').count).toBe(4)
+    expect(fragile.outline.getAttribute('position').count).toBe(LINE_PATH_VERTICES)
     fragile.dispose()
   })
 
@@ -137,7 +144,7 @@ describe('buildExclusiveGroupsGeometry 独占区几何', () => {
     }
     const shared = buildExclusiveGroupsGeometry(sharedModel, worldTransform, physical)
     expect(shared.usedPhysicalPathCount).toBe(1)
-    expect(shared.outline.getAttribute('position').count).toBe(4)
+    expect(shared.outline.getAttribute('position').count).toBe(LINE_PATH_VERTICES)
     shared.dispose()
   })
 

@@ -1,9 +1,9 @@
 /*
- * 地标实例数据构建测试（与实现共置；TASK-005）。
+ * 地标实例数据构建测试（与实现共置；TASK-005；P0-5 移除仓库名称锚点）。
  *
  * 职责：锁定 buildLandmarkData 的纯数据合同（当前夹具）：
  * 1. 数量恒等：立柱/光环/呼吸灯矩阵数 = charge 节点数；方垫数 = warehouse +
- *    park 节点数；名称锚点数 = warehouse 节点数；停车字形锚点数 = park 数；
+ *    park 节点数；停车字形锚点数 = park 数；仓库名称锚点恒为不存在（P0-5）；
  * 2. 位置恒等：全部世界坐标与 WorldTransform.toWorldXZ 一致（§2.5 同源）；
  * 3. 方垫缩放与实例颜色：仓库浅黄 + 停车紫，颜色表与 padColors 数值一致；
  * 4. work/unknown 节点不产生任何地标语义。
@@ -42,31 +42,25 @@ describe('buildLandmarkData 地标实例数据', () => {
   const { mapModel, worldTransform } = buildFixture()
   const data = buildLandmarkData(mapModel, worldTransform)
 
-  it('数量恒等：charge 1 组矩阵、方垫 2 个、仓库锚点 1 个、停车锚点 1 个', () => {
+  it('数量恒等：charge 1 组矩阵、方垫 2 个、停车锚点 1 个', () => {
     expect(data.chargeCount).toBe(1)
     expect(data.chargeMatrices).toHaveLength(16)
     expect(data.padCount).toBe(2)
     expect(data.padMatrices).toHaveLength(2 * 16)
     expect(data.padColors).toHaveLength(2 * 3)
-    expect(data.warehouseNameAnchors).toHaveLength(1)
     expect(data.parkAnchors).toHaveLength(1)
   })
 
-  it('位置与世界坐标同源：立柱平移与方垫锚点均来自统一 WorldTransform', () => {
+  it('P0-5：仓库名称锚点已整体移除（名称只保留在独占区/停车字形）', () => {
+    expect('warehouseNameAnchors' in data).toBe(false)
+  })
+
+  it('位置与世界坐标同源：立柱平移与停车锚点均来自统一 WorldTransform', () => {
     const charge = mapModel.nodes.get('c1')!
     const chargeWorld = worldTransform.toWorldXZ(charge.x, charge.y)
     expect(data.chargeMatrices[12]).toBeCloseTo(chargeWorld.x, 5)
     expect(data.chargeMatrices[13]).toBeCloseTo(0, 5)
     expect(data.chargeMatrices[14]).toBeCloseTo(chargeWorld.z, 5)
-
-    const warehouse = mapModel.nodes.get('w1')!
-    const warehouseWorld = worldTransform.toWorldXZ(warehouse.x, warehouse.y)
-    expect(data.warehouseNameAnchors[0]).toMatchObject({
-      nodeId: 'w1',
-      name: 'AMR-PICK001',
-      x: warehouseWorld.x,
-      z: warehouseWorld.z,
-    })
 
     const park = mapModel.nodes.get('p1')!
     const parkWorld = worldTransform.toWorldXZ(park.x, park.y)
@@ -93,10 +87,6 @@ describe('buildLandmarkData 地标实例数据', () => {
   })
 
   it('work 与 unknown 节点不产生地标语义（未知类型只由节点层灰色兜底）', () => {
-    const workWorld = worldTransform.toWorldXZ(0, 0)
-    for (const anchor of data.warehouseNameAnchors) {
-      expect(anchor.x).not.toBeCloseTo(workWorld.x, 3)
-    }
     expect(data.padCount).toBe(2)
     expect(data.chargeCount).toBe(1)
   })

@@ -163,13 +163,13 @@ describe('MapVisualizationFeature 场景组合', () => {
     expect(expectSingleInstanced(renderer.scene, 'map-charge-rings').count).toBe(1)
     expect(expectSingleInstanced(renderer.scene, 'map-charge-lights').count).toBe(1)
 
-    // 名称合批：仓库 1 + 停车字形 1 → 8 顶点；分组名称 1 → 4 顶点
+    // 名称合批（P0-5 后仓库 0）：停车字形 1 → 4 顶点；分组名称 1 → 4 顶点
     const landmarkNames = findByName(renderer.scene, 'map-landmark-names')
     expect(landmarkNames).toHaveLength(1)
     expect(
       (toThree(landmarkNames[0]) as unknown as THREE.Mesh).geometry.getAttribute('position')
         .count,
-    ).toBe(8)
+    ).toBe(4)
     const exclusiveOutline = findByName(renderer.scene, 'map-exclusive-outline')
     expect(exclusiveOutline).toHaveLength(1)
     const groupNames = findByName(renderer.scene, 'map-group-names')

@@ -24,6 +24,11 @@
  */
 import * as THREE from 'three'
 import {
+  LABEL_ASPECT,
+  LABEL_BACKGROUND_COLOR,
+  LABEL_STATE_DOT_CENTER_U,
+  LABEL_STATE_DOT_CENTER_V,
+  LABEL_STATE_DOT_RADIUS_V,
   LABEL_BORDER_L1_COLOR,
   LABEL_BORDER_L2_COLOR,
   LABEL_BORDER_SELECTED_COLOR,
@@ -195,7 +200,8 @@ function colorDefineVec3(hex: string): string {
   return `vec3(${color.r.toFixed(6)}, ${color.g.toFixed(6)}, ${color.b.toFixed(6)})`
 }
 
-/** 背景层片元：圆角底板 + 告警/选中边框 + 电量条 + 状态芯片（全部实例属性驱动） */
+/** 背景层片元：圆角底板 + 状态圆点 + 告警/选中边框 + 电量条 + 状态芯片
+ *  （全部实例属性驱动；P0-6 起底色为深灰黑、状态色只由左上角圆点承载） */
 const LABEL_BACKGROUND_FRAGMENT = `
 uniform sampler2D uBadgeMap;
 varying vec2 vUv;
@@ -212,8 +218,16 @@ void main() {
   float sdf = length(max(corner, vec2(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
   if (sdf > 0.0) discard;
 
-  // 底色：状态色加深，保证白色名称与芯片的可读对比
-  vec3 color = vStateColor * 0.72;
+  // 底色：深灰黑（P0-6），保证白色名称与状态色的可读对比；
+  // 状态信息不再由底色承载，改由下方左上角状态圆点表达
+  vec3 color = LABEL_BACKGROUND_COLOR;
+
+  // 状态圆点（P0-6）：左上角等比小圆，颜色 = 主状态色（aStateColor）；
+  // u 向距离乘宽高比还原等比圆，边缘 2% 高度带宽平滑抗锯齿
+  vec2 dotDelta = vec2((p.x - STATE_DOT_CENTER_U) * float(LABEL_ASPECT), p.y - STATE_DOT_CENTER_V);
+  float dotDist = length(dotDelta);
+  float dotMask = 1.0 - smoothstep(STATE_DOT_RADIUS_V - 0.02, STATE_DOT_RADIUS_V, dotDist);
+  color = mix(color, vStateColor, dotMask);
 
   // 告警边框（最外圈）：L2 红 / L1 黄，与 SPEC §7.3 告警级一致
   float band = 0.055;
@@ -294,6 +308,12 @@ export function createLabelBackgroundMaterial(badgeTexture: THREE.Texture): THRE
       BATTERY_CRITICAL_COLOR: colorDefineVec3(LABEL_BATTERY_CRITICAL_COLOR),
       BATTERY_CRITICAL_FILL: (LOW_BATTERY_THRESHOLD / 100).toFixed(4),
       BATTERY_LOW_FILL: (BATTERY_NORMAL_THRESHOLD / 100).toFixed(4),
+      // P0-6：深灰底 + 左上角状态圆点（几何与底色常量与 fleetAppearance 同源）
+      LABEL_BACKGROUND_COLOR: colorDefineVec3(LABEL_BACKGROUND_COLOR),
+      STATE_DOT_CENTER_U: LABEL_STATE_DOT_CENTER_U.toFixed(6),
+      STATE_DOT_CENTER_V: LABEL_STATE_DOT_CENTER_V.toFixed(6),
+      STATE_DOT_RADIUS_V: LABEL_STATE_DOT_RADIUS_V.toFixed(6),
+      LABEL_ASPECT: String(LABEL_ASPECT),
     },
     transparent: true,
     depthWrite: false,

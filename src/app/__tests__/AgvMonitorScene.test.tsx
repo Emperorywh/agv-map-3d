@@ -224,7 +224,8 @@ describe('AgvMonitorScene 场景组合根', () => {
     await flush()
 
     expect(capture.current).not.toBeNull()
-    const pose = computeOverviewPose(seed.sceneBounds, capture.current!.fov)
+    // aspect=1：jsdom 画布无布局尺寸，取景退化为方视口（与实现同口径）
+    const pose = computeOverviewPose(seed.sceneBounds, capture.current!.fov, 1)
     expect(capture.current!.position.x).toBeCloseTo(pose.position.x, 4)
     expect(capture.current!.position.y).toBeCloseTo(pose.position.y, 4)
     expect(capture.current!.position.z).toBeCloseTo(pose.position.z, 4)
@@ -299,7 +300,7 @@ describe('AgvMonitorScene 场景组合根', () => {
       vehicle.position.x + vehicle.dimension.centerOffset,
       vehicle.position.y,
     )
-    const overviewPose = computeOverviewPose(seed.sceneBounds, camera.fov)
+    const overviewPose = computeOverviewPose(seed.sceneBounds, camera.fov, 1)
     // 进入跟随时注视点 = 包围盒世界中心（origin），偏移 = 取景机位自身：
     // 相机位姿 = 车体中心 + 取景机位相对原点的偏移
     expect(camera.position.x).toBeCloseTo(pose.x + overviewPose.position.x, 3)

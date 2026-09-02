@@ -21,7 +21,10 @@
  *    能映射到唯一物理路径，映射无遗漏、无悬空；
  * 4. 静态几何顶点全部位于世界坐标并已烘焙图层高度（见 mapAppearance 阶梯），
  *    图层组件以零位移原样上载；本模块创建的 BufferGeometry 由返回值上的
- *    dispose() 明确释放（资源所有权：创建者释放）。
+ *    dispose() 明确释放（资源所有权：创建者释放）；
+ * 5. 路面条带为共享顶点 polyline strip（P0-4）：关节顶点 = 相邻段平均法线
+ *    + 斜接长度补偿（钳制 3× 半宽），路径两端补圆片端帽盖住路口接缝；展开
+ *    逻辑集中在 appendPolylineStrip，独占区外沿用同一展开保证覆盖一致。
  */
 import * as THREE from 'three'
 import type { MapModel, MapEdge, EdgeType } from '../model/types'
@@ -205,6 +208,11 @@ export interface MapGeometry {
  * 构建世界坐标静态地图几何。
  * 世界坐标由统一 WorldTransform 变换（原点为地图包围盒中心，已一次定型），
  * 图层高度由 mapAppearance 阶梯直接烘焙进顶点。
+ *
+ * 路面条带为共享顶点 polyline strip（视觉差距分析 P0-4）：相邻段的展开法线
+ * 在共享关节顶点上取平均并做斜接长度补偿，弯道处不再出现逐段独立四边形的
+ * 双重覆盖与毛边；每条物理路径两端补半径 = 半路宽的圆片端帽，路口处不同
+ * 物理路径的条带接缝由端帽盖住（节点盘远小于半路宽，遮不住接缝）。
  */
 export function buildMapGeometry(
   mapModel: MapModel,
@@ -223,37 +231,21 @@ export function buildMapGeometry(
     for (let i = 1; i < worldPoints.length; i += 1) {
       const a = worldPoints[i - 1]
       const b = worldPoints[i]
-      const segmentLength = Math.hypot(b.x - a.x, b.z - a.z)
       // 零长度段不产生几何（校验层保证长度为正，此处兜底防退化三角形）
-      if (segmentLength === 0) {
+      if (a.x === b.x && a.z === b.z) {
         continue
       }
-      // 中线：每段一对端点
       centerlinePositions.push(a.x, PATH_CENTERLINE_Y, a.z)
       centerlinePositions.push(b.x, PATH_CENTERLINE_Y, b.z)
-
-      // 路面条带：沿段法线（-dir.z, dir.x）向两侧展开 halfWidth
-      const dirX = (b.x - a.x) / segmentLength
-      const dirZ = (b.z - a.z) / segmentLength
-      const normalX = -dirZ * halfWidth
-      const normalZ = dirX * halfWidth
-      const base = surfacePositions.length / 3
-      surfacePositions.push(
-        a.x + normalX,
-        PATH_SURFACE_Y,
-        a.z + normalZ,
-        a.x - normalX,
-        PATH_SURFACE_Y,
-        a.z - normalZ,
-        b.x - normalX,
-        PATH_SURFACE_Y,
-        b.z - normalZ,
-        b.x + normalX,
-        PATH_SURFACE_Y,
-        b.z + normalZ,
-      )
-      surfaceIndices.push(base, base + 1, base + 2, base, base + 2, base + 3)
     }
+    appendPolylineStrip(
+      surfacePositions,
+      surfaceIndices,
+      worldPoints,
+      halfWidth,
+      PATH_SURFACE_Y,
+      { capStart: true, capEnd: true },
+    )
   }
 
   const pathsSurface = new THREE.BufferGeometry()
@@ -288,6 +280,131 @@ export function buildMapGeometry(
       pathsSurface.dispose()
       pathsCenterline.dispose()
     },
+  }
+}
+
+/** 条带端帽选项：起点/终点是否补半径 = 半路宽的圆片（盖住路口接缝） */
+export interface PolylineStripCaps {
+  readonly capStart: boolean
+  readonly capEnd: boolean
+}
+
+/**
+ * 把世界坐标折线按 halfWidth 展开为共享顶点条带并追加进位置/索引累积数组。
+ * 关节顶点取相邻段法线的平均方向，并按 1/cos(半角) 补偿斜接长度（钳制到
+ * 3×halfWidth 防止近回折处的退化放大）——同一路径的弯道无逐段接缝毛边。
+ * capStart/capEnd 为真时在首末端点补圆片端帽（三角扇），盖住路口处不同
+ * 物理路径条带之间的叠片与尖角缺口。零长度段被跳过；全部顶点烘焙同一高度 y。
+ * 独占区外沿条带（buildExclusiveGroupsGeometry）复用同一展开，保证路面与
+ * 蓝色外沿在弯道/路口的覆盖关系一致。
+ */
+export function appendPolylineStrip(
+  positions: number[],
+  indices: number[],
+  worldPoints: readonly { readonly x: number; readonly z: number }[],
+  halfWidth: number,
+  y: number,
+  caps: PolylineStripCaps,
+): void {
+  // 有效段方向（跳过零长度段）：dir = normalize(b - a)，左法线 = (-dz, dx)
+  const dirX: number[] = []
+  const dirZ: number[] = []
+  const joints: { readonly x: number; readonly z: number }[] = []
+  for (let i = 1; i < worldPoints.length; i += 1) {
+    const a = worldPoints[i - 1]
+    const b = worldPoints[i]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const length = Math.hypot(dx, dz)
+    if (length === 0) {
+      continue
+    }
+    if (joints.length === 0) {
+      joints.push(a)
+    }
+    joints.push(b)
+    dirX.push(dx / length)
+    dirZ.push(dz / length)
+  }
+  if (dirX.length === 0) {
+    return
+  }
+
+  /** 关节展开偏移：首末关节用相邻段法线，内部关节用平均法线 + 斜接补偿 */
+  const jointOffsetX: number[] = []
+  const jointOffsetZ: number[] = []
+  const MAX_MITER_SCALE = 3
+  for (let j = 0; j < joints.length; j += 1) {
+    let nx: number
+    let nz: number
+    if (j === 0) {
+      nx = -dirZ[0]
+      nz = dirX[0]
+    } else if (j === joints.length - 1) {
+      nx = -dirZ[dirZ.length - 1]
+      nz = dirX[dirX.length - 1]
+    } else {
+      // 平均相邻两段的左法线；近回折（dot ≤ 0）时退化为单侧法线
+      const ax = -dirZ[j - 1]
+      const az = dirX[j - 1]
+      const bx = -dirZ[j]
+      const bz = dirX[j]
+      nx = ax + bx
+      nz = az + bz
+      const len = Math.hypot(nx, nz)
+      if (len > 1e-6 && (ax * bx + az * bz) > 0) {
+        nx /= len
+        nz /= len
+      } else {
+        nx = ax
+        nz = az
+      }
+    }
+    // 斜接长度补偿：偏移沿平均法线，需除以与段法线夹角的余弦才能到达 halfWidth
+    const first = j === 0 ? 0 : j - 1
+    const cosHalf = Math.max(nx * -dirZ[first] + nz * dirX[first], 1 / MAX_MITER_SCALE)
+    const miter = halfWidth / cosHalf
+    jointOffsetX.push(nx * miter)
+    jointOffsetZ.push(nz * miter)
+  }
+
+  // 关节顶点对：偶数位 = 中心 + 偏移，奇数位 = 中心 − 偏移；段四边形共享关节对
+  const base = positions.length / 3
+  for (let j = 0; j < joints.length; j += 1) {
+    positions.push(
+      joints[j].x + jointOffsetX[j], y, joints[j].z + jointOffsetZ[j],
+      joints[j].x - jointOffsetX[j], y, joints[j].z - jointOffsetZ[j],
+    )
+  }
+  for (let s = 0; s < dirX.length; s += 1) {
+    const a = base + s * 2
+    const b = base + s * 2 + 2
+    indices.push(a, a + 1, b + 1, a, b + 1, b)
+  }
+
+  const appendCap = (centerIndex: number): void => {
+    // 端帽圆盘中心 = 路径端点本身（关节边缘顶点偏在 ±halfWidth 一侧，不可复用）
+    const capCenter = positions.length / 3
+    positions.push(joints[centerIndex].x, y, joints[centerIndex].z)
+    const ringStart = capCenter + 1
+    const SEGMENTS = 16
+    for (let k = 0; k < SEGMENTS; k += 1) {
+      const angle = (k / SEGMENTS) * Math.PI * 2
+      positions.push(
+        joints[centerIndex].x + Math.cos(angle) * halfWidth,
+        y,
+        joints[centerIndex].z + Math.sin(angle) * halfWidth,
+      )
+    }
+    for (let k = 0; k < SEGMENTS; k += 1) {
+      indices.push(capCenter, ringStart + k, ringStart + (k + 1) % SEGMENTS)
+    }
+  }
+  if (caps.capStart) {
+    appendCap(0)
+  }
+  if (caps.capEnd) {
+    appendCap(joints.length - 1)
   }
 }
 

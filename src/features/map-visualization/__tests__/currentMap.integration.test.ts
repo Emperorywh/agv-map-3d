@@ -227,10 +227,18 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
   it('静态几何规模与节点实例数据正确（一个 InstancedMesh 渲染全部节点）', () => {
     const centerline = geometry.pathsCenterline.getAttribute('position')
     expect(centerline.count).toBe(EXPECTED.centerSegmentCount * 2)
+    // P0-4 共享顶点条带：每条物理路径 = 2(S+1) 个关节顶点 + 双端圆帽 2×17
+    const stripVertices = (path: { points: readonly unknown[] }): number =>
+      2 * (path.points.length - 1 + 1) + 2 * 17
+    let expectedSurfaceVertices = 0
+    let expectedSurfaceIndices = 0
+    for (const path of geometry.physical.physicalPaths) {
+      expectedSurfaceVertices += stripVertices(path)
+      expectedSurfaceIndices += (path.points.length - 1) * 6 + 2 * 16 * 3
+    }
     const surface = geometry.pathsSurface.getAttribute('position')
-    // 每个中心线段展开为一个路面四边形（4 顶点 / 2 三角形）
-    expect(surface.count).toBe(EXPECTED.centerSegmentCount * 4)
-    expect(geometry.pathsSurface.getIndex()?.count).toBe(EXPECTED.centerSegmentCount * 6)
+    expect(surface.count).toBe(expectedSurfaceVertices)
+    expect(geometry.pathsSurface.getIndex()?.count).toBe(expectedSurfaceIndices)
 
     expect(geometry.nodeInstances.count).toBe(EXPECTED.nodeCount)
     expect(geometry.nodeInstances.matrices).toHaveLength(EXPECTED.nodeCount * 16)
@@ -285,7 +293,8 @@ describe('当前地图（json/map.json）语义图层事实（TASK-005 / A1、A2
     expect(landmarks.padCount).toBe(1185 + 2)
     expect(landmarks.padMatrices).toHaveLength((1185 + 2) * 16)
     expect(landmarks.padColors).toHaveLength((1185 + 2) * 3)
-    expect(landmarks.warehouseNameAnchors).toHaveLength(1185)
+    // P0-5：仓库名称锚点已整体移除，停车锚点保留
+    expect('warehouseNameAnchors' in landmarks).toBe(false)
     expect(landmarks.parkAnchors).toHaveLength(2)
 
     // 按节点遍历序逐块核对：颜色与类别色表一致（节点序与方垫序同源）
@@ -316,15 +325,16 @@ describe('当前地图（json/map.json）语义图层事实（TASK-005 / A1、A2
     expect(parkCount).toBe(2)
   })
 
-  it('名称条目收集完整：1,185 仓库 + 7 分组 + 1 停车字形，key 全部唯一', () => {
+  it('名称条目收集（P0-5）：仓库节点名称不再收集，仅 7 分组 + 1 停车字形，key 全部唯一', () => {
     const labels = collectMapNameLabels(mapModel)
-    expect(labels).toHaveLength(1185 + 7 + 1)
+    expect(labels).toHaveLength(7 + 1)
     const keys = new Set(labels.map((label) => label.key))
     expect(keys.size).toBe(labels.length)
-    // 仓库名称全部为 ASCII 短名（当前输入），分组名称为「独占区1~7」
-    expect(labels[0].key.startsWith('node:')).toBe(true)
-    expect(labels[1185]).toMatchObject({ text: '独占区1' })
-    expect(labels[1192]).toMatchObject({ key: '__park_glyph__', text: 'P' })
+    // 分组名称为「独占区1~7」，随后是停车字形；无任何 node: 前缀条目
+    expect(labels[0]).toMatchObject({ text: '独占区1' })
+    expect(labels[6]).toMatchObject({ text: '独占区7' })
+    expect(labels[7]).toMatchObject({ key: '__park_glyph__', text: 'P' })
+    expect(labels.some((label) => label.key.startsWith('node:'))).toBe(false)
   })
 
   it('名称图集布局可容纳当前全部名称：无丢弃、画布尺寸不超过上限', () => {
@@ -361,14 +371,17 @@ describe('当前地图（json/map.json）语义图层事实（TASK-005 / A1、A2
     expect(exclusive.usedPhysicalPathCount).toBe(direct.size)
     expect(exclusive.usedPhysicalPathCount).toBeGreaterThan(0)
 
-    // 单个合并几何：顶点数 = 物理路径中心线段数 × 4（每段一个条带四边形）
+    // 单个合并几何（P0-4 条带合同）：每条路径 = 2(S+1) 关节顶点 + 双端圆帽 34
     let expectedVertices = 0
+    let expectedIndices = 0
     for (const pathIndex of direct) {
-      expectedVertices += (geometry.physical.physicalPaths[pathIndex].points.length - 1) * 4
+      const segments = geometry.physical.physicalPaths[pathIndex].points.length - 1
+      expectedVertices += 2 * (segments + 1) + 2 * 17
+      expectedIndices += segments * 6 + 2 * 16 * 3
     }
     const position = exclusive.outline.getAttribute('position')
     expect(position.count).toBe(expectedVertices)
-    expect(exclusive.outline.getIndex()?.count).toBe((expectedVertices / 4) * 6)
+    expect(exclusive.outline.getIndex()?.count).toBe(expectedIndices)
 
     // 锚点为成员节点包围盒中心：抽验首分组（单调世界坐标范围）
     const first = mapModel.groupList[0]
