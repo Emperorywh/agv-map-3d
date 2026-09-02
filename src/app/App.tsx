@@ -17,7 +17,12 @@
 // 4. 数据源为 null（Mock 缺地图拓扑 / wsUrl 缺失）是合法稳态：静态地图照常
 //    装配；Mock 数据源在 MapModel 拓扑就绪后创建（就绪态携带 mapModel），
 //    WS 数据源不受该屏障限制；
-// 5. ACESFilmic 色调映射在 Canvas 上显式声明（SPEC §5.4 的唯一色调映射口径）。
+// 5. ACESFilmic 色调映射在 Canvas 上显式声明（SPEC §5.4 的唯一色调映射口径）；
+// 6. 后台节流（SPEC §11.5；TASK-015）：页面隐藏时 Canvas frameloop 切为
+//    never——R3F 帧循环完全停止（useFrame 不执行、帧同步不消费脏集合、
+//    GPU 零提交），数据源与运行时继续在后台归并每车最新快照；回前台恢复
+//    always 后首个渲染帧消费全部积压脏标记，与最新快照一帧对齐。可见性是
+//    秒/分钟级低频信号，进入 React state 合法（SPEC §4 只禁高频）。
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas } from '@react-three/fiber'
@@ -66,6 +71,22 @@ export function App() {
   const [startup, setStartup] = useState<StartupState>({ phase: 'pending' })
   // 诊断通道仅创建一次，同时供启动编排、重试与数据源选择上报使用
   const diagnostics = useMemo(() => createDiagnosticsReporter(), [])
+
+  // 页面可见性 → Canvas frameloop（SPEC §11.5；不变量 6）：监听回调内实时
+  // 读取 document.visibilityState，不缓存事件间状态；监听随 effect 对称
+  // 摘除，StrictMode 双执行不产生重复回调。
+  const [pageVisible, setPageVisible] = useState<boolean>(
+    () => document.visibilityState !== 'hidden',
+  )
+  useEffect(() => {
+    const handleVisibilityChange = (): void => {
+      setPageVisible(document.visibilityState !== 'hidden')
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   useEffect(() => {
     let disposed = false
@@ -172,6 +193,7 @@ export function App() {
       style={{ width: '100vw', height: '100dvh' }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
       camera={{ fov: 60, near: 0.5, far: 4000, position: [0, 300, 300] }}
+      frameloop={pageVisible ? 'always' : 'never'}
     >
       <AgvMonitorScene
         mapDescriptor={startup.phase === 'ready' ? startup.mapDescriptor : null}

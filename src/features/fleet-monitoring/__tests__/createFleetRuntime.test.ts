@@ -163,3 +163,46 @@ describe('脏集合最小化（F5：未变化不写）', () => {
     expect(runtime.count).toBe(0)
   })
 })
+
+describe('markAllDirty：回前台强制全量脏标记（§11.5；TASK-015）', () => {
+  it('把全部存活实体标记为 pose+display 脏，与此前是否已消费无关', () => {
+    const { runtime } = setup()
+    const a = snapshotOf(makeRawVehicle())
+    const b = snapshotOf(makeRawVehicle({
+      agvKey: 'agv-002',
+      agvName: '测试车 002',
+      agvPosition: { x: 200, y: 60, theta: 1, localizationScore: 0.9 },
+    }))
+    runtime.applyEvent(snapshotEvent([a, b]))
+    runtime.consumeDirty()
+    // 无新事件：正常消费应为空
+    expect(runtime.consumeDirty()).toEqual({ pose: [], display: [], removed: [] })
+    runtime.markAllDirty()
+    const batch = runtime.consumeDirty()
+    expect([...batch.pose].sort()).toEqual([a.entityKey, b.entityKey].sort())
+    expect([...batch.display].sort()).toEqual([a.entityKey, b.entityKey].sort())
+    expect(batch.removed).toEqual([])
+    // 幂等：再次标记继续有效（回前台可能连续触发）
+    runtime.markAllDirty()
+    expect(runtime.consumeDirty().pose.length).toBe(2)
+  })
+
+  it('不伪造 removed：已删除实体不因 markAllDirty 复活', () => {
+    const { runtime } = setup()
+    const a = snapshotOf(makeRawVehicle())
+    runtime.applyEvent(snapshotEvent([a]))
+    runtime.applyEvent({ type: 'remove', schemaVersion: 't', mapId: MAP, sequence: 9, receivedAt: 1_500, agvKey: a.agvKey })
+    runtime.consumeDirty()
+    runtime.markAllDirty()
+    const batch = runtime.consumeDirty()
+    expect(batch.removed).toEqual([])
+    expect(batch.pose).toEqual([])
+    expect(batch.display).toEqual([])
+  })
+
+  it('空运行时 markAllDirty 为 no-op，空表运行时不产生差异', () => {
+    const { runtime } = setup()
+    runtime.markAllDirty()
+    expect(runtime.consumeDirty()).toEqual({ pose: [], display: [], removed: [] })
+  })
+})

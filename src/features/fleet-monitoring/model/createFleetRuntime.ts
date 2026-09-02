@@ -103,6 +103,13 @@ export interface FleetRuntime extends ReadonlyFleetRuntime {
   applyEvent(event: VehicleDataEvent): FleetDiff
   /** 1Hz 跃迁推进：只处理 FRESH/STALE 边界；now 为单调毫秒 */
   tick(now: number): void
+  /**
+   * 强制全量脏标记（SPEC §11.5）：把当前全部存活实体标记为 pose+display 脏。
+   * 用于页面回前台后的「强制 diff、瞬时对齐」——隐藏期间帧同步未运行，可能
+   * 存在脏标记被提前消费或标记缺失的边界，回前台时以本方法保证下一个渲染帧
+   * 把全部实例缓冲重写到运行时当前真相。只标记存活实体，不制造 removed。
+   */
+  markAllDirty(): void
   /** 取出自上次消费以来的脏集合并清空 */
   consumeDirty(): DirtyBatch
 }
@@ -270,6 +277,15 @@ export function createFleetRuntime(
     }
   }
 
+  // 全量脏标记：幂等（Set 去重），只覆盖存活实体——已删除实体不在表中，
+  // 其 removed 差异只能由 applyEvent 产生，这里绝不伪造
+  const markAllDirty = (): void => {
+    for (const entity of entities.values()) {
+      dirtyPose.add(entity.key)
+      dirtyDisplay.add(entity.key)
+    }
+  }
+
   const consumeDirty = (): DirtyBatch => {
     const batch: DirtyBatch = {
       pose: [...dirtyPose],
@@ -286,6 +302,7 @@ export function createFleetRuntime(
     staleAfterMs,
     applyEvent,
     tick,
+    markAllDirty,
     consumeDirty,
     get: (key) => entities.get(key),
     entities: () => [...entities.values()] as readonly ReadonlyFleetEntity[],

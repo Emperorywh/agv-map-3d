@@ -27,8 +27,10 @@ import type {
 import {
   heartbeatEvent,
   makeRawVehicle,
+  removeEvent,
   snapshotEvent,
   snapshotOf,
+  updateEvent,
 } from './testVehicles'
 
 const MAP = 'map-under-test'
@@ -274,5 +276,191 @@ describe('快速 source 切换（TASK-007 验证项）', () => {
     expect(runtime.count).toBe(1)
     unmount()
     expect(second.disconnectCount).toBe(1)
+  })
+})
+
+/* ==================== 后台节流与前台瞬时对齐（SPEC §11.5；TASK-015） ==================== */
+
+/**
+ * 设置页面可见性并派发 visibilitychange（jsdom 无真实切换）：
+ * 实时改写 document.visibilityState（实现约定回调内实时读取）后手动派发。
+ */
+function setPageVisibility(state: 'visible' | 'hidden'): void {
+  Object.defineProperty(document, 'visibilityState', {
+    value: state,
+    configurable: true,
+  })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+describe('后台节流与前台瞬时对齐（§11.5；TASK-015）', () => {
+  afterEach(() => {
+    // 恢复可见性，避免影响同文件其他用例的挂载初始态
+    setPageVisibility('visible')
+  })
+
+  it('隐藏即暂停 ticker：暂停前立即重算一次，此后时间推进不再 tick', () => {
+    const source = new FakeSource()
+    let now = 0
+    const runtime = createFleetRuntime({ now: () => now })
+    const ref = new VehicleSourceRef(source)
+    const tickSpy = vi.spyOn(runtime, 'tick')
+    renderDataHook(ref, runtime, { now: () => now })
+    const payload = makeSnapshotPayload()
+    source.emit(snapshotEvent([payload], now, 1, MAP))
+    tickSpy.mockClear()
+
+    act(() => {
+      now = 3_000
+      setPageVisibility('hidden')
+    })
+    // 暂停前立即重算：freshness 冻结在隐藏时刻的真相
+    expect(tickSpy).toHaveBeenCalledTimes(1)
+    expect(tickSpy).toHaveBeenLastCalledWith(3_000)
+    expect(runtime.get(payload.entityKey)?.freshness).toBe('FRESH')
+
+    // 隐藏 10min：ticker 已暂停，时间推进不产生任何 tick
+    act(() => {
+      now += 600_000
+      vi.advanceTimersByTime(60_000)
+    })
+    expect(tickSpy).toHaveBeenCalledTimes(1)
+    expect(runtime.get(payload.entityKey)?.freshness).toBe('FRESH')
+
+    // 回前台立即重算：后台静默车一次性跃迁 STALE（603s ≫ 10s 阈值）
+    act(() => {
+      setPageVisibility('visible')
+    })
+    expect(tickSpy).toHaveBeenCalledTimes(2)
+    expect(tickSpy).toHaveBeenLastCalledWith(603_000)
+    expect(runtime.get(payload.entityKey)?.freshness).toBe('STALE')
+  })
+
+  it('回前台立即 markAllDirty：脏集合覆盖全部存活实体，ticker 恢复运行', () => {
+    const source = new FakeSource()
+    let now = 0
+    const runtime = createFleetRuntime({ now: () => now })
+    const ref = new VehicleSourceRef(source)
+    const tickSpy = vi.spyOn(runtime, 'tick')
+    renderDataHook(ref, runtime, { now: () => now })
+    const payload = makeSnapshotPayload()
+    source.emit(snapshotEvent([payload], now, 1, MAP))
+    runtime.consumeDirty()
+    tickSpy.mockClear()
+
+    act(() => {
+      setPageVisibility('hidden')
+    })
+    tickSpy.mockClear()
+
+    act(() => {
+      now = 500
+      setPageVisibility('visible')
+    })
+    // 强制全量 diff：与隐藏期间事件是否到达无关，全部存活实体进脏集合
+    const batch = runtime.consumeDirty()
+    expect(batch.pose).toEqual([payload.entityKey])
+    expect(batch.display).toEqual([payload.entityKey])
+    // ticker 恢复：时间推进继续驱动 freshness
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS)
+    })
+    expect(tickSpy.mock.calls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('隐藏期间数据源不断开、事件继续归并：每车只保留最新快照', () => {
+    const source = new FakeSource()
+    let now = 0
+    const runtime = createFleetRuntime({ now: () => now })
+    const ref = new VehicleSourceRef(source)
+    const { unmount } = renderDataHook(ref, runtime, { now: () => now })
+    const payload = makeSnapshotPayload()
+    source.emit(snapshotEvent([payload], now, 1, MAP))
+    const connectBaseline = source.connectCount
+    const disconnectBaseline = source.disconnectCount
+
+    act(() => {
+      now = 1_000
+      setPageVisibility('hidden')
+    })
+    expect(source.connectCount).toBe(connectBaseline)
+    expect(source.disconnectCount).toBe(disconnectBaseline)
+
+    // 后台期间连续多次 update（位置推进）与一次 remove：
+    // update 只保留最新（无事件回放），remove 事件照常归并
+    now = 600_000
+    source.emit(updateEvent(
+      snapshotOf(makeRawVehicle({ agvPosition: { x: 130, y: 55, theta: 0.4, localizationScore: 0.9 } })),
+      now,
+      2,
+    ))
+    expect(runtime.count).toBe(1)
+    const entity = runtime.get(payload.entityKey)
+    expect(entity?.snapshot.position.x).toBe(130)
+    expect(entity?.freshness).toBe('FRESH')
+
+    source.emit(removeEvent(MAP, payload.agvKey, now + 1))
+    expect(runtime.count).toBe(0)
+
+    act(() => {
+      setPageVisibility('visible')
+    })
+    unmount()
+    // 断开只发生一次（卸载清理），可见性切换不触碰连接
+    expect(source.disconnectCount).toBe(disconnectBaseline + 1)
+  })
+
+  it('挂载即隐藏：ticker 不启动；回前台立即重算并恢复 ticker', () => {
+    const source = new FakeSource()
+    let now = 0
+    const runtime = createFleetRuntime({ now: () => now })
+    const ref = new VehicleSourceRef(source)
+    const tickSpy = vi.spyOn(runtime, 'tick')
+    act(() => {
+      setPageVisibility('hidden')
+    })
+    renderDataHook(ref, runtime, { now: () => now })
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(tickSpy).not.toHaveBeenCalled()
+
+    act(() => {
+      now = 20_000
+      setPageVisibility('visible')
+    })
+    expect(tickSpy).toHaveBeenCalledTimes(1)
+    expect(tickSpy).toHaveBeenLastCalledWith(20_000)
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS)
+    })
+    expect(tickSpy.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('监听对称清理：卸载后可见性变化不再触达运行时，且 StrictMode 下无重复监听', () => {
+    const source = new FakeSource()
+    let now = 0
+    const runtime = createFleetRuntime({ now: () => now })
+    const ref = new VehicleSourceRef(source)
+    const tickSpy = vi.spyOn(runtime, 'tick')
+    const { unmount } = renderDataHook(ref, runtime, { now: () => now })
+    // StrictMode setup→cleanup→setup 后只剩一个监听：一次 hide 一次 show
+    // 各触发恰好一次立即 tick（重复监听会使次数翻倍）
+    act(() => {
+      setPageVisibility('hidden')
+    })
+    act(() => {
+      setPageVisibility('visible')
+    })
+    expect(tickSpy).toHaveBeenCalledTimes(2)
+    tickSpy.mockClear()
+
+    unmount()
+    act(() => {
+      setPageVisibility('hidden')
+      setPageVisibility('visible')
+    })
+    expect(tickSpy).not.toHaveBeenCalled()
+    expect(source.disconnectCount).toBe(source.connectCount)
   })
 })

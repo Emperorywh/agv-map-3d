@@ -35,11 +35,13 @@ vi.mock('@react-three/fiber', async (importOriginal) => {
     Canvas: ({
       style,
       children,
+      frameloop,
     }: {
       style?: React.CSSProperties
       children?: React.ReactNode
+      frameloop?: 'always' | 'demand' | 'never'
     }) => (
-      <div data-testid="canvas-shell" style={style}>
+      <div data-testid="canvas-shell" data-frameloop={frameloop ?? 'always'} style={style}>
         <canvas />
         {children}
       </div>
@@ -144,6 +146,19 @@ vi.mock('@/app/bootstrap/selectVehicleDataSource', () => ({
 
 const mockBootstrap = vi.mocked(bootstrapApplication)
 
+/**
+ * 设置页面可见性并派发 visibilitychange（jsdom 无真实切换）：
+ * 实时改写 document.visibilityState 后手动派发，与实现「回调内实时读取」
+ * 的约定一致。
+ */
+function setPageVisibility(state: 'visible' | 'hidden'): void {
+  Object.defineProperty(document, 'visibilityState', {
+    value: state,
+    configurable: true,
+  })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
 /** 微任务冲刷 */
 async function flush(): Promise<void> {
   await act(async () => {
@@ -224,6 +239,8 @@ afterEach(() => {
   qualityCapture.maxDpr = undefined
   selectCapture.options = []
   selectCapture.returnValue = null
+  // 恢复可见性，避免影响同文件其他用例的挂载初始态
+  setPageVisibility('visible')
 })
 
 describe('App DOM 外壳', () => {
@@ -372,5 +389,30 @@ describe('App DOM 外壳', () => {
     const descriptor = capture.mapDescriptor as { mapUrl: string } | null
     expect(descriptor).not.toBeNull()
     expect(descriptor!.mapUrl).toBe('http://t/json/map.json')
+  })
+
+  it('页面隐藏时 Canvas frameloop 切为 never，回前台恢复 always（§11.5；TASK-015）', () => {
+    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    const { container, unmount } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    const shell = () =>
+      container.querySelector<HTMLElement>('[data-testid="canvas-shell"]')!
+    expect(shell().getAttribute('data-frameloop')).toBe('always')
+
+    // 隐藏：帧循环完全停止（useFrame 不执行、GPU 零提交），数据源照常在后台
+    act(() => {
+      setPageVisibility('hidden')
+    })
+    expect(shell().getAttribute('data-frameloop')).toBe('never')
+
+    // 回前台：恢复帧循环，首个渲染帧消费全部积压脏标记，一帧对齐最新快照
+    act(() => {
+      setPageVisibility('visible')
+    })
+    expect(shell().getAttribute('data-frameloop')).toBe('always')
+    unmount()
   })
 })

@@ -7,7 +7,7 @@
  */
 import { StrictMode } from 'react'
 import { act } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
 import {
@@ -20,7 +20,20 @@ import { createFleetRuntime } from '../model/createFleetRuntime'
 import { FleetRuntimeProvider } from '../components/FleetRuntimeProvider'
 import { FleetMonitoringFeature } from '../components/FleetMonitoringFeature'
 import { useFleetRuntime } from '../hooks/FleetRuntimeContext'
-import { snapshotEvent, snapshotOf } from './testVehicles'
+import { computeVehiclePartLayout, computeVehicleWorldPose } from '../scene/createVehicleGeometry'
+import type {
+  SourceStatus,
+  Unsubscribe,
+  VehicleDataEvent,
+  VehicleDataSource,
+} from '../data-source/contract'
+import {
+  makeRawVehicle,
+  removeEvent,
+  snapshotEvent,
+  snapshotOf,
+  updateEvent,
+} from './testVehicles'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -157,6 +170,125 @@ describe('FleetMonitoringFeature（TASK-010）', () => {
       )
       await advance(renderer, 5)
       expect(uniforms.uLockPulseEnabled.value).toBe(1)
+    } finally {
+      renderer.unmount()
+    }
+  })
+})
+
+/* ==================== 后台节流与前台瞬时对齐（SPEC §11.5；TASK-015） ==================== */
+
+/** 设置页面可见性并派发 visibilitychange（jsdom 无真实切换） */
+function setPageVisibility(state: 'visible' | 'hidden'): void {
+  Object.defineProperty(document, 'visibilityState', {
+    value: state,
+    configurable: true,
+  })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+/** 最小事件源替身：connect 即 OPEN，测试用 emit 直推事件 */
+class EmittingSource implements VehicleDataSource {
+  private readonly cbs = new Set<(event: VehicleDataEvent) => void>()
+  connect = vi.fn(() => Promise.resolve())
+  disconnect = vi.fn()
+  requestSnapshot = vi.fn()
+  readonly status: SourceStatus = 'OPEN'
+  onEvent(cb: (event: VehicleDataEvent) => void): Unsubscribe {
+    this.cbs.add(cb)
+    return () => {
+      this.cbs.delete(cb)
+    }
+  }
+  onStatusChange = vi.fn((): Unsubscribe => () => {})
+  emit(event: VehicleDataEvent): void {
+    for (const cb of [...this.cbs]) {
+      cb(event)
+    }
+  }
+}
+
+describe('后台节流与前台瞬时对齐（§11.5；TASK-015）', () => {
+  afterEach(() => {
+    setPageVisibility('visible')
+    probeRenders = 0
+    probeRuntime = null
+  })
+
+  it('后台 10min 多次 update/remove 后，回前台首个渲染帧与最新快照一帧对齐', async () => {
+    const world = makeWorld()
+    const source = new EmittingSource()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <FleetRuntimeProvider source={source}>
+          <Probe />
+          <FleetMonitoringFeature worldTransform={world} />
+        </FleetRuntimeProvider>
+      </StrictMode>,
+    )
+    try {
+      await act(async () => {})
+      expect(probeRuntime).not.toBeNull()
+      const runtime = probeRuntime!
+
+      // 前台基线：两台车就位并完成至少一次提交
+      const v0 = snap('v0')
+      const v1 = snap('v1')
+      source.emit(snapshotEvent([v0, v1], 1_000, 1))
+      await advance(renderer, 2)
+      const chassis = renderer.scene.findAll(
+        (n) => (n.instance as THREE.Object3D).name === 'fleet-chassis-b0',
+      )[0]!.instance as THREE.InstancedMesh
+      const read = (slot: number): number[] =>
+        Array.from(chassis.instanceMatrix.array as Float32Array).slice(slot * 16, slot * 16 + 16)
+      const baseline0 = read(0)
+      expect(baseline0[12]).not.toBe(0)
+
+      // 隐藏（渲染停止）：期间多次 update 推进 v0、remove 删除 v1——
+      // 不推进任何帧（真实浏览器隐藏期间 rAF/frameloop 均不产生渲染）
+      act(() => {
+        setPageVisibility('hidden')
+      })
+      source.emit(updateEvent(
+        snapshotOf({ ...makeRawVehicle({ agvKey: 'v0' }), agvPosition: { x: 110, y: 52, theta: 0, localizationScore: 0.9 } }),
+        600_000, 2,
+      ))
+      source.emit(updateEvent(
+        snapshotOf({ ...makeRawVehicle({ agvKey: 'v0' }), agvPosition: { x: 120, y: 53, theta: 0, localizationScore: 0.9 } }),
+        600_500, 3,
+      ))
+      source.emit(updateEvent(
+        snapshotOf({ ...makeRawVehicle({ agvKey: 'v0' }), agvPosition: { x: 130, y: 54, theta: 0, localizationScore: 0.9 } }),
+        601_000, 4,
+      ))
+      source.emit(removeEvent(v1.mapId, v1.agvKey, 601_500))
+      // 中间状态不回放：运行时只保留每车最新快照
+      expect(runtime.count).toBe(1)
+      expect(runtime.get(v0.entityKey)?.snapshot.position.x).toBe(130)
+
+      // 回前台：恢复 ticker + 强制全量 diff；恰好一帧后与最新快照一致
+      act(() => {
+        setPageVisibility('visible')
+      })
+      await advance(renderer, 1)
+      const entity = runtime.get(v0.entityKey)!
+      const expectedPose = computeVehicleWorldPose(entity.snapshot, world)
+      const expectedLayout = computeVehiclePartLayout(entity.snapshot, entity.displayState)
+      // 底盘矩阵位置分量 = 车体世界中心 + 部件本地偏移经 rotY 旋转
+      // （底盘与外壳对齐带 -wedgeLen/2 本地偏移；theta=0 时旋转不改变偏移）
+      const expectedX = expectedPose.cx + expectedLayout.chassis.x
+      const expectedZ = expectedPose.cz + expectedLayout.chassis.z
+      const aligned0 = read(0)
+      expect(aligned0[12]).toBeCloseTo(expectedX, 5)
+      expect(aligned0[14]).toBeCloseTo(expectedZ, 5)
+      // 被删车辆槽位零缩放清场（无幽灵车）
+      const stale1 = read(1)
+      expect(stale1[0]).toBe(0)
+      expect(stale1[12]).toBe(0)
+
+      // 无插值/无累积：后续帧矩阵稳定不变（§11.4 位置跳变直用新位置）
+      await advance(renderer, 3)
+      expect(read(0)).toEqual(aligned0)
     } finally {
       renderer.unmount()
     }
