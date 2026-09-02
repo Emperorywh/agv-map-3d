@@ -38,6 +38,7 @@
  *    时不受影响，恢复后第一帧即与最新快照对齐。
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { createDiagnosticsReporter, type DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 import { useFleetRuntime } from '../hooks/FleetRuntimeContext'
@@ -83,6 +84,13 @@ export interface FleetMonitoringFeatureProps {
    * 递增——共享几何/材质整代重建，四个图层经 keyed Fragment 整体重挂。
    */
   contextGeneration?: number
+  /**
+   * 首批车辆实例就绪信号（TASK-017 启动编排）：首次携带世界变换提交后的
+   * 第一个帧同步 pass 完成时调用一次（每个挂载实例至多一次）——实例缓冲
+   * 已创建且首帧矩阵写入已提交。app 组合层据此合成 appInteractive 启动
+   * 阶段；未注入时不上报。
+   */
+  onInstancesReady?: () => void
 }
 
 export function FleetMonitoringFeature({
@@ -93,6 +101,7 @@ export function FleetMonitoringFeature({
   trafficPulseEnabled = true,
   diagnostics,
   contextGeneration = 0,
+  onInstancesReady,
 }: FleetMonitoringFeatureProps) {
   const { runtime } = useFleetRuntime()
 
@@ -131,6 +140,33 @@ export function FleetMonitoringFeature({
     [diagnostics],
   )
   const effectiveDiagnostics = diagnostics ?? fallbackDiagnostics
+
+  // 启动阶段指标（TASK-017，SPEC §10.3 阶段 5「创建首批车辆实例并完成首次
+  // 渲染」）：起点为首次携带世界变换的提交（实例缓冲在该提交中创建），终点
+  // 为紧随其后的第一个帧同步 pass（实例矩阵首次写入并随帧提交）。一次性上
+  // 报；帧循环未运行（页面隐藏 / frameloop=never）时自然顺延到恢复后的第一
+  // 帧。回调经 ref 透传，内联函数不触发重复执行。
+  const instancesCommittedAtRef = useRef<number | null>(null)
+  const instancesReportedRef = useRef(false)
+  const onInstancesReadyRef = useRef(onInstancesReady)
+  onInstancesReadyRef.current = onInstancesReady
+  useEffect(() => {
+    if (worldTransform !== null && instancesCommittedAtRef.current === null) {
+      instancesCommittedAtRef.current = performance.now()
+    }
+  }, [worldTransform])
+  useFrame(() => {
+    const committedAt = instancesCommittedAtRef.current
+    if (committedAt === null || instancesReportedRef.current) {
+      return
+    }
+    instancesReportedRef.current = true
+    effectiveDiagnostics?.report('BOOTSTRAP_STAGE_INSTANCES', 'info', '启动阶段耗时', {
+      stage: 'instances',
+      durationMs: performance.now() - committedAt,
+    })
+    onInstancesReadyRef.current?.()
+  })
 
   if (worldTransform === null) {
     // 地图未就绪：不渲染车队场景内容（不变量 3）；资源在挂载期间保持

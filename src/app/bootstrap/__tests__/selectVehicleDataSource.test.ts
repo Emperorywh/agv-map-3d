@@ -125,6 +125,22 @@ describe('selectVehicleDataSource（TASK-007）', () => {
     source!.disconnect()
   })
 
+  it('mapId 支持 Promise 形态透传（TASK-017）：构造成功，绑定语义由数据源测试锁定', () => {
+    // 延迟绑定的完整语义（缓冲/补发布/拒绝终态）在 WebSocketVehicleDataSource
+    // 测试中锁定；此处锁定装配点接受 Promise 形态并产出数据源。
+    let resolveMapId: (mapId: string) => void = () => {}
+    const mapId = new Promise<string>((resolve) => {
+      resolveMapId = resolve
+    })
+    resolveMapId('map-late')
+    const source = selectVehicleDataSource({
+      config: makeConfig(),
+      mapId,
+      socketFactory: () => makeStubSocket(),
+    })
+    expect(source).not.toBeNull()
+  })
+
   it('协议适配器注入点透传：自定义适配器决定消息映射', async () => {
     const decoded: unknown[] = []
     const source = selectVehicleDataSource({

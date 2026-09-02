@@ -11,8 +11,13 @@
  * 关键不变量：MapModel 与 WorldTransform 一经产出即冻结；消费方不得假设
  *       其内容会随事件更新（地图恢复时由 app/hook 原子替换整个视图）。
  */
-export { loadMap } from './services/loadMap'
-export type { LoadMapOptions, LoadMapResult } from './services/loadMap'
+export { loadMap, fetchMapJson, buildMapFromJson } from './services/loadMap'
+export type {
+  LoadMapOptions,
+  LoadMapResult,
+  FetchedMapResource,
+  BuildMapFromJsonOptions,
+} from './services/loadMap'
 export { createMapModel } from './model/createMapModel'
 export type {
   CreateMapModelOptions,

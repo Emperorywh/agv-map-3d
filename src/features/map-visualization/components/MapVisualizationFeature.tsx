@@ -31,7 +31,7 @@
  *    入失败计数（回滚语义 = 场景落定在「无 IBL 的完整一致状态」，绝不保留
  *    半建资源），初始挂载（资源代 0）的失败仍按既有降级处理不计入。
  */
-import { Fragment, useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
@@ -89,6 +89,12 @@ export interface MapVisualizationFeatureProps {
    * GL 的创建步骤）；仅资源代 > 0（恢复重建）时调用，计入恢复失败计数。
    */
   onContextRecreateFailed?: () => void
+  /**
+   * 首个有效地图视图就绪信号（TASK-017 启动编排）：本组件生命周期内第一
+   * 次存在生效视图时调用一次（每个挂载实例至多一次；刷新重建不重复触发）。
+   * app 组合层据此合成 appInteractive 启动阶段；未注入时不上报。
+   */
+  onFirstViewApplied?: () => void
 }
 
 export function MapVisualizationFeature({
@@ -101,8 +107,24 @@ export function MapVisualizationFeature({
   decorationsEnabled = true,
   contextGeneration = 0,
   onContextRecreateFailed,
+  onFirstViewApplied,
 }: MapVisualizationFeatureProps) {
   const { view } = useMapVisualization(map, { diagnostics })
+
+  // 首个有效视图就绪信号（TASK-017）：一次性；依赖取「是否存在视图」布尔
+  // 值，视图原子替换（刷新/恢复换代）不重复触发。回调经 ref 透传，内联
+  // 函数不触发重复执行。
+  const hasView = view !== null
+  const firstViewAppliedRef = useRef(false)
+  const onFirstViewAppliedRef = useRef(onFirstViewApplied)
+  onFirstViewAppliedRef.current = onFirstViewApplied
+  useEffect(() => {
+    if (hasView && !firstViewAppliedRef.current) {
+      firstViewAppliedRef.current = true
+      onFirstViewAppliedRef.current?.()
+    }
+  }, [hasView])
+
   // 名称图集：随视图重建、失败降级为 null（名称缺失不阻断地图）。图集是
   // Canvas 源纹理，上下文恢复后由 three.js 新鲜缓存自动重传，不随资源换代。
   const nameAtlas = useMapNameAtlas(view?.mapModel ?? null, {

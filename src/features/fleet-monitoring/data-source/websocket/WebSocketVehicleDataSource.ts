@@ -5,6 +5,9 @@
  *       异常断开的抖动指数退避重连、数据通道静默看门狗、连接代次隔离、
  *       序号治理与全量快照基线门控，并把协议适配器产出的归一化消息打上
  *       地图上下文（mapId）与本地单调接收时间（receivedAt）后对外发布。
+ *       TASK-017 并行初始化：mapId 支持以 Promise 延迟绑定——连接先行与地
+ *       图下载并行，绑定落地前已通过治理的事件按到达序缓冲、落地后原序补
+ *       发布（缓冲不跨连接存活；绑定拒绝进入 ERROR 终态）。
  * 边界：协议字段映射全部委托 WebSocketProtocolAdapter（见 protocolAdapter.ts），
  *       本模块不理解任何真实消息结构；单车校验、事件归并与新鲜度属下游
  *       fleet runtime；本模块不渲染 DOM、不创建 Three 对象、不持有 React 状态。
@@ -146,8 +149,18 @@ const defaultSocketFactory: WebSocketFactory = (url) => {
 export interface WebSocketDataSourceOptions {
   /** WebSocket 服务地址（已经 loadRuntimeConfig 校验安全策略） */
   wsUrl: string
-  /** 绑定的地图上下文：所有对外事件的 mapId 来源（合同不变量 4） */
-  mapId: string
+  /**
+   * 绑定的地图上下文：所有对外事件的 mapId 来源（合同不变量 4）。两种形态：
+   * - string：立即绑定，行为与既有语义完全一致；
+   * - Promise<string>：延迟绑定（TASK-017 并行初始化）——连接在配置就绪后
+   *   立即建立、与地图下载并行；绑定落地前已通过序号与基线治理的事件按到
+   *   达序缓冲（receivedAt 取到达时刻），绑定后按原序补发布。缓冲天然有界：
+   *   基线门控下每个连接至多一个快照加少量心跳。换连接（异常重连/静默重连/
+   *   手动断开/取消）即丢弃未发布缓冲——旧会话事件由新连接的全量快照取代；
+   *   绑定 promise 拒绝 = 数据源无法归属任何地图上下文，进入 ERROR 终态
+   *   （显式 disconnect + 重新构造数据源恢复）。
+   */
+  mapId: string | Promise<string>
   /** 协议适配器：unknown → 归一化消息或结构化错误的唯一边界 */
   adapter: WebSocketProtocolAdapter
   /** socket 工厂；默认 new WebSocket(url)，测试注入假实现 */
@@ -179,7 +192,8 @@ export function createWebSocketVehicleDataSource(
   options: WebSocketDataSourceOptions,
 ): VehicleDataSource {
   const wsUrl = options.wsUrl
-  const mapId = options.mapId
+  /** 已绑定的地图上下文；null 表示延迟绑定尚未落地（TASK-017 并行初始化） */
+  let mapId: string | null = typeof options.mapId === 'string' ? options.mapId : null
   const adapter = options.adapter
   const socketFactory = options.socketFactory ?? defaultSocketFactory
   const now = options.now ?? ((): number => performance.now())
@@ -216,6 +230,21 @@ export function createWebSocketVehicleDataSource(
   let lastSequence: number | null = null
   /** 连续解码失败计数；任何成功解码清零 */
   let consecutiveDecodeFailures = 0
+  /**
+   * 延迟绑定落地前的事件缓冲（TASK-017 并行初始化）：消息已完成序号治理与
+   * 基线门控，仅差 mapId 打标。元素按到达序排列，receivedAt 在入队时取值，
+   * 保证补发布的事件保持单调接收时间。同步绑定（string）时恒为空。
+   */
+  let pendingMessages: Array<{
+    message: NormalizedVehicleMessage
+    sequence: number
+    receivedAt: number
+  }> = []
+
+  /** 丢弃未发布缓冲：换连接 / 终态 / 断开时调用（旧会话事件不跨会话补发布） */
+  const clearPendingMessages = (): void => {
+    pendingMessages = []
+  }
 
   /* ---------- connect() 会话 promise（幂等复用） ---------- */
 
@@ -339,6 +368,7 @@ export function createWebSocketVehicleDataSource(
     detachSessionSignal()
     clearSilenceTimer()
     clearReconnectTimer()
+    clearPendingMessages()
     const current = socket
     socket = null
     if (current !== null) {
@@ -436,6 +466,9 @@ export function createWebSocketVehicleDataSource(
     aligned = false
     lastSequence = null
     consecutiveDecodeFailures = 0
+    // 旧会话未发布的延迟绑定缓冲一并丢弃：新连接的全量快照将取代其语境
+    // （TASK-017 延迟绑定：缓冲绝不跨连接存活）
+    clearPendingMessages()
     let ws: WebSocketLike
     try {
       ws = socketFactory(wsUrl)
@@ -495,6 +528,7 @@ export function createWebSocketVehicleDataSource(
     reconnectCycle = false
     clearSilenceTimer()
     clearReconnectTimer()
+    clearPendingMessages()
     const current = socket
     socket = null
     openedAt = null
@@ -568,13 +602,22 @@ export function createWebSocketVehicleDataSource(
       return
     }
 
-    const event: VehicleDataEvent = buildEvent(message, sequence)
     if (message.type === 'snapshot') {
       // 全量基线落地：数据通道对齐，重连周期结束（状态转 OPEN）
       aligned = true
       reconnectCycle = false
     }
-    emitEvent(event)
+
+    // 地图上下文已绑定：与既有语义完全一致；未绑定（延迟绑定等待中）则按到
+    // 达序缓冲，绑定落地后原序补发布（TASK-017 并行初始化）。receivedAt 在
+    // 此处定格：补发布不改变事件的单调接收时间。
+    const receivedAt = now()
+    if (mapId === null) {
+      pendingMessages.push({ message, sequence, receivedAt })
+      notifyStatus()
+      return
+    }
+    emitEvent(buildEvent(message, sequence, receivedAt))
     notifyStatus()
   }
 
@@ -582,8 +625,16 @@ export function createWebSocketVehicleDataSource(
   const buildEvent = (
     message: NormalizedVehicleMessage,
     sequence: number,
+    receivedAt: number,
   ): VehicleDataEvent => {
-    const receivedAt = now()
+    if (mapId === null) {
+      // 合同纵深防御：缓冲路径之外绝不发布无地图上下文的事件
+      throw new StructuredError({
+        code: 'WS_MAP_CONTEXT_MISSING',
+        message: '归一化事件缺少已绑定的地图上下文，拒绝发布',
+        context: { type: message.type, sequence },
+      })
+    }
     switch (message.type) {
       case 'snapshot':
         return {
@@ -658,6 +709,36 @@ export function createWebSocketVehicleDataSource(
     }
   }
 
+  /* ---------- 延迟地图上下文绑定（TASK-017 并行初始化） ---------- */
+
+  if (mapId === null) {
+    // Promise 形态：连接先行（connect 由调用方驱动），绑定落地后按到达序补
+    // 发布缓冲事件（receivedAt 已在入队时定格）；拒绝即无法归属任何地图上下
+    // 文，进入 ERROR 终态并丢弃缓冲——缓冲事件从未发布，丢弃不破坏既有数据。
+    void (options.mapId as Promise<string>).then(
+      (resolved) => {
+        mapId = resolved
+        const buffered = pendingMessages
+        pendingMessages = []
+        for (const item of buffered) {
+          emitEvent(buildEvent(item.message, item.sequence, item.receivedAt))
+        }
+      },
+      (error: unknown) => {
+        enterErrorState(
+          error instanceof StructuredError
+            ? error
+            : new StructuredError({
+                code: 'WS_MAP_CONTEXT_FAILED',
+                message: '地图上下文绑定失败，数据源无法归属事件，已停止重连',
+                context: {},
+                cause: error,
+              }),
+        )
+      },
+    )
+  }
+
   const connect = (signal?: AbortSignal): Promise<void> => {
     // 幂等：连接中 / 已打开 / 等待重连 → 复用进行中的会话 promise
     if (socket !== null || reconnectTimer !== null) {
@@ -701,6 +782,7 @@ export function createWebSocketVehicleDataSource(
     errored = false
     clearSilenceTimer()
     clearReconnectTimer()
+    clearPendingMessages()
     detachSessionSignal()
     // 等待中的 connect 会话以「被手动断开取代」语义正常结束
     resolveSession()

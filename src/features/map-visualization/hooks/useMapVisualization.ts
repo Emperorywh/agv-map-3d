@@ -18,7 +18,10 @@
  * 4. 幂等：当前视图已与描述符同源（sourceUrl 相同）时不再重复加载或重建
  *    （StrictMode 的 setup→cleanup→setup 不会重建场景或重复拉取）；
  * 5. 首次失败保持清屏色：尚无视图时加载失败不产出任何地图对象，仅记录
- *    结构化诊断并继续重试。
+ *    结构化诊断并继续重试；
+ * 6. 启动阶段指标（TASK-017，SPEC §10.3 阶段 4）：静态几何构建只在会话首
+ *    个视图以 BOOTSTRAP_STAGE_GEOMETRY 计时上报（刷新重建与恢复换代不属于
+ *    启动流程，不上报）。
  */
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -119,8 +122,17 @@ export function useMapVisualization(
     let attempt = 0
 
     const applyModel = (result: Pick<LoadMapResult, 'mapModel' | 'worldTransform'>) => {
+      // 阶段 4（SPEC §10.3）：去重物理路径并创建静态几何——启动编排的
+      // 'geometry' 阶段只在首个视图计时上报（会话级一次性；刷新重建不算启动）
+      const geometryStageStartedAt = performance.now()
       const geometry = buildMapGeometry(result.mapModel, result.worldTransform)
       versionRef.current += 1
+      if (versionRef.current === 1) {
+        diagnostics.report('BOOTSTRAP_STAGE_GEOMETRY', 'info', '启动阶段耗时', {
+          stage: 'geometry',
+          durationMs: performance.now() - geometryStageStartedAt,
+        })
+      }
       const nextView: MapView = {
         version: versionRef.current,
         sourceUrl: mapUrl,

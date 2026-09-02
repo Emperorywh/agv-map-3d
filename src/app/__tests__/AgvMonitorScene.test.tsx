@@ -19,6 +19,10 @@
 import { StrictMode } from 'react'
 import { act } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import {
+  createDiagnosticsReporter,
+  type DiagnosticRecord,
+} from '@/shared/diagnostics'
 import { ReactThreeTest } from '@react-three/test-renderer'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
@@ -366,6 +370,78 @@ describe('AgvMonitorScene 场景组合根', () => {
       expect(uniforms.uLockPulseEnabled.value).toBe(0)
     } finally {
       useRenderQualityStore.getState().setQualityLevel(0)
+      renderer.unmount()
+    }
+  })
+})
+
+/* ==== appInteractive 启动阶段合成（TASK-017，SPEC §10.3 阶段 6） ==== */
+
+describe('AgvMonitorScene 启动阶段合成（TASK-017）', () => {
+  it('地图视图 + 首批实例 + 相机命令三者齐备后上报 appInteractive 恰好一次', async () => {
+    const seed = buildSeedDescriptor()
+    const records: DiagnosticRecord[] = []
+    const diagnostics = createDiagnosticsReporter({
+      sink: (record) => void records.push(record),
+      now: () => 0,
+      sampleWindowMs: 0,
+    })
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <AgvMonitorScene
+          mapDescriptor={seed.descriptor}
+          worldTransform={seed.worldTransform}
+          vehicleSource={makeFakeSource([])}
+          diagnostics={diagnostics}
+          startedAt={1000}
+        />
+      </StrictMode>,
+    )
+    try {
+      await advance(renderer)
+      const stages = records.filter(
+        (record) => record.code === 'BOOTSTRAP_STAGE_APP_INTERACTIVE',
+      )
+      expect(stages).toHaveLength(1)
+      expect(stages[0]).toMatchObject({
+        level: 'info',
+        context: { stage: 'appInteractive' },
+      })
+      // 耗时口径：now - startedAt（时钟由诊断通道注入，now=0 → 起点相对值）
+      expect(typeof stages[0]!.context.durationMs).toBe('number')
+      // 后续帧与重渲染不重复上报（会话级一次性）
+      await advance(renderer)
+      expect(
+        records.filter((record) => record.code === 'BOOTSTRAP_STAGE_APP_INTERACTIVE'),
+      ).toHaveLength(1)
+    } finally {
+      renderer.unmount()
+    }
+  })
+
+  it('缺任一信号（无数据源 = 无实例）不上报 appInteractive', async () => {
+    const seed = buildSeedDescriptor()
+    const records: DiagnosticRecord[] = []
+    const diagnostics = createDiagnosticsReporter({
+      sink: (record) => void records.push(record),
+      now: () => 0,
+      sampleWindowMs: 0,
+    })
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <AgvMonitorScene
+          mapDescriptor={seed.descriptor}
+          worldTransform={null}
+          diagnostics={diagnostics}
+        />
+      </StrictMode>,
+    )
+    try {
+      await advance(renderer)
+      expect(
+        records.filter((record) => record.code === 'BOOTSTRAP_STAGE_APP_INTERACTIVE'),
+      ).toHaveLength(0)
+    } finally {
       renderer.unmount()
     }
   })

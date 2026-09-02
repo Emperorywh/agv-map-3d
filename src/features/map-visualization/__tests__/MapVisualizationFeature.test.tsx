@@ -448,3 +448,66 @@ describe('MapVisualizationFeature 场景组合', () => {
     expect(atlas.dispose).toHaveBeenCalledTimes(1)
   })
 })
+
+/* ====== 启动阶段指标与首个视图就绪信号（TASK-017，SPEC §10.3 阶段 4） ====== */
+
+describe('MapVisualizationFeature 启动阶段接线（TASK-017）', () => {
+  it('首个视图：geometry 阶段耗时上报恰好一次，onFirstViewApplied 触发恰好一次', async () => {
+    const env = makeEnvStub()
+    const atlas = makeAtlasStub()
+    const records: DiagnosticRecord[] = []
+    const diagnostics = createDiagnosticsReporter({
+      sink: (record) => void records.push(record),
+      now: () => 0,
+      sampleWindowMs: 0,
+    })
+    const onFirstViewApplied = vi.fn()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <MapVisualizationFeature
+          map={makeDescriptor()}
+          environmentFactory={env.factory}
+          nameAtlasFactory={atlas.factory}
+          diagnostics={diagnostics}
+          onFirstViewApplied={onFirstViewApplied}
+        />
+      </StrictMode>,
+    )
+    await flush()
+
+    const stages = records.filter((record) => record.code === 'BOOTSTRAP_STAGE_GEOMETRY')
+    expect(stages).toHaveLength(1)
+    expect(stages[0]).toMatchObject({ level: 'info', context: { stage: 'geometry' } })
+    expect(typeof stages[0].context.durationMs).toBe('number')
+    // StrictMode 双执行不重复触发（一次性信号）
+    expect(onFirstViewApplied).toHaveBeenCalledTimes(1)
+    renderer.unmount()
+  })
+
+  it('无描述符（首次失败保持清屏色）：不上报 geometry 阶段，也不触发就绪信号', async () => {
+    const env = makeEnvStub()
+    const atlas = makeAtlasStub()
+    const records: DiagnosticRecord[] = []
+    const diagnostics = createDiagnosticsReporter({
+      sink: (record) => void records.push(record),
+      now: () => 0,
+      sampleWindowMs: 0,
+    })
+    const onFirstViewApplied = vi.fn()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <MapVisualizationFeature
+          map={null}
+          environmentFactory={env.factory}
+          nameAtlasFactory={atlas.factory}
+          diagnostics={diagnostics}
+          onFirstViewApplied={onFirstViewApplied}
+        />
+      </StrictMode>,
+    )
+    await flush()
+    expect(records.filter((record) => record.code === 'BOOTSTRAP_STAGE_GEOMETRY')).toHaveLength(0)
+    expect(onFirstViewApplied).not.toHaveBeenCalled()
+    renderer.unmount()
+  })
+})

@@ -9,8 +9,9 @@
  *       本模块只负责「选型 + 注入 + 开发桥注册」，不承载连接与仿真行为。
  * 边界：只构造对象、不发起连接（连接由 FleetRuntimeProvider 的 Hook 在
  *       React 生命周期内建立）；Mock 分支的创建以 MapModel 拓扑为硬前置
- *       （内核需要真实有向图），WS 分支不依赖该屏障——两类数据源的初始化
- *       屏障互不相干（并行初始化编排归 TASK-017）。
+ *       （内核需要真实有向图），WS 分支不依赖该屏障——TASK-017 起 WS 分支
+ *       可在地图加载完成前以 Promise 形态的 mapId 创建（与地图下载并行），
+ *       Mock 分支仍必须等待 MapModel 就绪后由调用方创建。
  * 关键不变量：
  * 1. WS 数据源绑定启动时解析出的地图上下文（mapId），实体键 (mapId, agvKey)
  *    因此与地图模型一致（SPEC §2.4）；
@@ -39,8 +40,12 @@ import type { RuntimeConfig } from './loadRuntimeConfig'
 export interface SelectVehicleDataSourceOptions {
   /** 已校验的运行时配置（dataSource 与 wsUrl 的来源） */
   config: RuntimeConfig
-  /** 启动时解析出的地图 ID：WS 事件与实体键的地图上下文 */
-  mapId: string
+  /**
+   * 启动时解析出的地图 ID：WS 事件与实体键的地图上下文。支持 Promise 形态
+   * （TASK-017 并行初始化）：dataSource='ws' 时可在地图加载完成前创建数据源，
+   * mapId 由启动编排的地图上下文 promise 异步绑定（见 WS 数据源延迟绑定语义）。
+   */
+  mapId: string | Promise<string>
   /**
    * 地图模型：Mock 分支的必需输入（内核在其有向拓扑上分配与行驶）；
    * WS 分支不消费。Mock 必须在 MapModel 拓扑就绪后创建（SPEC §10.3）。

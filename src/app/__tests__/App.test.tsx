@@ -18,7 +18,10 @@ import type React from 'react'
 import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '@/app/App'
-import { bootstrapApplication } from '@/app/bootstrap/bootstrapApplication'
+import {
+  loadStartupConfig,
+  loadStartupMap,
+} from '@/app/bootstrap/bootstrapApplication'
 import { StructuredError } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 import {
@@ -109,6 +112,8 @@ vi.mock('@/features/map-visualization', async (importOriginal) => {
 /** 捕获传给车队 Feature 的世界变换（TASK-010 接线：app 注入坐标转换） */
 const fleetCapture = vi.hoisted(() => ({
   worldTransform: undefined as unknown,
+  /** 捕获 Provider 收到的数据源实例（TASK-017 并行初始化接线验证） */
+  source: [] as unknown[],
 }))
 
 vi.mock('@/features/fleet-monitoring', async (importOriginal) => {
@@ -117,9 +122,13 @@ vi.mock('@/features/fleet-monitoring', async (importOriginal) => {
   return {
     ...actual,
     // jsdom 无 R3F 宿主：场景子组件以 DOM 替身验证 App 层接线合同
-    FleetRuntimeProvider: ({ children }: { children?: React.ReactNode }) => (
-      <>{children}</>
-    ),
+    FleetRuntimeProvider: (props: {
+      source?: unknown
+      children?: React.ReactNode
+    }) => {
+      fleetCapture.source.push(props.source)
+      return <>{props.children}</>
+    },
     FleetMonitoringFeature: (props: { worldTransform: unknown }) => {
       fleetCapture.worldTransform = props.worldTransform
       return <div data-testid="fleet-feature" />
@@ -165,9 +174,15 @@ vi.mock('@/features/render-quality', async (importOriginal) => {
   }
 })
 
-vi.mock('@/app/bootstrap/bootstrapApplication', () => ({
-  bootstrapApplication: vi.fn(),
-}))
+vi.mock('@/app/bootstrap/bootstrapApplication', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/app/bootstrap/bootstrapApplication')>()
+  return {
+    ...actual,
+    loadStartupConfig: vi.fn(),
+    loadStartupMap: vi.fn(),
+  }
+})
 
 vi.mock('@/app/bootstrap/selectVehicleDataSource', () => ({
   selectVehicleDataSource: (options: unknown) => {
@@ -176,7 +191,8 @@ vi.mock('@/app/bootstrap/selectVehicleDataSource', () => ({
   },
 }))
 
-const mockBootstrap = vi.mocked(bootstrapApplication)
+const mockLoadStartupConfig = vi.mocked(loadStartupConfig)
+const mockLoadStartupMap = vi.mocked(loadStartupMap)
 
 /**
  * 设置页面可见性并派发 visibilitychange（jsdom 无真实切换）：
@@ -210,9 +226,21 @@ const RUNTIME_CONFIG = {
   coordinateTransform: { scale: 1, rotation: 0, mirrorY: false, translateX: 0, translateY: 0 },
 } as const
 
-function buildBootstrapResult(): {
-  config: typeof RUNTIME_CONFIG
+/** WS 形态配置（TASK-017 并行初始化用例） */
+const RUNTIME_CONFIG_WS = {
+  ...RUNTIME_CONFIG,
+  dataSource: 'ws',
+  wsUrl: 'wss://fleet.example/ws',
+} as const
+
+function buildConfigResult(config: typeof RUNTIME_CONFIG | typeof RUNTIME_CONFIG_WS = RUNTIME_CONFIG): {
+  config: typeof RUNTIME_CONFIG | typeof RUNTIME_CONFIG_WS
   configUrl: string
+} {
+  return { config, configUrl: 'http://t/config.json' }
+}
+
+function buildMapResult(): {
   mapUrl: string
   mapModel: MapModel
   worldTransform: WorldTransform
@@ -253,8 +281,6 @@ function buildBootstrapResult(): {
     }),
   )
   return {
-    config: RUNTIME_CONFIG,
-    configUrl: 'http://t/config.json',
     mapUrl: 'http://t/json/map.json',
     mapModel,
     worldTransform,
@@ -263,12 +289,14 @@ function buildBootstrapResult(): {
 
 afterEach(() => {
   vi.useRealTimers()
-  mockBootstrap.mockReset()
+  mockLoadStartupConfig.mockReset()
+  mockLoadStartupMap.mockReset()
   capture.mapDescriptor = undefined
   capture.shadowMapSize = undefined
   capture.contextGeneration = undefined
   capture.failMapRecreate.value = false
   fleetCapture.worldTransform = undefined
+  fleetCapture.source = []
   cameraCapture.bounds = undefined
   qualityCapture.maxDpr = undefined
   selectCapture.options = []
@@ -279,7 +307,7 @@ afterEach(() => {
 
 describe('App DOM 外壳', () => {
   it('只挂载一个 canvas 且占满 100vw × 100dvh，启动期间无地图描述符', async () => {
-    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    mockLoadStartupConfig.mockReturnValue(new Promise(() => {}))
     const { container } = render(
       <StrictMode>
         <App />
@@ -300,7 +328,7 @@ describe('App DOM 外壳', () => {
   })
 
   it('不存在任何 DOM 覆盖层元素', () => {
-    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    mockLoadStartupConfig.mockReturnValue(new Promise(() => {}))
     const { container } = render(
       <StrictMode>
         <App />
@@ -314,8 +342,10 @@ describe('App DOM 外壳', () => {
   })
 
   it('启动就绪后向场景传递含 bootstrap 种子的地图描述符', async () => {
-    const result = buildBootstrapResult()
-    mockBootstrap.mockResolvedValue(result)
+    const configResult = buildConfigResult()
+    const mapResult = buildMapResult()
+    mockLoadStartupConfig.mockResolvedValue(configResult)
+    mockLoadStartupMap.mockResolvedValue(mapResult)
     render(
       <StrictMode>
         <App />
@@ -328,13 +358,13 @@ describe('App DOM 外壳', () => {
       initial: { mapModel: MapModel }
     }
     expect(descriptor.mapUrl).toBe('http://t/json/map.json')
-    expect(descriptor.initial.mapModel).toBe(result.mapModel)
+    expect(descriptor.initial.mapModel).toBe(mapResult.mapModel)
     // TASK-010 接线：世界变换与描述符同源注入车队 Feature（坐标唯一口径）
     await waitFor(() => expect(fleetCapture.worldTransform).not.toBeNull())
-    expect(fleetCapture.worldTransform).toBe(result.worldTransform)
+    expect(fleetCapture.worldTransform).toBe(mapResult.worldTransform)
     // TASK-013 接线：相机 Feature 的取景包围盒取自同一种子的场景包围盒
     await waitFor(() => expect(cameraCapture.bounds).not.toBeNull())
-    expect(cameraCapture.bounds).toBe(result.mapModel.sceneBounds)
+    expect(cameraCapture.bounds).toBe(mapResult.mapModel.sceneBounds)
     // TASK-014 接线：config.renderer 经组合层传入质量 Feature 与地图阴影配置
     await waitFor(() => expect(qualityCapture.maxDpr).not.toBeNull())
     expect(qualityCapture.maxDpr).toBe(RUNTIME_CONFIG.renderer.maxDpr)
@@ -342,8 +372,9 @@ describe('App DOM 外壳', () => {
   })
 
   it('数据源选择按就绪配置执行一次，Mock 分支携带地图拓扑（TASK-009）', async () => {
-    const result = buildBootstrapResult()
-    mockBootstrap.mockResolvedValue(result)
+    const mapResult = buildMapResult()
+    mockLoadStartupConfig.mockResolvedValue(buildConfigResult())
+    mockLoadStartupMap.mockResolvedValue(mapResult)
     render(
       <StrictMode>
         <App />
@@ -356,13 +387,14 @@ describe('App DOM 外壳', () => {
       mapModel: MapModel
     }
     expect(options.config.dataSource).toBe('mock')
-    expect(options.mapId).toBe(result.mapModel.mapId)
+    expect(options.mapId).toBe(mapResult.mapModel.mapId)
     // Mock 必须在 MapModel 拓扑就绪后创建：选择入参携带同一模型引用
-    expect(options.mapModel).toBe(result.mapModel)
+    expect(options.mapModel).toBe(mapResult.mapModel)
   })
 
   it('__AGV_MOCK__ 注册到已提交的 Mock 数据源实例，卸载后对称摘除（TASK-009）', async () => {
-    mockBootstrap.mockResolvedValue(buildBootstrapResult())
+    mockLoadStartupConfig.mockResolvedValue(buildConfigResult())
+    mockLoadStartupMap.mockResolvedValue(buildMapResult())
     // 带 devControl 的假 Mock 数据源：无计时器、连接立即兑现
     const devControl = { getStats: () => ({ fleetSize: 1 }) }
     const fakeMockSource = {
@@ -390,7 +422,7 @@ describe('App DOM 外壳', () => {
   })
 
   it('配置阶段失败为终态：保持 null 描述符且不重试', async () => {
-    mockBootstrap.mockRejectedValue(
+    mockLoadStartupConfig.mockRejectedValue(
       new StructuredError({ code: 'CONFIG_HTTP_STATUS', message: '配置读取失败', context: { status: 404 } }),
     )
     render(
@@ -400,17 +432,60 @@ describe('App DOM 外壳', () => {
     )
     await flush()
     expect(capture.mapDescriptor).toBeNull()
-    // StrictMode 双执行（无重试）：仅两条初始调用
-    expect(mockBootstrap).toHaveBeenCalledTimes(2)
+    // StrictMode 双执行（无重试）：仅两条初始调用，且地图阶段从未启动
+    expect(mockLoadStartupConfig).toHaveBeenCalledTimes(2)
+    expect(mockLoadStartupMap).not.toHaveBeenCalled()
+  })
+
+  it('Mock 数据源不在 config-ready 阶段创建：地图就绪前无车队数据（TASK-017）', async () => {
+    // config 已就绪、地图挂起：Mock 的初始化屏障是 MapModel，选择不得发生
+    mockLoadStartupConfig.mockResolvedValue(buildConfigResult())
+    mockLoadStartupMap.mockReturnValue(new Promise(() => {}))
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    await flush()
+    expect(capture.mapDescriptor).toBeNull()
+    expect(selectCapture.options).toHaveLength(0)
+    expect(fleetCapture.source.every((entry) => entry === null)).toBe(true)
+  })
+
+  it('WS 数据源在 config-ready 阶段创建并以地图上下文 promise 绑定 mapId（TASK-017）', async () => {
+    mockLoadStartupConfig.mockResolvedValue(buildConfigResult(RUNTIME_CONFIG_WS))
+    mockLoadStartupMap.mockReturnValue(new Promise(() => {}))
+    const fakeWsSource = { connect: vi.fn(), disconnect: vi.fn() }
+    selectCapture.returnValue = fakeWsSource
+
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    // 并行窗口（SPEC §10.3 阶段 2）：config 就绪即创建 WS 数据源，此时地图
+    // 尚未就绪——mapId 以地图上下文 promise 形态交付（延迟绑定）
+    await waitFor(() => expect(selectCapture.options.length).toBeGreaterThan(0))
+    const options = selectCapture.options[0] as {
+      config: { dataSource: string }
+      mapId: unknown
+    }
+    expect(options.config.dataSource).toBe('ws')
+    expect(options.mapId).toBeInstanceOf(Promise)
+    expect(capture.mapDescriptor).toBeNull()
+    // Provider 已持有该实例（连接随 Provider 生命周期立即启动，与地图下载并行）
+    expect(fleetCapture.source).toContain(fakeWsSource)
+    expect(selectCapture.options).toHaveLength(1)
   })
 
   it('地图阶段失败按退避自动重试直至成功', async () => {
     vi.useFakeTimers()
-    const result = buildBootstrapResult()
-    mockBootstrap.mockRejectedValueOnce(
+    const mapResult = buildMapResult()
+    mockLoadStartupConfig.mockResolvedValue(buildConfigResult())
+    mockLoadStartupMap.mockRejectedValueOnce(
       new StructuredError({ code: 'MAP_HTTP_STATUS', message: '地图 503', context: { status: 503 } }),
     )
-    mockBootstrap.mockResolvedValueOnce(result)
+    mockLoadStartupMap.mockResolvedValueOnce(mapResult)
     render(<App />)
 
     await flush()
@@ -419,14 +494,14 @@ describe('App DOM 外壳', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000)
     })
-    expect(mockBootstrap).toHaveBeenCalledTimes(2)
+    expect(mockLoadStartupMap).toHaveBeenCalledTimes(2)
     const descriptor = capture.mapDescriptor as { mapUrl: string } | null
     expect(descriptor).not.toBeNull()
     expect(descriptor!.mapUrl).toBe('http://t/json/map.json')
   })
 
   it('页面隐藏时 Canvas frameloop 切为 never，回前台恢复 always（§11.5；TASK-015）', () => {
-    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    mockLoadStartupConfig.mockReturnValue(new Promise(() => {}))
     const { container, unmount } = render(
       <StrictMode>
         <App />
@@ -463,7 +538,7 @@ function fireContextEvent(container: HTMLElement, type: 'webglcontextlost' | 'we
 
 describe('WebGL 上下文恢复（§11.9；TASK-016）', () => {
   it('丢失即暂停帧提交（frameloop never），恢复重建结算成功后回到 always，资源代下发场景', () => {
-    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    mockLoadStartupConfig.mockReturnValue(new Promise(() => {}))
     const { container, unmount } = render(
       <StrictMode>
         <App />
@@ -499,7 +574,7 @@ describe('WebGL 上下文恢复（§11.9；TASK-016）', () => {
 
   it('恢复重建连续三次失败：记录错误并永久停止渲染（frameloop 恒 never）', () => {
     vi.useFakeTimers()
-    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    mockLoadStartupConfig.mockReturnValue(new Promise(() => {}))
     capture.failMapRecreate.value = true
     const { container, unmount } = render(
       <StrictMode>
@@ -547,7 +622,7 @@ describe('WebGL 上下文恢复（§11.9；TASK-016）', () => {
   })
 
   it('页面隐藏期间丢失上下文：恢复后不抢跑渲染（可见 && running 才恢复 always）', () => {
-    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    mockLoadStartupConfig.mockReturnValue(new Promise(() => {}))
     const { container, unmount } = render(
       <StrictMode>
         <App />

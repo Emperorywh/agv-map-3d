@@ -8,6 +8,7 @@
 import { StrictMode } from 'react'
 import { act } from '@testing-library/react'
 import { describe, expect, it, afterEach, vi } from 'vitest'
+import { createDiagnosticsReporter, type DiagnosticRecord } from '@/shared/diagnostics'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
 import {
@@ -365,6 +366,81 @@ describe('WebGL 上下文恢复重建（§11.9；TASK-016）', () => {
       renderer.unmount()
       probeRenders = 0
       probeRuntime = null
+    }
+  })
+})
+
+/* ==== 启动阶段指标与首批实例就绪信号（TASK-017，SPEC §10.3 阶段 5） ==== */
+
+describe('FleetMonitoringFeature 启动阶段接线（TASK-017）', () => {
+  it('携带世界变换后的首个渲染帧：instances 阶段耗时上报一次，onInstancesReady 触发一次', async () => {
+    probeRenders = 0
+    probeRuntime = null
+    const records: DiagnosticRecord[] = []
+    const diagnostics = createDiagnosticsReporter({
+      sink: (record) => void records.push(record),
+      now: () => 0,
+      sampleWindowMs: 0,
+    })
+    const onInstancesReady = vi.fn()
+    const world = makeWorld()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <FleetRuntimeProvider source={null}>
+          <Probe />
+          <FleetMonitoringFeature
+            worldTransform={world}
+            diagnostics={diagnostics}
+            onInstancesReady={onInstancesReady}
+          />
+        </FleetRuntimeProvider>
+      </StrictMode>,
+    )
+    try {
+      // 首个渲染帧：实例批次完成首次提交与帧同步 → 阶段上报与就绪信号恰好一次
+      await advance(renderer)
+      const stages = records.filter((record) => record.code === 'BOOTSTRAP_STAGE_INSTANCES')
+      expect(stages).toHaveLength(1)
+      expect(stages[0]).toMatchObject({ level: 'info', context: { stage: 'instances' } })
+      expect(typeof stages[0].context.durationMs).toBe('number')
+      expect(onInstancesReady).toHaveBeenCalledTimes(1)
+
+      // StrictMode 双执行与后续帧不重复上报（会话级一次性）
+      await advance(renderer)
+      expect(records.filter((record) => record.code === 'BOOTSTRAP_STAGE_INSTANCES')).toHaveLength(1)
+      expect(onInstancesReady).toHaveBeenCalledTimes(1)
+    } finally {
+      renderer.unmount()
+    }
+  })
+
+  it('worldTransform 为 null（地图未就绪）：不上报 instances 阶段，就绪信号不触发', async () => {
+    probeRenders = 0
+    probeRuntime = null
+    const records: DiagnosticRecord[] = []
+    const diagnostics = createDiagnosticsReporter({
+      sink: (record) => void records.push(record),
+      now: () => 0,
+      sampleWindowMs: 0,
+    })
+    const onInstancesReady = vi.fn()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <FleetRuntimeProvider source={null}>
+          <FleetMonitoringFeature
+            worldTransform={null}
+            diagnostics={diagnostics}
+            onInstancesReady={onInstancesReady}
+          />
+        </FleetRuntimeProvider>
+      </StrictMode>,
+    )
+    try {
+      await advance(renderer)
+      expect(records.filter((record) => record.code === 'BOOTSTRAP_STAGE_INSTANCES')).toHaveLength(0)
+      expect(onInstancesReady).not.toHaveBeenCalled()
+    } finally {
+      renderer.unmount()
     }
   })
 })

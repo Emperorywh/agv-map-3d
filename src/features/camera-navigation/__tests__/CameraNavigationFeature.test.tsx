@@ -11,7 +11,7 @@
  */
 import { StrictMode } from 'react'
 import { act } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
@@ -355,6 +355,31 @@ describe('CameraNavigationFeature 相机导航', () => {
     expect(controls.current!.maxDistance).toBeCloseTo(boundsB.diagonal * 3, 4)
     const pose = computeOverviewPose(boundsB, capture.current!.camera.fov)
     expect(capture.current!.camera.position.y).toBeCloseTo(pose.position.y, 4)
+    renderer.unmount()
+  })
+})
+
+/* ==== 相机交互能力就绪信号（TASK-017，SPEC §10.3 阶段 6） ==== */
+
+describe('CameraNavigationFeature 启动阶段接线（TASK-017）', () => {
+  it('挂载提交后 onReady 触发恰好一次；StrictMode 双执行不重复；命令出口同提交可用', async () => {
+    const onReady = vi.fn()
+    const commands: CommandsRef = { current: null }
+    const controls: ControlsRef = { current: null }
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <CameraNavigationFeature
+          bounds={BOUNDS_A}
+          readFollowTarget={null}
+          commandsRef={commands}
+          controlsRef={controls}
+          onReady={onReady}
+        />
+      </StrictMode>,
+    )
+    await act(async () => {})
+    expect(onReady).toHaveBeenCalledTimes(1)
+    expect(commands.current).not.toBeNull()
     renderer.unmount()
   })
 })

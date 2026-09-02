@@ -33,6 +33,12 @@ export interface CameraNavigationFeatureProps {
   controlsRef?: { current: OrbitControls | null }
   /** 拖拽退出跟随阈值（像素）；默认 6 */
   dragExitThresholdPx?: number
+  /**
+   * 相机交互能力就绪信号（TASK-017 启动编排）：OrbitControls、命令出口与
+   * 输入监听装配完毕后调用一次（每个挂载实例至多一次）；app 组合层据此
+   * 合成 appInteractive 启动阶段。
+   */
+  onReady?: () => void
 }
 
 export function CameraNavigationFeature(props: CameraNavigationFeatureProps): null {

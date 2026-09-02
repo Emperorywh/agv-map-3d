@@ -58,6 +58,12 @@ export interface UseCameraNavigationOptions {
   controlsRef?: { current: OrbitControls | null }
   /** 拖拽退出跟随的位移阈值（像素）；默认 6，与选择拖拽抑制同口径 */
   dragExitThresholdPx?: number
+  /**
+   * 相机交互能力就绪信号（TASK-017 启动编排）：OrbitControls、命令出口与
+   * 输入监听在本 Hook 挂载 effect 中装配完毕后调用一次（每个挂载实例至多
+   * 一次）。app 组合层据此合成 appInteractive 启动阶段；未注入时不上报。
+   */
+  onReady?: () => void
 }
 
 /** 跟随状态（ref 内部形态）：目标实体键 + 进入时捕获的相机相对偏移 */
@@ -185,6 +191,20 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       commandsRef.current = null
     }
   }, [commandsRef, enterFollow, exitFollow, frameOverview])
+
+  // 相机交互能力就绪信号（TASK-017）：命令出口装配 effect 在本 effect 之前
+  // 执行（同提交内 effect 按声明顺序），此处触发即代表 OrbitControls、命令
+  // 与监听全部就绪。一次性（每个挂载实例至多一次），回调经 ref 透传。
+  const onReadyRef = useRef(options.onReady)
+  onReadyRef.current = options.onReady
+  const readySignaledRef = useRef(false)
+  useEffect(() => {
+    if (readySignaledRef.current) {
+      return
+    }
+    readySignaledRef.current = true
+    onReadyRef.current?.()
+  }, [])
 
   // 空格俯瞰（SPEC §8）：window 级键盘监听，effect 对称清理；preventDefault
   // 抑制浏览器默认滚动语义（页面本身不可滚动，防御性保留）

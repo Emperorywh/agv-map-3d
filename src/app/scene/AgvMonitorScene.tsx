@@ -25,7 +25,12 @@
 //          React 提交内按确定顺序重建全部 GPU 资源；本组件持有「恢复期重
 //          建失败」旗标（地图环境工厂失败时置位）并在资源代提交完成后一次
 //          性结算上抛——React 子组件 effect 先于本组件 effect 执行，故结算
-//          时全部所有者已落地。
+//          时全部所有者已落地；
+//       6. 启动阶段合成（TASK-017，SPEC §10.3）：地图视图就绪 + 首批车辆
+//          实例就绪 + 相机命令就绪三个一次性信号在本组合层汇合，齐备即上
+//          报 appInteractive 阶段耗时（计时原点为 App 注入的启动起点）。
+//          app 的诊断通道经 diagnostics 下发到各 Feature（geometry/instances
+//          阶段由所有者就地计时上报）。
 // 关键不变量：本组件只做组合与低频桥接（一个命令引用 + 一个运行时引用状态
 // + 一个派生读取器 + 一个低频质量等级订阅 + 一个恢复失败旗标），不解析协
 // 议、不发起网络请求、不读取运行时配置，也不持有任何逐帧数据（跟随位姿由
@@ -51,6 +56,7 @@ import {
   RenderQualityFeature,
   useQualityLevel,
 } from '@/features/render-quality'
+import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 
 export interface AgvMonitorSceneProps {
@@ -77,6 +83,18 @@ export interface AgvMonitorSceneProps {
    * 并重试或放弃；资源代 0（初始挂载）不结算。
    */
   onContextRecoverySettled?: (ok: boolean) => void
+  /**
+   * 结构化诊断通道（TASK-017 启动阶段指标）：app 组合层的通道经此下发到
+   * 各 Feature 与本组件的 appInteractive 上报；未注入时各 Feature 使用自
+   * 己的默认通道（指标不可见但不影响行为）。
+   */
+  diagnostics?: DiagnosticsReporter
+  /**
+   * 启动起点（TASK-017）：App 挂载时刻的单调时钟读数（performance.now()，
+   * 毫秒），是 appInteractive 阶段耗时的计时原点（对齐 B3「导航开始到
+   * appInteractive」口径）。
+   */
+  startedAt?: number
 }
 
 export function AgvMonitorScene({
@@ -88,6 +106,8 @@ export function AgvMonitorScene({
   shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
   contextGeneration = 0,
   onContextRecoverySettled,
+  diagnostics,
+  startedAt,
 }: AgvMonitorSceneProps) {
   // 相机命令出口：车辆双击跟随请求的唯一转交通道（组合层桥接，不经过
   // Feature 间 Store 或事件总线）；引用在相机 Feature 卸载时被置 null。
@@ -153,6 +173,41 @@ export function AgvMonitorScene({
     recreateFailedRef.current = false
   }, [contextGeneration, onContextRecoverySettled])
 
+  // 启动阶段合成（TASK-017，SPEC §10.3 阶段 6）：appInteractive = 地图视图
+  // 就绪（geometry 之后）+ 首批车辆实例就绪（拾取对象已存在）+ 相机命令就
+  // 绪（OrbitControls 与监听已装配）三者齐备。三个信号都是会话级一次性低
+  // 频事件，进入 React state 合法（SPEC §4 只禁高频）；上报一次性完成。
+  const [readySignals, setReadySignals] = useState({
+    map: false,
+    fleet: false,
+    camera: false,
+  })
+  const markMapReady = useCallback(() => {
+    setReadySignals((prev) => (prev.map ? prev : { ...prev, map: true }))
+  }, [])
+  const markFleetReady = useCallback(() => {
+    setReadySignals((prev) => (prev.fleet ? prev : { ...prev, fleet: true }))
+  }, [])
+  const markCameraReady = useCallback(() => {
+    setReadySignals((prev) => (prev.camera ? prev : { ...prev, camera: true }))
+  }, [])
+  const appInteractiveReportedRef = useRef(false)
+  useEffect(() => {
+    if (appInteractiveReportedRef.current) {
+      return
+    }
+    if (!(readySignals.map && readySignals.fleet && readySignals.camera)) {
+      return
+    }
+    appInteractiveReportedRef.current = true
+    diagnostics?.report('BOOTSTRAP_STAGE_APP_INTERACTIVE', 'info', '启动阶段耗时', {
+      stage: 'appInteractive',
+      ...(startedAt === undefined
+        ? {}
+        : { durationMs: performance.now() - startedAt }),
+    })
+  }, [readySignals, diagnostics, startedAt])
+
   return (
     <group name="agv-monitor-scene">
       <RenderQualityFeature
@@ -163,6 +218,7 @@ export function AgvMonitorScene({
         bounds={sceneBounds}
         readFollowTarget={readFollowTarget}
         commandsRef={cameraCommandsRef}
+        onReady={markCameraReady}
       />
       <FleetRuntimeProvider
         source={vehicleSource}
@@ -179,12 +235,16 @@ export function AgvMonitorScene({
           decorationsEnabled={capabilities.decorationsEnabled}
           contextGeneration={contextGeneration}
           onContextRecreateFailed={handleContextRecreateFailed}
+          diagnostics={diagnostics}
+          onFirstViewApplied={markMapReady}
         />
         <FleetMonitoringFeature
           worldTransform={worldTransform}
           importantLabelsOnly={capabilities.importantLabelsOnly}
           trafficPulseEnabled={capabilities.trafficPulseEnabled}
           contextGeneration={contextGeneration}
+          diagnostics={diagnostics}
+          onInstancesReady={markFleetReady}
           onFollowRequest={(entityKey) => {
             // 跨 Feature 协作只发生在本组合层：双击跟随请求 → 相机命令
             cameraCommandsRef.current?.follow(entityKey)

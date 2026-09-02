@@ -63,6 +63,7 @@ interface Harness {
   events: VehicleDataEvent[]
   statuses: SourceStatus[]
   diagCodes: () => string[]
+  diagRecords: () => DiagnosticRecord[]
   seq: () => number
 }
 
@@ -91,6 +92,7 @@ function setup(options: Partial<WebSocketDataSourceOptions> = {}): Harness {
     events,
     statuses,
     diagCodes: () => diagnostics.map((record) => record.code),
+    diagRecords: () => diagnostics,
     seq: () => ++sequenceCounter,
   }
 }
@@ -502,5 +504,120 @@ describe('连续解码失败与 ERROR 终态（§11.7）', () => {
     h.current().serverMessage(snapshotFrame(h.seq(), ['recovered']))
     expect(h.source.status).toBe('OPEN')
     expect(h.events).toHaveLength(2)
+  })
+})
+
+/* ============ 延迟地图上下文绑定（TASK-017 并行初始化；§10.3） ============ */
+
+describe('延迟地图上下文绑定（TASK-017 并行初始化）', () => {
+  /** 可控的 mapId 绑定 promise：测试手动兑现/拒绝（模拟地图加载完成） */
+  function deferredMapId(): {
+    promise: Promise<string>
+    resolve: (mapId: string) => void
+    reject: (error: unknown) => void
+  } {
+    let resolve!: (mapId: string) => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<string>((res, rej) => {
+      resolve = res
+      reject = rej
+    })
+    promise.catch(() => {
+      // 拒绝路径由数据源内部处理；此处吞掉无消费者拒绝噪声
+    })
+    return { promise, resolve, reject }
+  }
+
+  it('绑定前事件按到达序缓冲，绑定落地后按原序补发布且携带绑定 mapId', async () => {
+    const binding = deferredMapId()
+    const h = setup({ mapId: binding.promise })
+    h.source.connect()
+    h.current().open()
+    // 基线快照先缓冲（aligned 落地，状态转 OPEN——通道语义不受绑定影响）
+    h.current().serverMessage(snapshotFrame(h.seq(), ['agv-001']))
+    expect(h.source.status).toBe('OPEN')
+    h.current().serverMessage(updateFrame(h.seq(), 5))
+    expect(h.events).toHaveLength(0)
+
+    binding.resolve('map-late-bound')
+    await flush()
+    expect(h.events.map((event) => event.type)).toEqual(['snapshot', 'update'])
+    expect(h.events.every((event) => event.mapId === 'map-late-bound')).toBe(true)
+    // 补发布保持事件内相对顺序：快照先于增量
+    expect(h.events[0]!.type).toBe('snapshot')
+  })
+
+  it('缓冲事件的 receivedAt 取到达时刻，绑定后补发布不改变单调接收时间', async () => {
+    const binding = deferredMapId()
+    let clock = 1000
+    const h = setup({ mapId: binding.promise, now: () => clock })
+    h.source.connect()
+    h.current().open()
+    h.current().serverMessage(snapshotFrame(h.seq(), ['agv-001']))
+    clock = 2500
+    h.current().serverMessage(updateFrame(h.seq(), 7))
+    clock = 9000
+    binding.resolve('map-late-bound')
+    await flush()
+    // receivedAt 定格在消息到达时刻（1000 / 2500），而非补发布时刻（9000）
+    expect(h.events.map((event) => event.receivedAt)).toEqual([1000, 2500])
+  })
+
+  it('换连接丢弃未发布缓冲：旧会话事件不跨会话补发布', async () => {
+    const binding = deferredMapId()
+    // random=0 锁定抖动下限（800ms），退避重连在 1s 推进内必然发生
+    const h = setup({ mapId: binding.promise, random: () => 0 })
+    h.source.connect()
+    h.current().open()
+    h.current().serverMessage(snapshotFrame(h.seq(), ['stale-session']))
+    // 异常断开 → 抖动退避（注入 random=0 → 80% × 1s = 800ms）→ 新连接
+    h.current().drop()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.sockets).toHaveLength(2)
+    h.current().open()
+    h.current().serverMessage(snapshotFrame(h.seq(), ['fresh-session']))
+
+    binding.resolve('map-late-bound')
+    await flush()
+    // 仅新会话的快照发布：旧会话缓冲被 openNewSocket 丢弃
+    expect(h.events).toHaveLength(1)
+    expect(h.events[0]!.type).toBe('snapshot')
+    const snapshot = h.events[0]! as Extract<VehicleDataEvent, { type: 'snapshot' }>
+    expect(snapshot.vehicles.every((vehicle) => vehicle.agvKey === 'fresh-session')).toBe(true)
+  })
+
+  it('手动断开与 ERROR 终态同样清空缓冲，重复断开幂等', async () => {
+    const binding = deferredMapId()
+    const h = setup({ mapId: binding.promise })
+    h.source.connect()
+    h.current().open()
+    h.current().serverMessage(snapshotFrame(h.seq(), ['buffered']))
+    h.source.disconnect()
+    h.source.disconnect()
+    binding.resolve('map-late-bound')
+    await flush()
+    expect(h.events).toHaveLength(0)
+    expect(h.source.status).toBe('CLOSED')
+  })
+
+  it('绑定 promise 拒绝：进入 ERROR 终态、丢弃缓冲并记录结构化诊断', async () => {
+    const binding = deferredMapId()
+    const h = setup({ mapId: binding.promise })
+    h.source.connect()
+    h.current().open()
+    h.current().serverMessage(snapshotFrame(h.seq(), ['buffered']))
+
+    binding.reject(new Error('map failed'))
+    await flush()
+    expect(h.source.status).toBe('ERROR')
+    expect(h.events).toHaveLength(0)
+    expect(h.diagCodes()).toContain('WS_ERROR')
+    // 非结构化拒绝原因被包装为 WS_MAP_CONTEXT_FAILED 码，作为 WS_ERROR 的
+    // cause 随诊断上报（与解码失败终态的 cause 语义一致）
+    const errorRecord = h.diagRecords().find((record) => record.code === 'WS_ERROR')
+    expect(errorRecord?.context.cause).toBe('WS_MAP_CONTEXT_FAILED')
+    // ERROR 终态不自动重连；显式 disconnect 恢复
+    h.source.disconnect()
+    expect(h.source.status).toBe('CLOSED')
   })
 })
