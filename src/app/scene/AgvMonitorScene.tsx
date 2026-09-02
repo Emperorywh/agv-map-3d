@@ -1,6 +1,7 @@
 // Canvas 内的 Feature 组合根（SPEC §12.3；TASK-004 接入地图 Feature，
 // TASK-007 接入车队运行时 Provider，TASK-010 接入车辆实例渲染，TASK-013 接
-// 入相机导航与跟随桥接，TASK-014 接入自适应质量能力）。
+// 入相机导航与跟随桥接，TASK-014 接入自适应质量能力，TASK-016 接入上下文
+// 恢复编排）。
 // 职责：作为场景子树的唯一挂载点，以显式 props 组合各 Feature 根组件：
 //       1. FleetRuntimeProvider 在场景子树内持有车队高频运行时与数据源连接
 //          生命周期（R3F 子树的 Context 只在这里向下可达），并把 app 注入的
@@ -17,12 +18,20 @@
 //          capabilitiesForLevel 映射为地图（阴影分辨率/动态阴影/装饰动画）
 //          与车队（标签重点模式/交通锁脉冲）的显式 props；RenderQuality
 //          Feature 挂在场景内采样帧时间并应用 DPR 上限；车队规模经只读运
-//          行时 count 的闭包注入（决定目标帧率档位）。
+//          行时 count 的闭包注入（决定目标帧率档位）；
+//       5. 上下文恢复编排（TASK-016，SPEC §11.9）：app 状态机递增资源代经
+//          contextGeneration 下发，MapVisualizationFeature（地图 → 环境）
+//          与 FleetMonitoringFeature（车辆 → 标签 → 环 → 交通资源）在同一
+//          React 提交内按确定顺序重建全部 GPU 资源；本组件持有「恢复期重
+//          建失败」旗标（地图环境工厂失败时置位）并在资源代提交完成后一次
+//          性结算上抛——React 子组件 effect 先于本组件 effect 执行，故结算
+//          时全部所有者已落地。
 // 关键不变量：本组件只做组合与低频桥接（一个命令引用 + 一个运行时引用状态
-// + 一个派生读取器 + 一个低频质量等级订阅），不解析协议、不发起网络请求、
-// 不读取运行时配置，也不持有任何逐帧数据（跟随位姿由相机 Feature 的 ref 状
-// 态机逐帧读取；帧时间样本由 render-quality 的 ref 状态机持有，SPEC §4）。
-import { useMemo, useRef, useState } from 'react'
+// + 一个派生读取器 + 一个低频质量等级订阅 + 一个恢复失败旗标），不解析协
+// 议、不发起网络请求、不读取运行时配置，也不持有任何逐帧数据（跟随位姿由
+// 相机 Feature 的 ref 状态机逐帧读取；帧时间样本由 render-quality 的 ref 状
+// 态机持有，SPEC §4）。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CameraNavigationCommands } from '@/features/camera-navigation'
 import { CameraNavigationFeature } from '@/features/camera-navigation'
 import {
@@ -57,6 +66,17 @@ export interface AgvMonitorSceneProps {
   maxDpr?: number
   /** 基准阴影贴图分辨率（config.renderer.shadowMapSize）；缺省 2048 */
   shadowMapSize?: number
+  /**
+   * GPU 资源代（TASK-016 上下文恢复；app 恢复状态机持有）：0 为初始挂载，
+   * 上下文恢复/重试时递增；下发到两个 Feature 驱动其资源整代重建。
+   */
+  contextGeneration?: number
+  /**
+   * 恢复结算上抛（TASK-016）：资源代提交完成后调用一次——ok=false 表示恢
+   * 复期内有所有者重建失败（当前为地图环境工厂），app 状态机据此累计失败
+   * 并重试或放弃；资源代 0（初始挂载）不结算。
+   */
+  onContextRecoverySettled?: (ok: boolean) => void
 }
 
 export function AgvMonitorScene({
@@ -66,6 +86,8 @@ export function AgvMonitorScene({
   worldTransform = null,
   maxDpr = 2,
   shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
+  contextGeneration = 0,
+  onContextRecoverySettled,
 }: AgvMonitorSceneProps) {
   // 相机命令出口：车辆双击跟随请求的唯一转交通道（组合层桥接，不经过
   // Feature 间 Store 或事件总线）；引用在相机 Feature 卸载时被置 null。
@@ -105,6 +127,32 @@ export function AgvMonitorScene({
   // 相机取景与缩放上限的唯一包围盒来源：bootstrap 种子中的地图模型
   const sceneBounds = mapDescriptor?.initial?.mapModel.sceneBounds ?? null
 
+  // 恢复期重建失败旗标（TASK-016）：仅 MapVisualizationFeature 的环境工厂
+  // 失败会置位（其余所有者的创建为纯 CPU 构造，无真实失败源；标签图集失败
+  // 属持久环境缺陷，按既有降级语义处理不重复计入）。旗标按资源代消费后复
+  // 位，绝不跨代累积。
+  const recreateFailedRef = useRef(false)
+  const handleContextRecreateFailed = useCallback((): void => {
+    recreateFailedRef.current = true
+  }, [])
+
+  // 恢复结算（TASK-016）：每个资源代提交完成后恰好一次。React 子组件 effect
+  // 先于本组件 effect 执行，此刻两个 Feature 的全部所有者已重建完毕，旗标
+  // 即本代结果；资源代 0 是初始挂载（首次创建而非恢复重建），不结算。
+  // 已结算代号记录使 StrictMode 双执行（setup→cleanup→setup）不产生重复结算。
+  const lastSettledGenerationRef = useRef(-1)
+  useEffect(() => {
+    if (lastSettledGenerationRef.current === contextGeneration) {
+      return
+    }
+    lastSettledGenerationRef.current = contextGeneration
+    if (contextGeneration === 0) {
+      return
+    }
+    onContextRecoverySettled?.(!recreateFailedRef.current)
+    recreateFailedRef.current = false
+  }, [contextGeneration, onContextRecoverySettled])
+
   return (
     <group name="agv-monitor-scene">
       <RenderQualityFeature
@@ -121,16 +169,22 @@ export function AgvMonitorScene({
         staleAfterMs={staleAfterMs}
         onRuntimeAvailable={setFleetRuntime}
       >
+        {/* 恢复重建顺序（TASK-016）：地图（五图层）→ 环境 → 车辆 → 标签 →
+            环 → 交通资源——由「地图 Feature 在前、车队 Feature 在后」与各自
+            内部图层顺序保证；资源代经 props 下发驱动整代重建。 */}
         <MapVisualizationFeature
           map={mapDescriptor}
           shadowMapSize={capabilities.shadowMapSize}
           dynamicShadowsEnabled={capabilities.dynamicShadowsEnabled}
           decorationsEnabled={capabilities.decorationsEnabled}
+          contextGeneration={contextGeneration}
+          onContextRecreateFailed={handleContextRecreateFailed}
         />
         <FleetMonitoringFeature
           worldTransform={worldTransform}
           importantLabelsOnly={capabilities.importantLabelsOnly}
           trafficPulseEnabled={capabilities.trafficPulseEnabled}
+          contextGeneration={contextGeneration}
           onFollowRequest={(entityKey) => {
             // 跨 Feature 协作只发生在本组合层：双击跟随请求 → 相机命令
             cameraCommandsRef.current?.follow(entityKey)

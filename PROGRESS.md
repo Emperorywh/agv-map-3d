@@ -11,12 +11,12 @@
 | 字段 | 当前值 |
 |---|---|
 | 项目状态 | `IN_PROGRESS` |
-| 当前 Task | `TASK-016 WebGL 上下文丢失与恢复` |
+| 当前 Task | `TASK-017 启动编排、失败恢复与跨 Feature 回归` |
 | 当前 Task 状态 | `TODO` |
-| 已完成工程 Task | `15 / 21` |
+| 已完成工程 Task | `16 / 21` |
 | 条件任务 | `TASK-021 WAITING_EXTERNAL` |
 | 验收 Gate | GATE-001、GATE-002、GATE-003 均为 `NOT_READY` |
-| 当前下一步 | 将 TASK-016 改为 `IN_PROGRESS` 后，实现：context lost 时 `preventDefault` 并暂停帧提交；利用各 Feature 既有资源所有权按地图、环境、车辆、标签、环、交通资源的确定顺序恢复；恢复期间继续保留最新数据；重复释放幂等；部分重建失败回滚；连续三次失败记录结构化错误并停止渲染且页面仍只有原 Canvas；StrictMode 无监听和 GPU 资源泄漏；恢复集成测试（真实 `WEBGL_lose_context` 路径）与浏览器自测、build 通过 |
+| 当前下一步 | 将 TASK-017 改为 `IN_PROGRESS` 后，实现：配置完成后 WS 与地图加载并行初始化（Mock 仍在 MapModel 就绪后创建）；记录 config、map、index、geometry、instances、appInteractive 启动阶段；按启动/地图失败/地图恢复/WS 缺 URL/断网 60s/空数据/后台 10min/WebGL 恢复矩阵完成跨 Feature 回归，并在 Chromium 完成完整启动、交互与故障恢复自测（可用时 Edge 复核；1280/1080p/4K 视口布局核对），全量快速流水线与 build 通过 |
 | 项目完成条件 | TASK-001～TASK-021 全部 `DONE`，GATE-001～GATE-003 全部通过，SPEC A1～F6 均有当前证据 |
 
 编号是推荐交付顺序，执行前必须核对真实依赖。`WAITING_EXTERNAL` 的 TASK-021 不阻塞 TASK-018～020；其他 Task 只有在自身依赖全部 `DONE` 后才能开始。
@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`；TASK-001～TASK-014 提交均已推送，TASK-015 实施提交在本地待推送（领先 1 个提交） |
-| HEAD | TASK-015 实施提交（本轮） |
-| 未提交差异 | 无（本轮代码、测试、PROGRESS 与 `gui-test-screenshots/task-015/` 自测取证已随本轮提交；`gui-test-screenshots/assessment/` 现为空目录，git 不可见） |
+| 分支 | `rxx`，跟踪 `origin/rxx`；TASK-001～TASK-015 提交均已推送（与远端同步） |
+| HEAD | TASK-015 实施提交（已推送） |
+| 未提交差异 | 本轮 TASK-016 实施改动：新增 `src/app/webgl/`（状态机 + Hook + 测试）；`App.tsx`/`AgvMonitorScene.tsx`/`MapVisualizationFeature.tsx`/`FleetMonitoringFeature.tsx` 恢复接线；地图与车队 Feature 共置恢复重建测试与车队集成测试扩展；`gui-test-screenshots/task-016/` 自测取证；本文件 |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -137,12 +137,19 @@
   - `App.tsx`：页面可见性 → Canvas `frameloop` 声明式切换（隐藏 = `never`：R3F 帧循环完全停止，useFrame 不执行、帧同步不消费脏集合、GPU 零提交；回前台 = `always`：R3F `setFrameloop` 重置时钟避免首帧 delta 巨大，store 订阅自动 invalidate 恢复循环）。可见性为秒/分钟级低频信号，进入 React state 合法；监听随 effect 对称摘除。渲染暂停期间积压的脏标记由回前台首个渲染帧一次性消费，与 `markAllDirty` 构成双保险。
   - 既有语义复核（无需改动即满足）：被删车辆的选中清理由 `onDiffApplied → notifyEntitiesRemoved` 在事件路径即时完成（隐藏期间照常生效）；跟随目标删除由相机逐帧读取器返回 null 当帧退出（回前台首帧收敛）；Mock 内核 `step` 的 `maxStepSeconds` 钳制（TASK-008）保证大时间差不累积位移；标签帧同步以快照/显示状态对象引用为差量，回前台自动只写变化实例。
   - 测试：+10 例（runtime markAllDirty 3：全量脏标记幂等/不伪造 removed/空表 no-op；数据源可见性 5：隐藏暂停 ticker+立即重算、回前台 markAllDirty+ticker 恢复、隐藏期间不断开且多次 update/remove 只保留最新、挂载即隐藏不启动 ticker、监听对称清理+StrictMode 无重复监听；App frameloop 隐藏/恢复切换 1；Feature 集成 1：后台多次 update/remove 后回前台恰一帧与最新快照对齐+删除槽位清场+后续帧矩阵稳定无插值）。
-- app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置、地图上下文与世界变换构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 与 `FleetMonitoringFeature` 并以 Provider 注入车队运行时。
+- TASK-016 已完成 WebGL 上下文丢失与恢复（新增 `src/app/webgl/`、app 恢复编排接线、地图与车队 Feature 资源代重建适配）：
+  - `app/webgl/contextRecovery.ts`：恢复状态机纯函数（不触碰 DOM/计时器/诊断，转移完全确定）——running→recovering（丢失，重复丢失不重复计数）→restored 递增 GPU 资源代 generation（仅 recovering 响应，无丢失的 restored 视为噪声）；结算成功清零失败计数回 running，失败累计——未达上限以 1s 延迟重试（applyRetryAttempt 再次递增资源代），连续 3 次失败进入 stopped 吸收态（此后 lost/restored/settled/retry 全部忽略）；失败计数作用域 = 当前 Canvas 实例的连续失败序列，成功恢复即清零、StrictMode 重挂重新计数；诊断码表 LOST/RESTORED/RETRY/SUCCEEDED/FAILED。
+  - `app/webgl/useWebGLContextRecovery.ts`：Canvas 上下文控制唯一接线——渲染器以最小结构类型 `{domElement}` 注入（App 经 Canvas `onCreated` 捕获；测试注入替身），真实 `webglcontextlost`/`webglcontextrestored` DOM 事件对称挂载；丢失即 `preventDefault`（three r185 自身也对丢失事件 preventDefault 并在恢复时 `initGLContext` 重建缓存，二者不冲突）+ 暂停帧提交（App 以 `frameloop = 可见 && running` 派生，恢复重建与重试等待期保持 never）；状态转移与副作用分离（事件回调内先算纯 decision 再提交，StrictMode 双执行不重复上报诊断）；重试计时器任意时刻至多一个，新的丢失/恢复事件与卸载均收敛。
+  - 确定顺序恢复（SPEC §11.9「地图、环境、车辆、标签、环、交通资源」）：资源代经 props 下发，两个 Feature 在同一次 React 提交内以 keyed Fragment 整代重建——`MapVisualizationFeature` 五图层（地坪→路径→节点→地标→独占区，Fragment 位于 SceneLighting 之前保证环境恒在地图之后）+ 环境工厂重建（PMREM 渲染目标是唯一无 CPU 侧数据源、three 无法自动重传的资源；MapGeometry 纯数据与名称图集 Canvas 源纹理不换代，GPU 缓冲由 three 新鲜缓存自动重传）；`FleetMonitoringFeature` 共享车体/光环几何材质按资源代换代 + 四图层 Fragment 重挂（车辆→标签→环→交通）；提交中「先释放全部旧资源（子图层清理在前、父共享资源在后）、再挂载新资源」，dispose 幂等（轨迹测试锁定）。
+  - 恢复失败回滚语义：恢复期环境工厂失败（唯一依赖真实 GL 的创建步骤）经 `onContextRecreateFailed` 上抛计入失败计数，场景落定「无 IBL 的完整一致状态」（绝不保留半建资源）；初始挂载（资源代 0）的环境失败沿用既有降级不计入恢复统计。`AgvMonitorScene` 持有失败旗标并在每个资源代提交完成后恰好结算一次（React 子所有者 effect 先于父结算 effect；已结算代号记录使 StrictMode 双执行不重复结算）；App 据此累计失败 → 重试或 `WEBGL_RECOVERY_FAILED`（error）+ 永久停止渲染，页面仍只有原 Canvas，无 DOM 兜底、不自动刷新。
+  - 恢复期间数据不丢：数据源与运行时不受渲染暂停影响（TASK-015 语义），恢复后首帧由帧同步以运行时实体表为唯一事实源全量重写（集成测试锁定「重建提交期间到达的增量，恢复后一帧与最新快照对齐、场景对象换代重建」）。
+  - 测试：+29 例（状态机时间线 8：丢失/恢复/结算/重试/三次放弃/stopped 吸收/成功清零/常量合同；Hook 真实 DOM 事件 8：preventDefault、完整时间线诊断、失败重试与放弃、成功清零、restored 打断重试、卸载对称清理、StrictMode 无重复监听；地图 Feature 恢复 3：换代轨迹「先释放五层+环境再按序重建」/环境换代释放一次/恢复期环境失败上抛与初始失败不计入；车队 Feature 恢复 2：共享资源换代释放计数与四图层顺序轨迹/worldTransform=null 换代不挂载；车队集成 1：重建提交期间增量恢复后一帧对齐；场景结算 4：代下发/恰一次结算成功/失败旗标→false 且不跨代累积/StrictMode 单次结算；App 3：丢失 never→恢复结算→always 与资源代下发/连续三次失败永久停止且吸收/隐藏期间丢失不抢跑渲染）。
+- app 接线：`App.tsx` 运行 `bootstrapApplication`（AbortController + 退避重试 1s→30s；`CONFIG_*` 失败为终态保持清屏色，地图阶段失败自动重试），就绪后携带配置、地图上下文与世界变换构造数据源并装配场景；`AgvMonitorScene` 组合 `MapVisualizationFeature` 与 `FleetMonitoringFeature` 并以 Provider 注入车队运行时；TASK-016 起经 Canvas `onCreated` 捕获渲染器接入上下文恢复（frameloop = 可见 && running，资源代与结算回调下发场景）。
 - 工具链齐备：`@/ -> src/` 别名三处一致；脚本含 `lint/typecheck/test:unit/test:architecture`；Vitest（jsdom + Testing Library + `@react-three/test-renderer`）、dependency-cruiser 均已接入。
 - 真实浏览器行为不走自动化测试套件：涉及用户行为或浏览器生命周期的验证由执行 Task 的 Coding Agent 调用浏览器自动化技能在真实浏览器中自测，结论记入本文件第 5 节。
-- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（199 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
+- 架构检查（`pnpm test:architecture`）以 `.dependency-cruiser.cjs` 规则校验真实 `src`（206 模块 0 违规），负例证明深层导入、核心 Feature 互导、受限公开入口、反向依赖和循环依赖必被抓到。
 - 快速 CI 已建立：`.github/workflows/ci.yml` 执行 lint、typecheck、unit、architecture、build。
-- 尚无 WebGL 上下文丢失与恢复实现，归 TASK-016。后台节流与前台瞬时对齐已由 TASK-015 接入（Canvas frameloop 随页面可见性启停 + ticker 前台语义 + 回前台立即重算 freshness 与强制全量 diff；10min 后台时间线由共置单测以注入时钟覆盖）。自适应质量已由 TASK-014 接入（Canvas 内采样 + 迟滞策略 + 组合层能力映射，测试/基准可经 `auto=false` 锁定默认画质与基准 DPR）。相机轨道、自动取景、双击跟随与空格俯瞰已由 TASK-013 接入（双击 follow 请求经 app 组合层转交相机命令，跟随目标经只读读取器逐帧取数）。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。
+- WebGL 上下文丢失与恢复已由 TASK-016 接入（真实事件 preventDefault + frameloop 暂停 + 资源代驱动的确定顺序整代重建 + 失败重试/三次放弃终态）。后台节流与前台瞬时对齐已由 TASK-015 接入（Canvas frameloop 随页面可见性启停 + ticker 前台语义 + 回前台立即重算 freshness 与强制全量 diff；10min 后台时间线由共置单测以注入时钟覆盖）。自适应质量已由 TASK-014 接入（Canvas 内采样 + 迟滞策略 + 组合层能力映射，测试/基准可经 `auto=false` 锁定默认画质与基准 DPR）。相机轨道、自动取景、双击跟随与空格俯瞰已由 TASK-013 接入（双击 follow 请求经 app 组合层转交相机命令，跟随目标经只读读取器逐帧取数）。真实 WS 协议映射与联调属 TASK-021（`WAITING_EXTERNAL`，当前生产配置经默认适配器显式拒绝未映射消息）。启动编排状态机与跨 Feature 回归归 TASK-017。
 - 2026-09-02 全量浏览器观感评估确认：地图语义图层、车辆、标签、告警环与交互语义全部在真实场景中成立；与原型的剩余差距集中在视觉参数（车体状态色被 ACES+IBL 冲淡、节点相对路网视觉权重偏大、路面/中线对比度偏低、标签相对车体偏大、地面名称中距离偏密），观感对齐调优已纳入 TASK-018 必做范围，不构成独立 Task。
 
 ### 2.3 当前数据输入
@@ -185,7 +192,7 @@
 | TASK-013 | 相机、车辆跟随与完整交互 | 004、010、012 | `DONE` |
 | TASK-014 | 自适应质量与质量能力接线 | 005、011、012、013 | `DONE` |
 | TASK-015 | 后台节流与前台瞬时对齐 | 009、010、013、014 | `DONE` |
-| TASK-016 | WebGL 上下文丢失与恢复 | 005、010、011、012、014 | `TODO` |
+| TASK-016 | WebGL 上下文丢失与恢复 | 005、010、011、012、014 | `DONE` |
 | TASK-017 | 启动编排、失败恢复与跨 Feature 回归 | 007、009、013、015、016 | `TODO` |
 | TASK-018 | 性能基准、指标采集与针对性调优 | 017 | `TODO` |
 | TASK-019 | 稳定性压力工具与短时故障注入 | 018 | `TODO` |
@@ -196,14 +203,14 @@
 
 | 字段 | 当前内容 |
 |---|---|
-| Task | `TASK-016 WebGL 上下文丢失与恢复` |
+| Task | `TASK-017 启动编排、失败恢复与跨 Feature 回归` |
 | 状态 | `TODO` |
-| 当前目标 | 唯一 Canvas 遭遇 WebGL 上下文丢失后暂停提交，并利用各 Feature 已有资源所有权和最新模型/快照恢复完整场景；连续三次失败后安全停止渲染 |
-| 当前主要范围 | Canvas 上下文控制、app 恢复编排、各资源所有者的最小 recreate/dispose 适配、恢复集成测试和浏览器自测 |
-| 当前已有实现 | 地图 Feature 的失败重试与原子替换（旧场景保留、恢复后单次 setState 换代）；MapGeometry/语义图层/车辆/标签/环/交通资源的 dispose 幂等所有权；运行时与数据源在渲染停止期间继续保留每车最新状态（TASK-015）；Canvas `frameloop` 已可声明式启停（TASK-015 接线，可复用为恢复期暂停提交的挂点）；TASK-004 缺陷闭环确立的「primitive 携带资源代 key 强制卸载/挂载」重建模式 |
-| 当前待完成 | 以 `TASKS.md` 的 TASK-016 为准实现：context lost 时 `preventDefault`；暂停帧提交；按地图、环境、车辆、标签、环、交通资源的确定顺序恢复；恢复期间保留最新数据；重复释放幂等；部分重建失败回滚；失败计数作用域明确、连续三次失败记录结构化错误并停止渲染；页面仍只有原 Canvas；StrictMode 无监听和 GPU 资源泄漏；浏览器事件与真实 `WEBGL_lose_context` 路径的恢复集成测试、浏览器自测和 build |
+| 当前目标 | 完成最终启动状态机和跨 Feature 故障恢复回归，确保每个此前已接入的垂直增量在真实浏览器组合中共同工作 |
+| 当前主要范围 | `bootstrapApplication`、`selectVehicleDataSource`、`AgvMonitorScene`、开发/测试隔离接口、跨 Feature 浏览器自测场景清单和发现的当前组合缺陷所属文件 |
+| 当前已有实现 | 启动编排已具备：config → 地图首载（AbortController + 退避后台重试）→ 数据源选择（WS 绑定 mapId 不受地图屏障限制；Mock 以 MapModel 为硬前置）→ 场景装配；诊断通道可记录结构化事件；TASK-015/016 的可见性与 WebGL 恢复生命周期均已在真实浏览器自测通过 |
+| 当前待完成 | 以 `TASKS.md` 的 TASK-017 为准实现：WS 与地图加载并行初始化；记录 config、map、index、geometry、instances、appInteractive 六个启动阶段指标；跨 Feature 故障恢复矩阵（配置失败、首次地图失败、旧地图刷新失败、地图恢复、WS 缺 URL、断网 60s、空数据、后台 10min、WebGL 恢复）全部保持唯一 Canvas；浏览器完成完整启动、交互（单击/双击/空白/Esc/拖拽/滚轮/空格）与 snapshot/update/remove、TRAFFIC_WAIT、多告警语义自测；1280/1080p/4K 视口核对；全量快速流水线与 build 通过 |
 | 当前阻塞 | 无 |
-| 完成后可开始 | TASK-017（依赖 007、009、013、015、016——除 016 外均已 `DONE`） |
+| 完成后可开始 | TASK-018（依赖 017）；TASK-021 仍为 `WAITING_EXTERNAL` 不受影响 |
 
 Task 开始后，把本卡直接替换为实际进行中的工作：当前修改文件、当前成功验证、当前失败原因、当前剩余步骤和下一条可执行命令。Task 完成后删除已解决问题，只保留完成结果和新的当前指针。
 
@@ -211,20 +218,20 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 
 | 范围 | 当前命令或检查 | 当前结果 |
 |---|---|---|
-| Lint | `pnpm lint` | 通过（178 文件，0 警告 0 错误） |
+| Lint | `pnpm lint` | 通过（185 文件，0 警告 0 错误） |
 | TypeScript | `pnpm typecheck`（`tsc -b`） | 通过 |
-| 单元测试 | `pnpm test:unit`（Vitest + jsdom，58 文件 556 例：TASK-002～013 全部保留；TASK-014 新增/扩展 34 例——render-quality 29 例与 fleet/map/scene/App 扩展，结论继续有效；TASK-015 新增 10 例——runtime `markAllDirty` 3 例（全量脏标记幂等、不伪造 removed、空表 no-op）；`useVehicleDataSource` 可见性 5 例（隐藏暂停 ticker+立即重算 freshness、回前台 `markAllDirty`+ticker 恢复、隐藏期间数据源不断开且多次 update/remove 只保留最新快照、挂载即隐藏不启动 ticker、监听对称清理+StrictMode 无重复监听）；App frameloop 隐藏/恢复切换 1 例；FleetMonitoringFeature 集成 1 例（后台多次 update/remove 后回前台恰一帧与最新快照对齐、删除槽位清场、后续帧矩阵稳定无插值）） | 通过（556/556） |
+| 单元测试 | `pnpm test:unit`（Vitest + jsdom，63 文件 585 例：TASK-002～015 全部保留并继续通过；TASK-016 新增/扩展 29 例——`contextRecovery` 状态机时间线 8 例（丢失/恢复/结算/重试/三次放弃/stopped 吸收/成功清零/常量合同）；`useWebGLContextRecovery` 真实 DOM 事件 8 例（preventDefault、完整时间线诊断、失败重试与放弃、成功清零、restored 打断重试、卸载对称清理、StrictMode 无重复监听）；地图 Feature 恢复 3 例（换代轨迹「先释放全部旧资源再按 地图→环境 重建」/恢复期环境失败上抛与初始失败不计入/初始失败仅降级）；车队 Feature 恢复 2 例（共享资源换代释放计数与 车辆→标签→环→交通 顺序轨迹/null 不挂载仍换代）+ 集成 1 例（重建提交期间到达的增量恢复后一帧对齐）；`AgvMonitorScene` 结算 4 例（代下发/恰一次成功结算/失败旗标→false 不跨代累积/StrictMode 单次结算）；App 3 例（丢失 never→恢复结算→always 与资源代下发/连续三次失败永久停止且吸收/隐藏期间丢失不抢跑渲染）） | 通过（585/585） |
 | 当前地图集成 | `currentMap.integration.test.ts`：TASK-003/004/005 数据、几何与语义图层事实全部保留；`mockDataSource.integration.test.ts`：默认 60 台位置落在当前地图坐标范围、200s 窗口覆盖全部验收事件（含充电约 172s）、固定 seed 事件序列逐位一致、250 台可用 | 通过 |
 | 当前车辆夹具 | `vehicleFixture.integration.test.ts`：`json/vehicle.json` 重新校验——TRAFFIC_WAIT（D5）、LOW_BATTERY、LOADED、ONLINE、locked 1 + applying 3 且经 §5.3 规范化均为无自交凸四边形（A5）、无 INVALID_DATA、运行时 10s STALE 跃迁；`vehicleSceneAlignment.integration.test.ts`（app 组合层）：当前车辆与节点「1644」及方向、centerOffset、部件尺寸矩阵对齐（A4） | 通过 |
-| 架构检查 | `pnpm test:architecture`（真实 src 199 模块 0 违规；负例全部命中；正例零误报） | 通过 |
+| 架构检查 | `pnpm test:architecture`（真实 src 206 模块 0 违规；负例全部命中；正例零误报） | 通过 |
 | 构建 | `pnpm build`（含 `copyStaticAssets` 与 `verifyDist`） | 通过 |
 | dist 校验 | `pnpm verify:dist`（index/config/map 存在、相对路径引用、白名单与凭据检查、map.json 可解析） | 通过 |
 | 部署冒烟 | `pnpm smoke:dist`（根路径与子路径静态冒烟） | 通过 |
 | 生产无 Mock 全局 | `grep -c "__AGV_MOCK__" dist/assets/*.js` | 0 命中（死代码消除生效） |
 | 差异检查 | `git diff --check` | 通过（无空白错误；仅 CRLF 提示） |
-| 浏览器自测 | TASK-015 浏览器生命周期自测（2026-09-02，Chromium 内嵌面板，dev 模式 1280×720，`dataSource=mock` 60 台）：启动后唯一全屏 Canvas、body 仅 #root + canvas 零 DOM 覆盖层；真实遮挡路径（隐藏浏览器面板 30s）期间 rAF 帧计数仅 +14（正常前台 ~23fps）——隐藏期间物理渲染暂停成立；遮挡期间数据源仿真继续推进 29.3s/30s（内核单步钳制下 ≈ 实时推进，无位移累积爆发），车队规模守恒 60；恢复后 3s 内帧率回到 ~58fps，场景与最新快照一致并持续实时更新（间隔 5s 双截图车辆位置明显变化），截图存档 `gui-test-screenshots/task-015/`。环境限制：内嵌面板的标签页切换与面板隐藏均不派发 `visibilitychange`（`document.visibilityState` 恒为 visible 且是文档实例上的不可配置属性，页面内无法模拟该信号）；应用监听器语义（ticker 暂停/恢复立即重算、`markAllDirty`、frameloop 切换）由共置单测以真实事件派发 + 注入时钟覆盖（含后台 10min 时间线），真实 Chrome 标签页隐藏将派发同一事件且行为与单测语义一致 | 通过（2026-09-02 TASK-015 自测） |
+| 浏览器自测 | TASK-016 浏览器恢复自测（2026-09-02，Chromium 内嵌面板，dev 模式 1280×720，`dataSource=mock` 60 台，真实 `WEBGL_lose_context` 扩展路径）：基线完整场景（地图+车队）截图存档 `gui-test-screenshots/task-016/01-before-loss.png`；`loseContext()` 后捕获 `WEBGL_CONTEXT_LOST`（warn，已暂停帧提交）诊断、画面转黑（GPU 内容丢失）而页面仍只有原 Canvas（body 仅 #root+canvas），期间数据源继续推进（simTime 20.52→21.73，恢复期间最新数据保留）；`restoreContext()` 后捕获 `WEBGL_CONTEXT_RESTORED`→`WEBGL_RECOVERY_SUCCEEDED`（generation 1）诊断，无任何 error 诊断；恢复后像素级验证（rAF 帧循环恢复 + `gl.readPixels` 全屏采样 122 种独立颜色、非清屏像素占比 20.3%——地图与车队真实重建渲染，`preserveDrawingBuffer=false` 下截图管线不可用，以页内像素证据替代）+ 唯一 Canvas + body 零 DOM 覆盖层；第二次 丢失→恢复 循环同样完整成功（generation 2，91 种颜色/19.8% 非清屏，fleetSize 守恒 60，simTime 177.9→182.0 持续推进）——重复换代幂等成立；三次连续失败→永久停止渲染路径由 App 级单测以注入时钟锁定（`WEBGL_RECOVERY_FAILED` error 诊断 + frameloop 恒 never + stopped 吸收态） | 通过（2026-09-02 TASK-016 自测） |
 
-浏览器自测备注：内嵌浏览器面板被宿主窗口遮挡时渲染器被整体节流（rAF 停滞），本轮 TASK-015 自测正是利用该真实遮挡路径验证「隐藏期间无渲染 + 数据源继续 + 回前台对齐」；但该路径不派发 `visibilitychange` 事件（宿主环境特性），应用对可见性事件的响应语义由单元测试锁定，不影响真实前台部署浏览器（真实 Chrome 隐藏标签页会派发该事件）。`config.json` 当前为 `dataSource=mock`。2026-09-02 全量观感评估（地图语义图层、车辆、标签、告警环与交互语义全部在真实场景成立；观感差距归 TASK-018 调优）结论继续有效，其存档目录 `gui-test-screenshots/assessment/` 现为空目录。
+浏览器自测备注：内嵌浏览器面板被宿主窗口完全遮挡时渲染进程被冻结（rAF 停滞、Canvas 子树挂载延迟），本轮以新建标签页激活面板完成自测；该遮挡路径不派发 `visibilitychange`（宿主环境特性，见 TASK-015 备注），恢复事件语义由共置单测以真实 DOM 事件锁定。`config.json` 当前为 `dataSource=mock`。2026-09-02 全量观感评估（地图语义图层、车辆、标签、告警环与交互语义全部在真实场景成立；观感差距归 TASK-018 调优）结论继续有效。
 
 本节只保留当前 Task 的最终有效验证状态。重跑后直接替换结果；失败被修复后删除已失效的失败描述，不追加验证流水账。
 

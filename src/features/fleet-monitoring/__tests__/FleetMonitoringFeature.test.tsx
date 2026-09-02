@@ -294,3 +294,77 @@ describe('后台节流与前台瞬时对齐（§11.5；TASK-015）', () => {
     }
   })
 })
+
+/* ==================== WebGL 上下文恢复重建（SPEC §11.9；TASK-016） ==================== */
+
+describe('WebGL 上下文恢复重建（§11.9；TASK-016）', () => {
+  it('恢复重建提交期间到达的增量：重建后一帧与最新快照对齐，场景对象换代重建且数据不受影响', async () => {
+    probeRenders = 0
+    probeRuntime = null
+    const world = makeWorld()
+    const source = new EmittingSource()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <FleetRuntimeProvider source={source}>
+          <Probe />
+          <FleetMonitoringFeature worldTransform={world} contextGeneration={0} />
+        </FleetRuntimeProvider>
+      </StrictMode>,
+    )
+    try {
+      await act(async () => {})
+      expect(probeRuntime).not.toBeNull()
+      const runtime = probeRuntime!
+
+      // 前台基线：一台车就位并完成提交
+      const v0 = snap('v0')
+      source.emit(snapshotEvent([v0], 1_000, 1))
+      await advance(renderer, 2)
+      const shellBefore = renderer.scene.findAll(
+        (n) => (n.instance as THREE.Object3D).name === 'fleet-shell-b0',
+      )[0]!.instance as THREE.InstancedMesh
+      expect(Array.from(shellBefore.instanceMatrix.array as Float32Array)[12]).not.toBe(0)
+
+      // 恢复重建提交（资源代 0→1，模拟上下文恢复后的资源换代）：重建期间
+      // （提交完成与帧推进之前）数据源继续推送增量——运行时照常归并最新快照
+      await act(async () => {
+        await renderer.update(
+          <StrictMode>
+            <FleetRuntimeProvider source={source}>
+              <Probe />
+              <FleetMonitoringFeature worldTransform={world} contextGeneration={1} />
+            </FleetRuntimeProvider>
+          </StrictMode>,
+        )
+      })
+      const moved = snapshotOf({
+        ...makeRawVehicle({ agvKey: 'v0' }),
+        agvPosition: { x: 130, y: 54, theta: 0, localizationScore: 0.9 },
+      })
+      source.emit(updateEvent(moved, 2_000, 2))
+      expect(runtime.get(v0.entityKey)?.snapshot.position.x).toBe(130)
+
+      // 恢复后首个渲染帧：车体直接落在最新快照（全量重写以运行时为唯一事实源）
+      await advance(renderer, 1)
+      const shellAfter = renderer.scene.findAll(
+        (n) => (n.instance as THREE.Object3D).name === 'fleet-shell-b0',
+      )[0]!.instance as THREE.InstancedMesh
+      // 场景对象换代：图层随资源代整体卸载/挂载（GPU 资源重建）
+      expect(shellAfter).not.toBe(shellBefore)
+      const entity = runtime.get(v0.entityKey)!
+      const expectedPose = computeVehicleWorldPose(entity.snapshot, world)
+      const expectedLayout = computeVehiclePartLayout(entity.snapshot, entity.displayState)
+      const aligned = Array.from(shellAfter.instanceMatrix.array as Float32Array).slice(0, 16)
+      expect(aligned[12]).toBeCloseTo(expectedPose.cx + expectedLayout.shell.x, 5)
+      expect(aligned[14]).toBeCloseTo(expectedPose.cz + expectedLayout.shell.z, 5)
+
+      // 无插值/无累积：后续帧矩阵稳定不变
+      await advance(renderer, 3)
+      expect(Array.from(shellAfter.instanceMatrix.array as Float32Array).slice(0, 16)).toEqual(aligned)
+    } finally {
+      renderer.unmount()
+      probeRenders = 0
+      probeRuntime = null
+    }
+  })
+})

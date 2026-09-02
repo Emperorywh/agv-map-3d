@@ -13,7 +13,7 @@
  *    重试直至成功；
  * 5. StrictMode 双执行下 bootstrap 重复调用被取消机制收敛为单条启动链路。
  */
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useRef } from 'react'
 import type React from 'react'
 import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -36,16 +36,32 @@ vi.mock('@react-three/fiber', async (importOriginal) => {
       style,
       children,
       frameloop,
+      onCreated,
     }: {
       style?: React.CSSProperties
       children?: React.ReactNode
       frameloop?: 'always' | 'demand' | 'never'
-    }) => (
-      <div data-testid="canvas-shell" data-frameloop={frameloop ?? 'always'} style={style}>
-        <canvas />
-        {children}
-      </div>
-    ),
+      onCreated?: (state: { gl: unknown }) => void
+    }) => {
+      // 模拟 R3F 创建渲染器后的 onCreated 回调：gl 以最小结构替身注入
+      // （{domElement}），恢复 Hook 据此在真实 jsdom canvas 上挂事件监听。
+      // ref 守卫保证只触发一次（真实 R3F 每个渲染器只回调一次 onCreated，
+      // App 重渲染不得重复触发而造成状态循环）。
+      const canvasRef = useRef<HTMLCanvasElement | null>(null)
+      const firedRef = useRef(false)
+      useEffect(() => {
+        if (!firedRef.current && canvasRef.current !== null) {
+          firedRef.current = true
+          onCreated?.({ gl: { domElement: canvasRef.current } })
+        }
+      }, [onCreated])
+      return (
+        <div data-testid="canvas-shell" data-frameloop={frameloop ?? 'always'} style={style}>
+          <canvas ref={canvasRef} />
+          {children}
+        </div>
+      )
+    },
   }
 })
 
@@ -53,6 +69,9 @@ vi.mock('@react-three/fiber', async (importOriginal) => {
 const capture = vi.hoisted(() => ({
   mapDescriptor: undefined as unknown,
   shadowMapSize: undefined as unknown,
+  contextGeneration: undefined as unknown,
+  /** 置位后：地图 Feature 替身在恢复期上报重建失败（驱动 App 级失败路径） */
+  failMapRecreate: { value: false },
 }))
 
 /** 捕获数据源选择入参（保持 App 外壳测试与 Mock 内核实现解耦） */
@@ -66,9 +85,22 @@ vi.mock('@/features/map-visualization', async (importOriginal) => {
     await importOriginal<typeof import('@/features/map-visualization')>()
   return {
     ...actual,
-    MapVisualizationFeature: (props: { map: unknown; shadowMapSize?: number }) => {
+    MapVisualizationFeature: (props: {
+      map: unknown
+      shadowMapSize?: number
+      contextGeneration?: number
+      onContextRecreateFailed?: () => void
+    }) => {
       capture.mapDescriptor = props.map
       capture.shadowMapSize = props.shadowMapSize
+      capture.contextGeneration = props.contextGeneration
+      // 模拟真实实现中「恢复期环境工厂失败」（TASK-016）：子所有者 effect
+      // 先于场景结算 effect 执行，与本文件内恢复用例的时序假设一致
+      useEffect(() => {
+        if (capture.failMapRecreate.value) {
+          props.onContextRecreateFailed?.()
+        }
+      })
       return <div data-testid="map-feature" />
     },
   }
@@ -234,6 +266,8 @@ afterEach(() => {
   mockBootstrap.mockReset()
   capture.mapDescriptor = undefined
   capture.shadowMapSize = undefined
+  capture.contextGeneration = undefined
+  capture.failMapRecreate.value = false
   fleetCapture.worldTransform = undefined
   cameraCapture.bounds = undefined
   qualityCapture.maxDpr = undefined
@@ -409,6 +443,127 @@ describe('App DOM 外壳', () => {
     expect(shell().getAttribute('data-frameloop')).toBe('never')
 
     // 回前台：恢复帧循环，首个渲染帧消费全部积压脏标记，一帧对齐最新快照
+    act(() => {
+      setPageVisibility('visible')
+    })
+    expect(shell().getAttribute('data-frameloop')).toBe('always')
+    unmount()
+  })
+})
+
+/* ==================== WebGL 上下文恢复（SPEC §11.9；TASK-016） ==================== */
+
+/**
+ * 在唯一 canvas 元素上派发真实 cancelable 上下文事件（与浏览器派发路径一致）
+ */
+function fireContextEvent(container: HTMLElement, type: 'webglcontextlost' | 'webglcontextrestored'): void {
+  const canvas = container.querySelector('canvas')!
+  canvas.dispatchEvent(new Event(type, { cancelable: true }))
+}
+
+describe('WebGL 上下文恢复（§11.9；TASK-016）', () => {
+  it('丢失即暂停帧提交（frameloop never），恢复重建结算成功后回到 always，资源代下发场景', () => {
+    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    const { container, unmount } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    const shell = () =>
+      container.querySelector<HTMLElement>('[data-testid="canvas-shell"]')!
+    expect(shell().getAttribute('data-frameloop')).toBe('always')
+    expect(capture.contextGeneration).toBe(0)
+
+    // 丢失：preventDefault + 进入恢复期——页面可见但帧提交暂停
+    act(() => {
+      fireContextEvent(container, 'webglcontextlost')
+    })
+    expect(shell().getAttribute('data-frameloop')).toBe('never')
+
+    // 恢复事件：资源代递增下发；真实场景组合根在重建提交完成后自动结算成功
+    act(() => {
+      fireContextEvent(container, 'webglcontextrestored')
+    })
+    expect(capture.contextGeneration).toBe(1)
+    expect(shell().getAttribute('data-frameloop')).toBe('always')
+
+    // 二次丢失/恢复循环：资源代继续递增（重复换代幂等）
+    act(() => {
+      fireContextEvent(container, 'webglcontextlost')
+      fireContextEvent(container, 'webglcontextrestored')
+    })
+    expect(capture.contextGeneration).toBe(2)
+    expect(shell().getAttribute('data-frameloop')).toBe('always')
+    unmount()
+  })
+
+  it('恢复重建连续三次失败：记录错误并永久停止渲染（frameloop 恒 never）', () => {
+    vi.useFakeTimers()
+    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    capture.failMapRecreate.value = true
+    const { container, unmount } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    const shell = () =>
+      container.querySelector<HTMLElement>('[data-testid="canvas-shell"]')!
+
+    act(() => {
+      fireContextEvent(container, 'webglcontextlost')
+      fireContextEvent(container, 'webglcontextrestored')
+    })
+    expect(shell().getAttribute('data-frameloop')).toBe('never')
+    expect(capture.contextGeneration).toBe(1)
+
+    // 前两次失败：每次结算后 1s 重试（资源代递增、重建、再次失败）
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(capture.contextGeneration).toBe(1 + attempt)
+      expect(shell().getAttribute('data-frameloop')).toBe('never')
+    }
+
+    // 第三次失败：进入 stopped 终态——重试计时器不再产生新的资源代
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(capture.contextGeneration).toBe(3)
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(capture.contextGeneration).toBe(3)
+    expect(shell().getAttribute('data-frameloop')).toBe('never')
+
+    // stopped 吸收态：新的丢失/恢复事件不再改变任何状态
+    act(() => {
+      fireContextEvent(container, 'webglcontextlost')
+      fireContextEvent(container, 'webglcontextrestored')
+    })
+    expect(capture.contextGeneration).toBe(3)
+    expect(shell().getAttribute('data-frameloop')).toBe('never')
+    unmount()
+  })
+
+  it('页面隐藏期间丢失上下文：恢复后不抢跑渲染（可见 && running 才恢复 always）', () => {
+    mockBootstrap.mockReturnValue(new Promise(() => {}))
+    const { container, unmount } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    const shell = () =>
+      container.querySelector<HTMLElement>('[data-testid="canvas-shell"]')!
+
+    act(() => {
+      setPageVisibility('hidden')
+      fireContextEvent(container, 'webglcontextlost')
+      fireContextEvent(container, 'webglcontextrestored')
+    })
+    // 隐藏期间：即使恢复结算成功，frameloop 仍为 never（可见性门控）
+    expect(shell().getAttribute('data-frameloop')).toBe('never')
+
     act(() => {
       setPageVisibility('visible')
     })

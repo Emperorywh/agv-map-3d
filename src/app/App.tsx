@@ -1,14 +1,19 @@
 // 应用组合根（SPEC §7.1、§10.3、§12.3；TASK-004 接入启动编排，TASK-007 接入
-// 数据源选择，TASK-014 接入渲染质量配置传递）。
+// 数据源选择，TASK-014 接入渲染质量配置传递，TASK-016 接入 WebGL 上下文恢复）。
 // 职责：持有启动状态（bootstrapApplication：config + 地图首载），就绪后按
 //       配置构造车辆数据源（WS / Mock 选择），以地图视图描述符 + 数据源装配
 //       唯一全屏 Canvas 内的场景组合根 AgvMonitorScene；地图阶段失败时按指数
 //       退避在后台自动重试（清屏色不变），配置阶段失败为终态（保持清屏色，
 //       不渲染任何错误 DOM）。config.renderer（maxDpr/shadowMapSize）经
 //       props 传入场景，由 render-quality 与地图灯光消费。
+//       TASK-016：经 Canvas onCreated 捕获渲染器并交给 useWebGLContextRecovery
+//       监听上下文丢失/恢复——丢失即 preventDefault 并随恢复期暂停帧提交，
+//       恢复后递增 GPU 资源代驱动各 Feature 按确定顺序重建，重建结算成功才
+//       恢复渲染；连续三次失败记录结构化错误并永久停止渲染。
 // 关键不变量（SPEC §7.1 / §7.4 / D2）：
 // 1. 整个应用自始至终只挂载一个 Canvas，尺寸 100vw × 100dvh；Canvas 外无
-//    任何 DOM 覆盖层（无加载/错误/进度/连接状态 UI）；
+//    任何 DOM 覆盖层（无加载/错误/进度/连接状态 UI；上下文恢复失败后页面
+//    仍只有原 Canvas，无 DOM 兜底、不自动刷新）；
 // 2. 启动可取消：effect 清理中止进行中的启动流程并清除重试计时器，
 //    StrictMode 的 setup→cleanup→setup 只保留最后一次流程的结果；
 // 3. App 只做组合与启动状态持有，不承载地图校验、几何构建、协议映射等
@@ -22,7 +27,12 @@
 //    never——R3F 帧循环完全停止（useFrame 不执行、帧同步不消费脏集合、
 //    GPU 零提交），数据源与运行时继续在后台归并每车最新快照；回前台恢复
 //    always 后首个渲染帧消费全部积压脏标记，与最新快照一帧对齐。可见性是
-//    秒/分钟级低频信号，进入 React state 合法（SPEC §4 只禁高频）。
+//    秒/分钟级低频信号，进入 React state 合法（SPEC §4 只禁高频）；
+// 7. 上下文恢复（SPEC §11.9；TASK-016）：frameloop = 可见 && 恢复状态机处
+//    于 running——上下文丢失（含恢复重建与重试等待期）与恢复失败终态都保
+//    持 never（暂停帧提交/停止渲染）；数据源与运行时在恢复期间照常归并最
+//    新快照，恢复成功后首帧全量对齐；恢复状态是低频事件，进入 React state
+//    合法。
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas } from '@react-three/fiber'
@@ -42,6 +52,7 @@ import type { RuntimeConfig } from './bootstrap/loadRuntimeConfig'
 import { bootstrapApplication } from './bootstrap/bootstrapApplication'
 import { selectVehicleDataSource } from './bootstrap/selectVehicleDataSource'
 import { AgvMonitorScene } from './scene/AgvMonitorScene'
+import { useWebGLContextRecovery, type ContextRecoveryRenderer } from './webgl/useWebGLContextRecovery'
 
 /** 启动重试基础间隔与上限（毫秒）：指数退避 1s→2s→4s…≤30s */
 const STARTUP_RETRY_BASE_MS = 1000
@@ -71,6 +82,18 @@ export function App() {
   const [startup, setStartup] = useState<StartupState>({ phase: 'pending' })
   // 诊断通道仅创建一次，同时供启动编排、重试与数据源选择上报使用
   const diagnostics = useMemo(() => createDiagnosticsReporter(), [])
+
+  // 渲染器捕获（TASK-016）：R3F 在创建渲染器后回调 onCreated（引用稳定），
+  // 捕获进 state 供恢复 Hook 挂监听；StrictMode 重挂产生的旧渲染器随 R3F
+  // 自身清理，state 始终指向最新一次创建的渲染器。
+  const [renderer, setRenderer] = useState<ContextRecoveryRenderer | null>(null)
+
+  // WebGL 上下文恢复状态机（不变量 7）：丢失即暂停提交（frameloop never），
+  // 恢复后经资源代驱动重建、结算成功才回到 running。
+  const { state: recovery, settleContextRecovery } = useWebGLContextRecovery({
+    renderer,
+    diagnostics,
+  })
 
   // 页面可见性 → Canvas frameloop（SPEC §11.5；不变量 6）：监听回调内实时
   // 读取 document.visibilityState，不缓存事件间状态；监听随 effect 对称
@@ -193,7 +216,10 @@ export function App() {
       style={{ width: '100vw', height: '100dvh' }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
       camera={{ fov: 60, near: 0.5, far: 4000, position: [0, 300, 300] }}
-      frameloop={pageVisible ? 'always' : 'never'}
+      frameloop={pageVisible && recovery.phase === 'running' ? 'always' : 'never'}
+      onCreated={(state) => {
+        setRenderer(state.gl)
+      }}
     >
       <AgvMonitorScene
         mapDescriptor={startup.phase === 'ready' ? startup.mapDescriptor : null}
@@ -206,6 +232,8 @@ export function App() {
         shadowMapSize={
           startup.phase === 'ready' ? startup.config.renderer.shadowMapSize : undefined
         }
+        contextGeneration={recovery.generation}
+        onContextRecoverySettled={settleContextRecovery}
       />
     </Canvas>
   )
