@@ -1,10 +1,11 @@
 // 应用组合根（SPEC §7.1、§10.3、§12.3；TASK-004 接入启动编排，TASK-007 接入
-// 数据源选择）。
+// 数据源选择，TASK-014 接入渲染质量配置传递）。
 // 职责：持有启动状态（bootstrapApplication：config + 地图首载），就绪后按
 //       配置构造车辆数据源（WS / Mock 选择），以地图视图描述符 + 数据源装配
 //       唯一全屏 Canvas 内的场景组合根 AgvMonitorScene；地图阶段失败时按指数
 //       退避在后台自动重试（清屏色不变），配置阶段失败为终态（保持清屏色，
-//       不渲染任何错误 DOM）。
+//       不渲染任何错误 DOM）。config.renderer（maxDpr/shadowMapSize）经
+//       props 传入场景，由 render-quality 与地图灯光消费。
 // 关键不变量（SPEC §7.1 / §7.4 / D2）：
 // 1. 整个应用自始至终只挂载一个 Canvas，尺寸 100vw × 100dvh；Canvas 外无
 //    任何 DOM 覆盖层（无加载/错误/进度/连接状态 UI）；
@@ -178,6 +179,10 @@ export function App() {
         staleAfterMs={startup.phase === 'ready' ? startup.config.staleAfterMs : undefined}
         worldTransform={
           startup.phase === 'ready' ? (startup.mapDescriptor.initial?.worldTransform ?? null) : null
+        }
+        maxDpr={startup.phase === 'ready' ? startup.config.renderer.maxDpr : undefined}
+        shadowMapSize={
+          startup.phase === 'ready' ? startup.config.renderer.shadowMapSize : undefined
         }
       />
     </Canvas>

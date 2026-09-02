@@ -38,6 +38,30 @@ function apply(runtime: FleetRuntime, vehicles: ReturnType<typeof vehicle>[], re
 }
 
 describe('交通锁聚合（100ms 合并窗口与哈希重建判据）', () => {
+  it('脉冲 uniforms 创建即存在并挂在材质 userData；开关不影响几何重建判据', () => {
+    const runtime = createFleetRuntime()
+    apply(runtime, [vehicle('v1', [RECT_A], [])], 1000)
+    const resources = createTrafficLocksResources()
+    try {
+      // uniforms 创建即存在（编译前后可读写），并与材质共享同一对象
+      expect(resources.pulseUniforms.uTime.value).toBe(0)
+      expect(resources.pulseUniforms.uLockPulseEnabled.value).toBe(1)
+      const material = resources.mesh.material as THREE.MeshBasicMaterial
+      expect(material.userData.uniforms).toBe(resources.pulseUniforms as unknown)
+      expect(material.userData.uniforms.uLockPulsePeriod).toBeDefined()
+      expect(material.userData.uniforms.uLockPulseMin).toBeDefined()
+
+      // 开关写入不触碰几何：sync 重建判据（窗口 + 哈希签名）照常工作
+      resources.pulseUniforms.uLockPulseEnabled.value = 0
+      const wt = world()
+      expect(resources.sync(runtime.entities(), wt, 5_000)).toBe(true)
+      // 同一世界变换 + 哈希未变：窗口外也不重建
+      expect(resources.sync(runtime.entities(), wt, 5_200)).toBe(false)
+    } finally {
+      resources.dispose()
+    }
+  })
+
   it('首次 sync 立即重建：几何顶点/索引数量正确，网格可见', () => {
     const runtime = createFleetRuntime()
     apply(runtime, [vehicle('v1', [RECT_A], [])], 1000)

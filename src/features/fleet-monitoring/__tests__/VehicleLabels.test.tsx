@@ -36,7 +36,7 @@ import {
   type VehicleBadgeAtlas,
   type VehicleLabelAtlas,
 } from '../scene/labelAtlas'
-import { LABEL_ANCHOR_Y_M, LABEL_HEIGHT_M, LABEL_WIDTH_M, shellColorOf } from '../scene/fleetAppearance'
+import { LABEL_ANCHOR_Y_M, LABEL_FULL_MIN_PX, LABEL_HEIGHT_M, LABEL_NAME_MIN_PX, LABEL_WIDTH_M, shellColorOf } from '../scene/fleetAppearance'
 import { labelLevelForPixels } from '../scene/labelLod'
 import { VehicleLabels } from '../components/VehicleLabels'
 import { FleetMonitoringFeature } from '../components/FleetMonitoringFeature'
@@ -192,6 +192,7 @@ async function mountLabels(options: {
   worldTransform?: WorldTransform | null
   strict?: boolean
   breakBadgeAtlas?: boolean
+  importantLabelsOnly?: boolean
 }): Promise<{
   renderer: TestRenderer
   fakes: FakeLabelAtlas[]
@@ -210,6 +211,7 @@ async function mountLabels(options: {
         worldTransform={options.worldTransform === undefined ? makeWorld() : options.worldTransform}
         table={options.table}
         batchCount={options.batchCount ?? 1}
+        importantLabelsOnly={options.importantLabelsOnly}
         createLabelAtlas={() => {
           const fake = makeFakeLabelAtlas()
           fakes.push(fake)
@@ -558,6 +560,56 @@ describe('VehicleLabels 逐帧同步（TASK-011）', () => {
     useFleetMonitoringStore.getState().select(null)
     await advance(renderer)
     expect(attrOf(bg, 'aOverlay')[0]).toBe(0)
+  })
+
+  it('重要标签降级（importantLabelsOnly）：中距离纯名称档隐藏，重点车保留', async () => {
+    const runtime = createFleetRuntime()
+    const normal = snap('v0')
+    const faulted = snap('v1', { errorEntryList: [{ code: 'E1' }] })
+    runtime.applyEvent(snapshotEvent([normal, faulted]))
+    const table = createInstanceSlotTable()
+    const mounted = track(
+      await mountLabels({ runtime, table, importantLabelsOnly: true }),
+    )
+    const { renderer } = mounted
+    table.acquire(normal.entityKey)
+    table.acquire(faulted.entityKey)
+
+    // 确定性地找一个中距离机位：投影长度落在 [9, 19) px（纯名称档）
+    const camera = probeCamera!
+    let midZ = -1
+    for (let z = 5; z <= 800; z += 1) {
+      camera.position.set(0, 0, z)
+      camera.lookAt(0, LABEL_ANCHOR_Y_M, 0)
+      const px = projectedPx(camera, probeViewportWidth, 0.25, LABEL_ANCHOR_Y_M, 0, 1.8)
+      if (px < LABEL_FULL_MIN_PX && px >= LABEL_NAME_MIN_PX + 1) {
+        midZ = z
+        break
+      }
+    }
+    expect(midZ).toBeGreaterThan(0)
+    await advance(renderer)
+
+    const px = projectedPx(camera, probeViewportWidth, 0.25, LABEL_ANCHOR_Y_M, 0, 1.8)
+    expect(px).toBeGreaterThanOrEqual(LABEL_NAME_MIN_PX)
+    expect(px).toBeLessThan(LABEL_FULL_MIN_PX)
+    const bg = findMesh(renderer, 'fleet-label-bg-b0')
+    // 普通中距离车：纯名称档被抑制 → 隐藏且档位 0
+    expect(slotShown(bg, 0)).toBe(false)
+    expect(attrOf(bg, 'aLevel')[0]).toBe(0)
+    // FAULT 重点车：中距离仍以名称档保留（重点标签不降级）
+    expect(slotShown(bg, 1)).toBe(true)
+    expect(attrOf(bg, 'aLevel')[1]).toBe(1)
+
+    // 对照：默认完整 LOD 下同机位普通车显示纯名称档（对照挂载使用自己的相机）
+    const baseline = await mountLabels({ runtime, table })
+    probeCamera!.position.set(0, 0, midZ)
+    probeCamera!.lookAt(0, LABEL_ANCHOR_Y_M, 0)
+    await advance(baseline.renderer)
+    const bgDefault = findMesh(baseline.renderer, 'fleet-label-bg-b0')
+    expect(attrOf(bgDefault, 'aLevel')[0]).toBe(1)
+    expect(slotShown(bgDefault, 0)).toBe(true)
+    await baseline.renderer.unmount()
   })
 
   it('每批次恒 2 个标签网格（Draw Call）；batchCount=2 时为 4 个', async () => {

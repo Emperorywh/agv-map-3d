@@ -128,4 +128,37 @@ describe('FleetMonitoringFeature（TASK-010）', () => {
       renderer.unmount()
     }
   })
+
+  it('trafficPulseEnabled 能力开关：帧同步写入脉冲 uniforms（TASK-014）', async () => {
+    const world = makeWorld()
+    const renderer = await ReactThreeTestRenderer.create(
+      <FleetRuntimeProvider source={null}>
+        <FleetMonitoringFeature worldTransform={world} trafficPulseEnabled={false} />
+      </FleetRuntimeProvider>,
+    )
+    try {
+      await advance(renderer)
+      const traffic = renderer.scene.findAll(
+        (n) => (n.instance as THREE.Object3D).name === 'traffic-locks',
+      )
+      expect(traffic).toHaveLength(1)
+      const uniforms = (
+        (traffic[0].instance as THREE.Mesh).material as THREE.MeshBasicMaterial
+      ).userData.uniforms as { uLockPulseEnabled: { value: number }; uTime: { value: number } }
+      // 质量降级能力（SPEC §6.5 行动 3）：开关关闭经帧同步写入 uniforms
+      expect(uniforms.uLockPulseEnabled.value).toBe(0)
+
+      // 默认（脉冲开启）：同一 uniforms 翻回 1（时间相位写入用 clock.elapsedTime，
+      // 测试渲染器不推进时钟，此处只断言开关语义）
+      await renderer.update(
+        <FleetRuntimeProvider source={null}>
+          <FleetMonitoringFeature worldTransform={world} />
+        </FleetRuntimeProvider>,
+      )
+      await advance(renderer, 5)
+      expect(uniforms.uLockPulseEnabled.value).toBe(1)
+    } finally {
+      renderer.unmount()
+    }
+  })
 })

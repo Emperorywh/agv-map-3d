@@ -192,6 +192,8 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
     expect(physical.physicalPaths.length - linePaths.length).toBe(EXPECTED.bezierPhysicalPaths)
   })
 
+  // 全量并行运行下重采样负载可能超过默认 5s 超时（单独运行约 0.8s），
+  // 显式放宽本用例超时（TASK-014 期间全量套件扩容后实测暴露）
   it('中心线段总数为 44,559；LINE 路径 2 个采样点、BEZIER 路径 25 个采样点', () => {
     expect(physical.centerSegmentCount).toBe(EXPECTED.centerSegmentCount)
     for (const path of physical.physicalPaths) {
@@ -205,7 +207,7 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
         expect(Number.isFinite(point.y)).toBe(true)
       }
     }
-  })
+  }, 30_000)
 
   it('逻辑边 → 物理路径映射覆盖全部 9,265 条逻辑边，无遗漏无重复', () => {
     expect(physical.physicalPathIndexOfEdge.size).toBe(EXPECTED.edgeCount)

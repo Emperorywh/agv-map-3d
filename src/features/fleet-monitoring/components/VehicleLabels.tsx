@@ -62,6 +62,11 @@ export interface VehicleLabelsProps {
   table: InstanceSlotTable
   /** 当前批次数（与车体图层一致；由 Feature 根组件持有） */
   batchCount: number
+  /**
+   * 标签降级能力开关（SPEC §6.5 行动 1；TASK-014）：true 时中距离纯名称档
+   * 隐藏，仅保留重点标签与近景完整档；默认 false。
+   */
+  importantLabelsOnly?: boolean
   /** 名称图集工厂（可注入；默认真实 Canvas 工厂） */
   createLabelAtlas?: () => VehicleLabelAtlas
   /** 状态芯片图集工厂（可注入；默认真实 Canvas 工厂） */
@@ -78,6 +83,7 @@ export function VehicleLabels({
   worldTransform,
   table,
   batchCount,
+  importantLabelsOnly = false,
   createLabelAtlas = createVehicleLabelAtlas,
   createBadgeAtlas = createVehicleBadgeAtlas,
   diagnostics,
@@ -138,7 +144,14 @@ export function VehicleLabels({
     [badge],
   )
 
-  useFleetLabelFrameSync({ runtime, table, worldTransform, batches, diagnostics })
+  useFleetLabelFrameSync({
+    runtime,
+    table,
+    worldTransform,
+    batches,
+    importantLabelsOnly,
+    diagnostics,
+  })
 
   if (batches.length === 0) {
     // 图集不可用或无批次：整层降级不渲染（ Hook 已安全空转）

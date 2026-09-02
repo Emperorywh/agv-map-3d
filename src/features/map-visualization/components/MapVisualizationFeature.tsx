@@ -56,6 +56,11 @@ export interface MapVisualizationFeatureProps {
   diagnostics?: DiagnosticsReporter
   /** 方向光阴影贴图分辨率；来自 config.renderer.shadowMapSize，默认 2048 */
   shadowMapSize?: number
+  /**
+   * 动态阴影能力开关（SPEC §6.5 行动 3；TASK-014 质量能力接线）：false 时
+   * 方向光不再投射阴影（shadow camera 配置保留，恢复只需翻回开关）；默认 true。
+   */
+  dynamicShadowsEnabled?: boolean
   /** 环境工厂注入点；默认 RoomEnvironment+PMREM，测试注入替身 */
   environmentFactory?: SceneEnvironmentFactory
   /** 名称图集工厂注入点；默认真实 Canvas 工厂，测试注入替身 */
@@ -68,6 +73,7 @@ export function MapVisualizationFeature({
   map,
   diagnostics,
   shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
+  dynamicShadowsEnabled = true,
   environmentFactory = createRoomEnvironment,
   nameAtlasFactory = createMapNameAtlasDefault,
   decorationsEnabled = true,
@@ -86,6 +92,7 @@ export function MapVisualizationFeature({
       <SceneLighting
         bounds={view?.mapModel.sceneBounds ?? null}
         shadowMapSize={shadowMapSize}
+        dynamicShadowsEnabled={dynamicShadowsEnabled}
         environmentFactory={environmentFactory}
         diagnostics={diagnostics}
       />
@@ -127,6 +134,7 @@ function createMapNameAtlasDefault(
 interface SceneLightingProps {
   bounds: SceneBounds | null
   shadowMapSize: number
+  dynamicShadowsEnabled: boolean
   environmentFactory: SceneEnvironmentFactory
   diagnostics?: DiagnosticsReporter
 }
@@ -135,6 +143,7 @@ interface SceneLightingProps {
 function SceneLighting({
   bounds,
   shadowMapSize,
+  dynamicShadowsEnabled,
   environmentFactory,
   diagnostics,
 }: SceneLightingProps) {
@@ -158,10 +167,14 @@ function SceneLighting({
     }
   }, [gl, scene, environmentFactory, diagnostics])
 
-  // 方向光按包围盒静态构建：bounds 变化（地图替换）时整体重建并释放旧灯
+  // 方向光按包围盒静态构建：bounds / 阴影分辨率 / 动态阴影开关变化时整体重建
+  // 并释放旧灯（分辨率与开关是 TASK-014 质量 2/3 级的能力开关，换代必须生效）
   const lighting = useMemo(
-    () => (bounds !== null ? createStaticDirectionalLight(bounds, shadowMapSize) : null),
-    [bounds, shadowMapSize],
+    () =>
+      bounds !== null
+        ? createStaticDirectionalLight(bounds, shadowMapSize, dynamicShadowsEnabled)
+        : null,
+    [bounds, shadowMapSize, dynamicShadowsEnabled],
   )
   useEffect(() => () => lighting?.light.dispose(), [lighting])
 
@@ -170,20 +183,41 @@ function SceneLighting({
   }
   return (
     <>
-      {/* dispose={null}：灯光对象由上方 effect 显式释放 */}
-      <primitive object={lighting.light} dispose={null} />
-      <primitive object={lighting.target} dispose={null} />
+      {/* dispose={null}：灯光对象由上方 effect 显式释放。key 携带资源代：
+          R3F 对已挂载 primitive 换 object 的重建依赖「兄弟序列尾部」探测，
+          与兄弟元素组合时换新会被静默丢弃（TASK-005 实测结论）——灯光与
+          目标点都非尾部元素，key 变化强制走干净的卸载/挂载路径，保证阴影
+          分辨率与动态阴影开关的真实生效。 */}
+      <primitive
+        key={`map-light-${lighting.id}`}
+        object={lighting.light}
+        dispose={null}
+      />
+      <primitive
+        key={`map-light-target-${lighting.id}`}
+        object={lighting.target}
+        dispose={null}
+      />
     </>
   )
 }
 
+/** 资源代计数器：灯光对象换代时递增，驱动 primitive key 变化 */
+let sceneLightingSeq = 0
+
 interface StaticLighting {
+  /** 资源代序号：每次重建递增，作为 primitive 的 key */
+  readonly id: number
   light: THREE.DirectionalLight
   target: THREE.Object3D
 }
 
 /** 按地图包围盒配置方向光：位置取对角线比例偏移，阴影正交相机静态覆盖全图 */
-function createStaticDirectionalLight(bounds: SceneBounds, shadowMapSize: number): StaticLighting {
+function createStaticDirectionalLight(
+  bounds: SceneBounds,
+  shadowMapSize: number,
+  dynamicShadowsEnabled: boolean,
+): StaticLighting {
   const diagonal = Math.max(bounds.diagonal, 1)
   const light = new THREE.DirectionalLight(0xffffff, DIRECTIONAL_LIGHT_INTENSITY)
   light.name = 'map-directional-light'
@@ -192,7 +226,8 @@ function createStaticDirectionalLight(bounds: SceneBounds, shadowMapSize: number
     diagonal * 0.9,
     bounds.centerWorldZ + diagonal * 0.25,
   )
-  light.castShadow = true
+  // 动态阴影能力开关（SPEC §6.5 行动 3）：false 时不再投射阴影贴图
+  light.castShadow = dynamicShadowsEnabled
   light.shadow.mapSize.set(shadowMapSize, shadowMapSize)
   const half = diagonal / 2 + LIGHT_SHADOW_MARGIN_M
   const camera = light.shadow.camera
@@ -210,5 +245,6 @@ function createStaticDirectionalLight(bounds: SceneBounds, shadowMapSize: number
   target.name = 'map-light-target'
   target.position.set(bounds.centerWorldX, 0, bounds.centerWorldZ)
   light.target = target
-  return { light, target }
+  sceneLightingSeq += 1
+  return { id: sceneLightingSeq, light, target }
 }

@@ -6,6 +6,8 @@
  *       实例属性：内容差 → 底色/电量条/告警级/芯片 UV/名称图集单元；相机
  *       相关的投影档位逐帧重算（8px/20px 分级）；远景（<8px）只保留按优先
  *       级截断的前 20 个重点标签；删除 → 释放图集单元并零缩放清场。
+ *       质量降级能力（TASK-014 接入）：importantLabelsOnly=true 时中距离纯
+ *       名称档隐藏，仅保留重点标签与近景完整档（SPEC §6.5 行动 1）。
  * 边界：绝不消费运行时的 pose/display/removed 脏集合——那是车体帧同步
  *       （useFleetFrameSync）的独占输入，两者的差量口径互不干扰；标签只渲染
  *       已被槽位表分配槽位的实体（无车体者无标签）。全部缓存、投影草稿与
@@ -81,6 +83,12 @@ export interface UseFleetLabelFrameSyncOptions {
   worldTransform: WorldTransform | null
   /** 当前已挂载标签批次（数组身份变化触发全量重写） */
   batches: readonly FleetLabelBatchMeshes[]
+  /**
+   * 标签降级能力开关（SPEC §6.5 行动 1「仅保留重点标签和近景标签」；
+   * TASK-014 质量能力接线）：true 时中距离纯名称档（8～20px）隐藏，近景完
+   * 整档与远景重点车（含选中/告警）不受影响；默认 false。
+   */
+  importantLabelsOnly?: boolean
   /** 结构化诊断通道（保留扩展点；当前标签层无采样告警路径） */
   diagnostics?: DiagnosticsReporter
 }
@@ -164,11 +172,21 @@ export function useFleetLabelFrameSync({
   table,
   worldTransform,
   batches,
+  importantLabelsOnly = false,
   diagnostics,
 }: UseFleetLabelFrameSyncOptions): void {
   // options 经 ref 透传：useFrame 闭包恒定，数组身份/回调变化不重建帧回调
-  const optionsRef = useRef({ runtime, table, worldTransform, batches, diagnostics })
-  optionsRef.current = { runtime, table, worldTransform, batches, diagnostics }
+  const optionsRef = useRef(
+    { runtime, table, worldTransform, batches, importantLabelsOnly, diagnostics },
+  )
+  optionsRef.current = {
+    runtime,
+    table,
+    worldTransform,
+    batches,
+    importantLabelsOnly,
+    diagnostics,
+  }
 
   const controllerRef = useRef<LabelFrameController | null>(null)
   if (controllerRef.current === null) {
@@ -205,9 +223,10 @@ function tickLabelFrame(
     table: InstanceSlotTable
     worldTransform: WorldTransform | null
     batches: readonly FleetLabelBatchMeshes[]
+    importantLabelsOnly: boolean
   },
 ): void {
-  const { runtime, table, worldTransform, batches } = options
+  const { runtime, table, worldTransform, batches, importantLabelsOnly } = options
   if (worldTransform === null || batches.length === 0) {
     return
   }
@@ -311,6 +330,12 @@ function tickLabelFrame(
           )
         : 0
     cache.levelNext = labelLevelForPixels(projectedPx)
+    // 质量降级能力（SPEC §6.5 行动 1）：中距离纯名称档隐藏。抑制发生在远景
+    // 重点登记之前——中距离的重点车落入 0 档后仍可经重点通道以名称档保留，
+    // 近景完整档（≥20px）不受影响（仅保留重点标签和近景标签）。
+    if (importantLabelsOnly && cache.levelNext === 1) {
+      cache.levelNext = 0
+    }
 
     // 远景候选登记（<8px 的重点车，按优先级截断到前 20）
     if (cache.levelNext === 0) {

@@ -38,6 +38,7 @@ import {
   type VehicleDataSource,
 } from '@/features/fleet-monitoring'
 import { snapshotOf } from '@/features/fleet-monitoring/__tests__/testVehicles'
+import { useRenderQualityStore } from '@/features/render-quality/model/renderQualityStore'
 
 const ANCHOR_NAME = 'agv-monitor-scene'
 
@@ -321,5 +322,51 @@ describe('AgvMonitorScene 场景组合根', () => {
     // 车辆移动后相机随之平移（不再是旧位姿）
     expect(camera.position.x).not.toBeCloseTo(pose.x + overviewPose.position.x, 1)
     renderer.unmount()
+  })
+
+  it('质量能力接线（TASK-014）：等级跃迁经组合层映射为阴影/装饰/脉冲/标签开关', async () => {
+    const seed = buildSeedDescriptor()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <AgvMonitorScene
+          mapDescriptor={seed.descriptor}
+          worldTransform={seed.worldTransform}
+        />
+      </StrictMode>,
+    )
+    try {
+      await flush()
+      // 0 级：动态阴影开启、阴影分辨率取默认 2048、脉冲开启
+      const lightAt = () =>
+        findByName(renderer.scene, 'map-directional-light')[0]!
+          .instance as unknown as THREE.DirectionalLight
+      expect(lightAt().castShadow).toBe(true)
+      expect(lightAt().shadow.mapSize.x).toBe(2048)
+
+      // 2 级：阴影 2048→1024，动态阴影仍开启；灯光换代后场景唯一
+      act(() => {
+        useRenderQualityStore.getState().setQualityLevel(2)
+      })
+      await flush()
+      expect(findByName(renderer.scene, 'map-directional-light')).toHaveLength(1)
+      expect(lightAt().shadow.mapSize.x).toBe(1024)
+      expect(lightAt().castShadow).toBe(true)
+
+      // 3 级：关闭动态阴影与交通锁脉冲（脉冲开关经帧同步写入 uniforms）
+      act(() => {
+        useRenderQualityStore.getState().setQualityLevel(3)
+      })
+      await flush()
+      await advance(renderer, 1)
+      expect(lightAt().castShadow).toBe(false)
+      const traffic = findByName(renderer.scene, 'traffic-locks')[0]!
+        .instance as unknown as THREE.Mesh
+      const uniforms = (traffic.material as THREE.MeshBasicMaterial).userData
+        .uniforms as { uLockPulseEnabled: { value: number } }
+      expect(uniforms.uLockPulseEnabled.value).toBe(0)
+    } finally {
+      useRenderQualityStore.getState().setQualityLevel(0)
+      renderer.unmount()
+    }
   })
 })

@@ -3,9 +3,10 @@
  *
  * 职责：把交通锁聚合资源（createTrafficLocksResources）挂载到场景，并在
  *       useFrame 中以单调时钟驱动 sync——归一化、100ms 合并窗口与「规范化
- *       哈希变化才重建」的全部语义都封装在资源对象内，本组件只负责挂载与
- *       驱动，不触碰任何 React 状态（几何重建发生在资源对象内部，对 React
- *       不可见也无需可见）。
+ *       哈希变化才重建」的全部语义都封装在资源对象内，本组件只负责挂载、
+ *       驱动与脉冲 uniforms 写入（TASK-014 接入 pulseEnabled 能力开关：
+ *       SPEC §6.5 行动 3 关闭交通锁脉冲），不触碰任何 React 状态（几何重建
+ *       发生在资源对象内部，对 React 不可见也无需可见）。
  * 边界：本组件拥有聚合资源（网格、材质、当前几何）并在卸载时幂等释放；
  *       不做矩形校验裁决（模型层职责）、不做坐标换算（资源对象按注入的
  *       WorldTransform 完成）。世界变换引用变化（地图恢复换代）由 sync 内部
@@ -33,6 +34,8 @@ export interface TrafficLocksLayerProps {
   runtime: FleetRuntime
   /** 地图世界变换；null 时本层不挂载（等待地图就绪） */
   worldTransform: WorldTransform | null
+  /** 交通锁脉冲能力开关（SPEC §6.5 行动 3）；false 时恒定不透明度；默认 true */
+  pulseEnabled?: boolean
   /** 结构化诊断通道（当前无告警路径，保留与兄弟图层一致的注入口径） */
   diagnostics?: DiagnosticsReporter
 }
@@ -40,6 +43,7 @@ export interface TrafficLocksLayerProps {
 export function TrafficLocksLayer({
   runtime,
   worldTransform,
+  pulseEnabled = true,
 }: TrafficLocksLayerProps) {
   // 聚合资源单一所有者：组件生命周期内只创建一次，卸载幂等释放
   const resources = useMemo<TrafficLocksResources>(
@@ -48,15 +52,18 @@ export function TrafficLocksLayer({
   )
   useEffect(() => () => resources.dispose(), [resources])
 
-  // 单调时钟经 ref 透传：测试渲染器与真实循环共用同一 sync 语义
-  const optionsRef = useRef({ runtime, worldTransform })
-  optionsRef.current = { runtime, worldTransform }
+  // 单调时钟与能力开关经 ref 透传：测试渲染器与真实循环共用同一 sync 语义
+  const optionsRef = useRef({ runtime, worldTransform, pulseEnabled })
+  optionsRef.current = { runtime, worldTransform, pulseEnabled }
 
-  useFrame(() => {
-    const { runtime: rt, worldTransform: wt } = optionsRef.current
+  useFrame(({ clock }) => {
+    const { runtime: rt, worldTransform: wt, pulseEnabled: pulse } = optionsRef.current
     if (wt === null) {
       return
     }
+    // 脉冲 uniforms：时间推进相位，开关即时生效（不触碰几何与 React state）
+    resources.pulseUniforms.uTime.value = clock.elapsedTime
+    resources.pulseUniforms.uLockPulseEnabled.value = pulse ? 1 : 0
     resources.sync(rt.entities(), wt, performance.now())
   })
 

@@ -1,6 +1,6 @@
 // Canvas 内的 Feature 组合根（SPEC §12.3；TASK-004 接入地图 Feature，
 // TASK-007 接入车队运行时 Provider，TASK-010 接入车辆实例渲染，TASK-013 接
-// 入相机导航与跟随桥接）。
+// 入相机导航与跟随桥接，TASK-014 接入自适应质量能力）。
 // 职责：作为场景子树的唯一挂载点，以显式 props 组合各 Feature 根组件：
 //       1. FleetRuntimeProvider 在场景子树内持有车队高频运行时与数据源连接
 //          生命周期（R3F 子树的 Context 只在这里向下可达），并把 app 注入的
@@ -11,10 +11,17 @@
 //          界变换 + §2.5 车体中心口径）经 props 注入 camera-navigation，
 //          两个 Feature 互不导入、互不感知；
 //       3. 地图包围盒取自 bootstrap 种子（MapModel.sceneBounds），为相机自
-//          动取景与缩放上限提供唯一来源。
+//          动取景与缩放上限提供唯一来源；
+//       4. 质量能力映射（SPEC §12.3「质量等级由组合层映射为标签、阴影和装
+//          饰能力开关」）：订阅 render-quality 的只读质量等级，经
+//          capabilitiesForLevel 映射为地图（阴影分辨率/动态阴影/装饰动画）
+//          与车队（标签重点模式/交通锁脉冲）的显式 props；RenderQuality
+//          Feature 挂在场景内采样帧时间并应用 DPR 上限；车队规模经只读运
+//          行时 count 的闭包注入（决定目标帧率档位）。
 // 关键不变量：本组件只做组合与低频桥接（一个命令引用 + 一个运行时引用状态
-// + 一个派生读取器），不解析协议、不发起网络请求、不读取运行时配置，也不持
-// 有任何逐帧数据（跟随位姿由相机 Feature 的 ref 状态机逐帧读取）。
+// + 一个派生读取器 + 一个低频质量等级订阅），不解析协议、不发起网络请求、
+// 不读取运行时配置，也不持有任何逐帧数据（跟随位姿由相机 Feature 的 ref 状
+// 态机逐帧读取；帧时间样本由 render-quality 的 ref 状态机持有，SPEC §4）。
 import { useMemo, useRef, useState } from 'react'
 import type { CameraNavigationCommands } from '@/features/camera-navigation'
 import { CameraNavigationFeature } from '@/features/camera-navigation'
@@ -26,9 +33,15 @@ import {
   type VehicleDataSource,
 } from '@/features/fleet-monitoring'
 import {
+  DEFAULT_SHADOW_MAP_SIZE,
   MapVisualizationFeature,
   type MapViewDescriptor,
 } from '@/features/map-visualization'
+import {
+  capabilitiesForLevel,
+  RenderQualityFeature,
+  useQualityLevel,
+} from '@/features/render-quality'
 import type { WorldTransform } from '@/shared/spatial'
 
 export interface AgvMonitorSceneProps {
@@ -40,6 +53,10 @@ export interface AgvMonitorSceneProps {
   staleAfterMs?: number
   /** 地图世界变换（app 由 bootstrap 产物注入）；null 时车辆不渲染 */
   worldTransform?: WorldTransform | null
+  /** 基准 DPR 上限（config.renderer.maxDpr）；未就绪时缺省 2 */
+  maxDpr?: number
+  /** 基准阴影贴图分辨率（config.renderer.shadowMapSize）；缺省 2048 */
+  shadowMapSize?: number
 }
 
 export function AgvMonitorScene({
@@ -47,6 +64,8 @@ export function AgvMonitorScene({
   vehicleSource = null,
   staleAfterMs,
   worldTransform = null,
+  maxDpr = 2,
+  shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
 }: AgvMonitorSceneProps) {
   // 相机命令出口：车辆双击跟随请求的唯一转交通道（组合层桥接，不经过
   // Feature 间 Store 或事件总线）；引用在相机 Feature 卸载时被置 null。
@@ -68,11 +87,30 @@ export function AgvMonitorScene({
     [fleetRuntime, worldTransform],
   )
 
+  // 车队规模读取器：render-quality 每帧经它取运行时 count（决定 60/30fps
+  // 目标档位），无运行时按 0 台处理；闭包只依赖运行时引用（低频重建）。
+  const readVehicleCount = useMemo(
+    () => () => fleetRuntime?.count ?? 0,
+    [fleetRuntime],
+  )
+
+  // 质量等级 → 能力开关映射（SPEC §12.3：等级订阅与映射只发生在组合层）。
+  // 等级跃迁受迟滞冷却约束（降级 ≥5s、恢复 ≥30s），订阅是低频的。
+  const qualityLevel = useQualityLevel()
+  const capabilities = useMemo(
+    () => capabilitiesForLevel(qualityLevel, { shadowMapSize }),
+    [qualityLevel, shadowMapSize],
+  )
+
   // 相机取景与缩放上限的唯一包围盒来源：bootstrap 种子中的地图模型
   const sceneBounds = mapDescriptor?.initial?.mapModel.sceneBounds ?? null
 
   return (
     <group name="agv-monitor-scene">
+      <RenderQualityFeature
+        readVehicleCount={readVehicleCount}
+        maxDpr={maxDpr}
+      />
       <CameraNavigationFeature
         bounds={sceneBounds}
         readFollowTarget={readFollowTarget}
@@ -83,9 +121,16 @@ export function AgvMonitorScene({
         staleAfterMs={staleAfterMs}
         onRuntimeAvailable={setFleetRuntime}
       >
-        <MapVisualizationFeature map={mapDescriptor} />
+        <MapVisualizationFeature
+          map={mapDescriptor}
+          shadowMapSize={capabilities.shadowMapSize}
+          dynamicShadowsEnabled={capabilities.dynamicShadowsEnabled}
+          decorationsEnabled={capabilities.decorationsEnabled}
+        />
         <FleetMonitoringFeature
           worldTransform={worldTransform}
+          importantLabelsOnly={capabilities.importantLabelsOnly}
+          trafficPulseEnabled={capabilities.trafficPulseEnabled}
           onFollowRequest={(entityKey) => {
             // 跨 Feature 协作只发生在本组合层：双击跟随请求 → 相机命令
             cameraCommandsRef.current?.follow(entityKey)

@@ -56,6 +56,16 @@ export interface FleetMonitoringFeatureProps {
   hardCap?: number
   /** 双击跟随请求上抛（实体键）；app 组合层转发给 camera-navigation（TASK-013） */
   onFollowRequest?: (entityKey: string) => void
+  /**
+   * 标签降级能力开关（SPEC §6.5 行动 1；TASK-014 质量能力接线）：true 时
+   * 标签仅保留重点与近景，中距离纯名称档隐藏；默认 false（完整 LOD）。
+   */
+  importantLabelsOnly?: boolean
+  /**
+   * 交通锁脉冲能力开关（SPEC §6.5 行动 3；TASK-014）：false 时交通矩形恒定
+   * 不透明度；默认 true。
+   */
+  trafficPulseEnabled?: boolean
   /** 结构化诊断通道（硬上限溢出、标签图集降级等）；默认独立通道 */
   diagnostics?: DiagnosticsReporter
 }
@@ -64,6 +74,8 @@ export function FleetMonitoringFeature({
   worldTransform,
   hardCap = SLOT_HARD_CAP,
   onFollowRequest,
+  importantLabelsOnly = false,
+  trafficPulseEnabled = true,
   diagnostics,
 }: FleetMonitoringFeatureProps) {
   const { runtime } = useFleetRuntime()
@@ -123,6 +135,7 @@ export function FleetMonitoringFeature({
         worldTransform={worldTransform}
         table={table}
         batchCount={batchCount}
+        importantLabelsOnly={importantLabelsOnly}
         diagnostics={effectiveDiagnostics}
       />
       <VehicleRings
@@ -135,6 +148,7 @@ export function FleetMonitoringFeature({
       <TrafficLocksLayer
         runtime={runtime}
         worldTransform={worldTransform}
+        pulseEnabled={trafficPulseEnabled}
         diagnostics={effectiveDiagnostics}
       />
     </group>

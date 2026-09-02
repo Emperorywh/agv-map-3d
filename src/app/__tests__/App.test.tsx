@@ -50,6 +50,7 @@ vi.mock('@react-three/fiber', async (importOriginal) => {
 /** 捕获传给地图 Feature 的描述符（vi.hoisted 保证工厂内可引用） */
 const capture = vi.hoisted(() => ({
   mapDescriptor: undefined as unknown,
+  shadowMapSize: undefined as unknown,
 }))
 
 /** 捕获数据源选择入参（保持 App 外壳测试与 Mock 内核实现解耦） */
@@ -63,8 +64,9 @@ vi.mock('@/features/map-visualization', async (importOriginal) => {
     await importOriginal<typeof import('@/features/map-visualization')>()
   return {
     ...actual,
-    MapVisualizationFeature: (props: { map: unknown }) => {
+    MapVisualizationFeature: (props: { map: unknown; shadowMapSize?: number }) => {
       capture.mapDescriptor = props.map
+      capture.shadowMapSize = props.shadowMapSize
       return <div data-testid="map-feature" />
     },
   }
@@ -106,6 +108,26 @@ vi.mock('@/features/camera-navigation', async (importOriginal) => {
       cameraCapture.bounds = props.bounds
       return <div data-testid="camera-feature" />
     },
+  }
+})
+
+/** 捕获传给质量 Feature 的 DPR 上限（TASK-014 接线：config.renderer 传递） */
+const qualityCapture = vi.hoisted(() => ({
+  maxDpr: undefined as unknown,
+}))
+
+vi.mock('@/features/render-quality', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/render-quality')>()
+  return {
+    ...actual,
+    // jsdom 无 R3F 宿主：质量 Feature 以 DOM 替身验证组合层接线合同；
+    // 能力映射与等级订阅走真实实现（纯函数与低频 store，不依赖 R3F）
+    RenderQualityFeature: (props: { maxDpr: unknown }) => {
+      qualityCapture.maxDpr = props.maxDpr
+      return <div data-testid="quality-feature" />
+    },
+    useQualityLevel: () => 0,
   }
 })
 
@@ -196,8 +218,10 @@ afterEach(() => {
   vi.useRealTimers()
   mockBootstrap.mockReset()
   capture.mapDescriptor = undefined
+  capture.shadowMapSize = undefined
   fleetCapture.worldTransform = undefined
   cameraCapture.bounds = undefined
+  qualityCapture.maxDpr = undefined
   selectCapture.options = []
   selectCapture.returnValue = null
 })
@@ -260,6 +284,10 @@ describe('App DOM 外壳', () => {
     // TASK-013 接线：相机 Feature 的取景包围盒取自同一种子的场景包围盒
     await waitFor(() => expect(cameraCapture.bounds).not.toBeNull())
     expect(cameraCapture.bounds).toBe(result.mapModel.sceneBounds)
+    // TASK-014 接线：config.renderer 经组合层传入质量 Feature 与地图阴影配置
+    await waitFor(() => expect(qualityCapture.maxDpr).not.toBeNull())
+    expect(qualityCapture.maxDpr).toBe(RUNTIME_CONFIG.renderer.maxDpr)
+    expect(capture.shadowMapSize).toBe(RUNTIME_CONFIG.renderer.shadowMapSize)
   })
 
   it('数据源选择按就绪配置执行一次，Mock 分支携带地图拓扑（TASK-009）', async () => {

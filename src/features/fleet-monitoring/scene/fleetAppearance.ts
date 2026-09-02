@@ -175,3 +175,11 @@ export const TRAFFIC_LOCK_Y_M = 0.02
 
 /** 交通锁贴片透明度：locked 红与 applying 黄共用材质（顶点色区分） */
 export const TRAFFIC_LOCK_OPACITY = 0.4
+
+/**
+ * 交通锁脉冲外观（SPEC §6.5 行动 3「关闭交通锁脉冲」的可关效果本体；TASK-014）：
+ * 透明度在 [min, 1]× 基准透明度区间内按正弦周期呼吸，locked/applying 语义
+ * 靠顶点色保持不变；脉冲关闭时系数恒为 1（恒定不透明度）。
+ */
+export const TRAFFIC_PULSE_PERIOD_S = 1.2
+export const TRAFFIC_PULSE_MIN = 0.7

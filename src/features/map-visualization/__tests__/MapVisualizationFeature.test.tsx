@@ -10,7 +10,8 @@
  * 3. 刷新失败时旧场景对象原样保留（§11.10 的组件侧表现）；
  * 4. 装饰动画开关（decorationsEnabled）即时反映在呼吸灯 uniforms；
  * 5. 名称图集创建失败时名称图层整体降级，地标与外沿不受影响（逐项隔离）；
- * 6. 卸载时环境、图层几何与材质、名称图集全部释放。
+ * 6. 卸载时环境、图层几何与材质、名称图集全部释放；
+ * 7. 动态阴影/阴影分辨率能力开关（TASK-014）驱动方向光换代生效且场景唯一。
  */
 import { StrictMode } from 'react'
 import { act } from '@testing-library/react'
@@ -294,6 +295,52 @@ describe('MapVisualizationFeature 场景组合', () => {
       material: { userData: { uniforms: { uPulseEnabled: { value: number } } } }
     }
     expect(lightsAfter.material.userData.uniforms.uPulseEnabled.value).toBe(1)
+    renderer.unmount()
+  })
+
+  it('dynamicShadowsEnabled/shadowMapSize 变化：方向光换代生效且场景唯一（TASK-014）', async () => {
+    const env = makeEnvStub()
+    const atlas = makeAtlasStub()
+    // 同一描述符复用：排他地验证阴影能力 props 驱动灯光重建
+    const descriptor = makeDescriptor()
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <MapVisualizationFeature
+          map={descriptor}
+          environmentFactory={env.factory}
+          nameAtlasFactory={atlas.factory}
+          shadowMapSize={2048}
+          dynamicShadowsEnabled={true}
+        />
+      </StrictMode>,
+    )
+    await flush()
+    const light = toThree(findByName(renderer.scene, 'map-directional-light')[0]) as unknown as THREE.DirectionalLight
+    expect(light.castShadow).toBe(true)
+    expect(light.shadow.mapSize.x).toBe(2048)
+
+    // 质量 2/3 级能力（分辨率 1024 + 关闭动态阴影）：灯光对象换代且场景唯一，
+    // 目标点同步换代（primitive key 携带资源代，规避 R3F primitive 换 object
+    // 的重建丢弃问题）
+    await renderer.update(
+      <StrictMode>
+        <MapVisualizationFeature
+          map={descriptor}
+          environmentFactory={env.factory}
+          nameAtlasFactory={atlas.factory}
+          shadowMapSize={1024}
+          dynamicShadowsEnabled={false}
+        />
+      </StrictMode>,
+    )
+    await flush()
+    const lights = findByName(renderer.scene, 'map-directional-light')
+    expect(lights).toHaveLength(1)
+    const rebuilt = toThree(lights[0]) as unknown as THREE.DirectionalLight
+    expect(rebuilt).not.toBe(light)
+    expect(rebuilt.castShadow).toBe(false)
+    expect(rebuilt.shadow.mapSize.x).toBe(1024)
+    expect(findByName(renderer.scene, 'map-light-target')).toHaveLength(1)
     renderer.unmount()
   })
 

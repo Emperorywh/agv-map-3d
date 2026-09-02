@@ -5,7 +5,10 @@
  *       BufferGeometry」——按车归一化矩形（无效逐项跳过）、以 100ms 窗口
  *       合并高频更新、只在规范化几何签名（哈希组合）变化时重建几何并换入
  *       场景网格；locked 红、applying 黄经顶点色表达。本模块拥有网格、材质
- *       与当前几何，资源生命周期自管（dispose 幂等）。
+ *       与当前几何，资源生命周期自管（dispose 幂等）。材质附带交通锁脉冲
+ *       uniforms（SPEC §6.5 行动 3「关闭交通锁脉冲」的效果本体）：uTime 由
+ *       组件层逐帧写入，uLockPulseEnabled=0 时恒定不透明度（TASK-014 质量
+ *       3 级经能力开关关闭）。
  * 边界：不判定 INVALID_DATA 告警（告警派生属 model/deriveVehicleState，本
  *       模块只负责「无效矩形不进入几何」）；不做坐标换算以外的任何业务解释；
  *       世界变换由调用方注入（app 组合层口径，SPEC §12.4）；不感知 React——
@@ -34,6 +37,8 @@ import {
   LABEL_BORDER_L2_COLOR,
   TRAFFIC_LOCK_OPACITY,
   TRAFFIC_LOCK_Y_M,
+  TRAFFIC_PULSE_MIN,
+  TRAFFIC_PULSE_PERIOD_S,
 } from './fleetAppearance'
 
 /** 默认合并窗口（毫秒，SPEC §5.3「交通资源更新按 100ms 窗口合并」） */
@@ -61,6 +66,15 @@ export interface TrafficLocksResources {
   /** 常驻场景网格：几何随重建更换，无矩形时不可见 */
   readonly mesh: THREE.Mesh
   /**
+   * 交通锁脉冲 uniforms（SPEC §6.5 行动 3 的可关效果本体；TASK-014）：
+   * uTime 由组件层逐帧写入，uLockPulseEnabled=0 时恒定不透明度
+   * （质量 3 级关闭脉冲）。uniforms 创建即存在，编译前后均可读写。
+   */
+  readonly pulseUniforms: {
+    readonly uTime: { value: number }
+    readonly uLockPulseEnabled: { value: number }
+  }
+  /**
    * 采集一帧实体并按需重建几何。
    * 返回 true 表示本次调用发生了几何重建（网格几何对象已更换）。
    */
@@ -73,11 +87,19 @@ export interface TrafficLocksResources {
   dispose(): void
 }
 
-export function createTrafficLocksResources(
-  options: TrafficLocksResourcesOptions = {},
-): TrafficLocksResources {
-  const windowMs = options.windowMs ?? TRAFFIC_MERGE_WINDOW_MS
-
+/**
+ * 交通锁材质：顶点色（locked 红 / applying 黄）+ 脉冲 alpha 调制。脉冲经
+ * onBeforeCompile 注入最小 GLSL——uLockPulseEnabled=0 时系数恒为 1（恒定
+ * 不透明度），几何与顶点色语义不受影响；customProgramCacheKey 声明注入身份，
+ * 避免与其他补丁材质共享编译缓存。
+ */
+function createTrafficLockMaterial(): THREE.MeshBasicMaterial {
+  const uniforms = {
+    uTime: { value: 0 },
+    uLockPulseEnabled: { value: 1 },
+    uLockPulsePeriod: { value: TRAFFIC_PULSE_PERIOD_S },
+    uLockPulseMin: { value: TRAFFIC_PULSE_MIN },
+  }
   const material = new THREE.MeshBasicMaterial({
     vertexColors: true,
     transparent: true,
@@ -85,6 +107,45 @@ export function createTrafficLocksResources(
     depthWrite: false,
     side: THREE.DoubleSide,
   })
+  material.name = 'fleet-traffic-lock'
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uniforms.uTime
+    shader.uniforms.uLockPulseEnabled = uniforms.uLockPulseEnabled
+    shader.uniforms.uLockPulsePeriod = uniforms.uLockPulsePeriod
+    shader.uniforms.uLockPulseMin = uniforms.uLockPulseMin
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        [
+          '#include <common>',
+          'uniform float uTime;',
+          'uniform float uLockPulseEnabled;',
+          'uniform float uLockPulsePeriod;',
+          'uniform float uLockPulseMin;',
+        ].join('\n'),
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        [
+          '#include <opaque_fragment>',
+          'float lockWave = 0.5 + 0.5 * sin( uTime * 6.28318530718 / max( uLockPulsePeriod, 0.001 ) );',
+          'float lockFactor = mix( 1.0, uLockPulseMin + ( 1.0 - uLockPulseMin ) * lockWave, uLockPulseEnabled );',
+          'gl_FragColor.a *= lockFactor;',
+        ].join('\n'),
+      )
+  }
+  material.customProgramCacheKey = () => 'fleet-traffic-lock'
+  material.userData.uniforms = uniforms
+  return material
+}
+
+export function createTrafficLocksResources(
+  options: TrafficLocksResourcesOptions = {},
+): TrafficLocksResources {
+  const windowMs = options.windowMs ?? TRAFFIC_MERGE_WINDOW_MS
+
+  const material = createTrafficLockMaterial()
+  const pulseUniforms = material.userData.uniforms as TrafficLocksResources['pulseUniforms']
   /** 无矩形时的共享空几何占位：网格必须始终持有合法几何，且绝不重复创建 */
   const emptyGeometry = new THREE.BufferGeometry()
   const mesh = new THREE.Mesh(emptyGeometry, material)
@@ -201,7 +262,7 @@ export function createTrafficLocksResources(
     return true
   }
 
-  return { mesh, sync, dispose }
+  return { mesh, pulseUniforms, sync, dispose }
 }
 
 /** 逐项归一化：无效矩形静默跳过（INVALID_DATA 告警由模型层负责） */
