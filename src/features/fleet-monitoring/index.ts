@@ -72,6 +72,11 @@ export type {
 } from './scene/createVehicleGeometry'
 export { shellColorOf } from './scene/fleetAppearance'
 export {
+  createFollowTargetReader,
+  type FollowTargetPosition,
+  type FollowTargetReader,
+} from './scene/followTarget'
+export {
   WS_MAX_CONSECUTIVE_DECODE_FAILURES,
   WS_READY_STATE_CONNECTING,
   WS_READY_STATE_OPEN,

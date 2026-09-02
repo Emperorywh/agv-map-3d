@@ -24,7 +24,7 @@
  *    路径上只调用 store 的命令式动作（notifyEntitiesRemoved），被选中车辆
  *    被删除时选中键立即清空，绝不触碰 React state。
  */
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   createDiagnosticsReporter,
@@ -41,6 +41,7 @@ import {
 import {
   createFleetRuntime,
   type FleetRuntime,
+  type ReadonlyFleetRuntime,
 } from '../model/createFleetRuntime'
 import { useFleetMonitoringStore } from '../model/fleetMonitoringStore'
 import type { SourceStatus, VehicleDataSource } from '../data-source/contract'
@@ -55,6 +56,12 @@ export interface FleetRuntimeProviderProps {
   staleAfterMs?: number
   /** 诊断通道；默认独立控制台通道（运行时与连接失败共用） */
   diagnostics?: DiagnosticsReporter
+  /**
+   * 运行时就绪通知（TASK-013）：组合层经它拿到只读运行时引用以构建跟随目
+   * 标读取器等适配器。运行时引用在 Provider 生命周期内恒定，StrictMode 重
+   * 挂载会以同一引用重复通知——回调必须幂等。
+   */
+  onRuntimeAvailable?: (runtime: ReadonlyFleetRuntime) => void
   children: ReactNode
 }
 
@@ -62,6 +69,7 @@ export function FleetRuntimeProvider({
   source,
   staleAfterMs,
   diagnostics,
+  onRuntimeAvailable,
   children,
 }: FleetRuntimeProviderProps) {
   // 运行时单实例：StrictMode 双渲染与重渲染都不重建（不变量 1）
@@ -78,6 +86,14 @@ export function FleetRuntimeProvider({
   const [status, setStatus] = useState<SourceStatus>('IDLE')
   const diagnosticsRef = useRef(diagnostics)
   diagnosticsRef.current = diagnostics
+
+  // 运行时就绪通知（TASK-013）：effect 中以恒定引用回调一次；组合层据此构
+  // 建跟随目标读取器。回调经 ref 透传，内联函数不触发重复通知。
+  const onRuntimeAvailableRef = useRef(onRuntimeAvailable)
+  onRuntimeAvailableRef.current = onRuntimeAvailable
+  useEffect(() => {
+    onRuntimeAvailableRef.current?.(runtime)
+  }, [runtime])
 
   useVehicleDataSource(source, runtime, {
     onStatusChange: setStatus,

@@ -2,12 +2,16 @@
  * AgvMonitorScene 场景组合测试（与实现共置）。
  *
  * 职责：用 @react-three/test-renderer 在不依赖真实 WebGL 的前提下，校验
- *       Canvas 内唯一组合根的场景图内容（TASK-004 接入地图 Feature 后）。
- * 关键不变量（F3 / F4 / §11.10）：
+ *       Canvas 内唯一组合根的场景图内容与跨 Feature 桥接（TASK-004 接入地
+ *       图 Feature，TASK-013 接入相机导航与跟随桥接）。
+ * 关键不变量（F3 / F4 / §11.10 / §12.3）：
  * 1. 唯一组合锚点 agv-monitor-scene：StrictMode 双执行与更新不产生重复或残留；
  * 2. 无地图描述符时场景内无任何地图对象（首次失败保持清屏色）；
  * 3. 携带 bootstrap 种子描述符时，地图静态图层（地坪/路径/节点）就位且唯一；
- * 4. 本组件只做组合：不自行解析描述符以外的任何业务状态。
+ * 4. 本组件只做组合：不自行解析描述符以外的任何业务状态；
+ * 5. 相机由 camera-navigation 接管：地图包围盒到位即自动取景（45° 俯瞰）；
+ * 6. 跨 Feature 协作只在组合层：车队双击跟随请求经命令引用转交相机，相机
+ *    逐帧读取运行时+世界变换合成的只读目标——跟随位姿与渲染车体同口径。
  * 注意：test-renderer 的容器在 unmount 后即失效，完整生命周期断言必须在
  * 单个用例内完成。环境工厂默认实现需要真实 WebGL，测试中经 catch 降级为
  * 无 IBL，不影响场景结构断言。
@@ -17,12 +21,23 @@ import { act } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { ReactThreeTest } from '@react-three/test-renderer'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
+import * as THREE from 'three'
+import { useThree } from '@react-three/fiber'
 import { AgvMonitorScene } from '@/app/scene/AgvMonitorScene'
 import {
   createMapModel,
   validateMap,
   type MapViewDescriptor,
+  type SceneBounds,
 } from '@/features/map-visualization'
+import {
+  computeOverviewPose,
+} from '@/features/camera-navigation'
+import {
+  type VehicleDataEvent,
+  type VehicleDataSource,
+} from '@/features/fleet-monitoring'
+import { snapshotOf } from '@/features/fleet-monitoring/__tests__/testVehicles'
 
 const ANCHOR_NAME = 'agv-monitor-scene'
 
@@ -33,6 +48,7 @@ async function flush(): Promise<void> {
 }
 
 type TestInstance = ReactThreeTest.ReactThreeTestInstance
+type TestRenderer = Awaited<ReturnType<typeof ReactThreeTestRenderer.create>>
 
 function findByName(
   scene: { findAll: (cb: (node: TestInstance) => boolean) => TestInstance[] },
@@ -41,8 +57,15 @@ function findByName(
   return scene.findAll((node) => node.instance.name === name)
 }
 
+interface SeedResult {
+  descriptor: MapViewDescriptor
+  sceneBounds: SceneBounds
+  worldTransform: ReturnType<typeof createMapModel>['worldTransform']
+  mapId: string
+}
+
 /** 最小合法地图（公开入口建模），作为场景描述符的 bootstrap 种子 */
-function buildSeedDescriptor(): MapViewDescriptor {
+function buildSeedDescriptor(): SeedResult {
   const { mapModel, worldTransform } = createMapModel(
     validateMap({
       nodes: [
@@ -79,10 +102,61 @@ function buildSeedDescriptor(): MapViewDescriptor {
     }),
   )
   return {
-    mapUrl: 'http://t/map.json',
-    coordinateTransform: { scale: 1, rotation: 0, mirrorY: false, translateX: 0, translateY: 0 },
-    initial: { mapModel, worldTransform },
+    descriptor: {
+      mapUrl: 'http://t/map.json',
+      coordinateTransform: { scale: 1, rotation: 0, mirrorY: false, translateX: 0, translateY: 0 },
+      initial: { mapModel, worldTransform },
+    },
+    sceneBounds: mapModel.sceneBounds,
+    worldTransform,
+    mapId: mapModel.mapId,
   }
+}
+
+/** 场景探针：捕获默认相机（断言取景与跟随位姿） */
+function makeProbe(capture: { current: THREE.PerspectiveCamera | null }) {
+  return function SceneProbe() {
+    const camera = useThree((state) => state.camera)
+    capture.current = camera as THREE.PerspectiveCamera
+    return null
+  }
+}
+
+/** 最小 VehicleDataSource 桩：连接即发布既有事件，测试可继续追加发布 */
+function makeFakeSource(events: readonly VehicleDataEvent[]): VehicleDataSource & {
+  emit: (event: VehicleDataEvent) => void
+} {
+  const listeners = new Set<(event: VehicleDataEvent) => void>()
+  const emit = (event: VehicleDataEvent): void => {
+    for (const listener of listeners) {
+      listener(event)
+    }
+  }
+  return {
+    status: 'OPEN',
+    connect: () => {
+      for (const event of events) {
+        emit(event)
+      }
+      return Promise.resolve()
+    },
+    disconnect: () => {},
+    requestSnapshot: () => {},
+    onEvent: (cb) => {
+      listeners.add(cb)
+      return () => {
+        listeners.delete(cb)
+      }
+    },
+    onStatusChange: () => () => {},
+    emit,
+  }
+}
+
+async function advance(renderer: TestRenderer, frames = 1): Promise<void> {
+  await act(async () => {
+    renderer.advanceFrames(frames, 1 / 60)
+  })
 }
 
 describe('AgvMonitorScene 场景组合根', () => {
@@ -111,7 +185,7 @@ describe('AgvMonitorScene 场景组合根', () => {
   it('携带种子描述符：地图静态图层就位且唯一，StrictMode 无重复', async () => {
     const renderer = await ReactThreeTestRenderer.create(
       <StrictMode>
-        <AgvMonitorScene mapDescriptor={buildSeedDescriptor()} />
+        <AgvMonitorScene mapDescriptor={buildSeedDescriptor().descriptor} />
       </StrictMode>,
     )
     await flush()
@@ -129,6 +203,123 @@ describe('AgvMonitorScene 场景组合根', () => {
     }
     expect(nodesMesh.isInstancedMesh).toBe(true)
     expect(nodesMesh.count).toBe(2)
+    renderer.unmount()
+  })
+
+  it('相机由 camera-navigation 接管：种子包围盒到位即 45° 自动取景', async () => {
+    const seed = buildSeedDescriptor()
+    const capture: { current: THREE.PerspectiveCamera | null } = { current: null }
+    const SceneProbe = makeProbe(capture)
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <AgvMonitorScene mapDescriptor={seed.descriptor} />
+        <SceneProbe />
+      </StrictMode>,
+    )
+    await flush()
+
+    expect(capture.current).not.toBeNull()
+    const pose = computeOverviewPose(seed.sceneBounds, capture.current!.fov)
+    expect(capture.current!.position.x).toBeCloseTo(pose.position.x, 4)
+    expect(capture.current!.position.y).toBeCloseTo(pose.position.y, 4)
+    expect(capture.current!.position.z).toBeCloseTo(pose.position.z, 4)
+    renderer.unmount()
+  })
+
+  it('跟随桥接：车队双击请求经组合层转交相机，逐帧对齐车辆世界位姿', async () => {
+    const seed = buildSeedDescriptor()
+    const position = { x: 1.5, y: 2, theta: 0, localizationScore: 0.9 }
+    const vehicle = snapshotOf(
+      {
+        agvKey: 'v-1',
+        agvName: '桥接车',
+        agvPosition: position,
+        agvDimension: {
+          length: 1.8,
+          width: 0.7,
+          loadLength: 1.8,
+          loadWidth: 0.7,
+          centerOffset: 0.25,
+        },
+        connectionState: 'ONLINE',
+        vehicleProcStatus: 'IDLE',
+      },
+      seed.mapId,
+    )
+    const source = makeFakeSource([
+      {
+        type: 'snapshot',
+        schemaVersion: 'test/1',
+        mapId: seed.mapId,
+        sequence: 1,
+        receivedAt: 1_000,
+        vehicles: [vehicle],
+      },
+    ])
+    const capture: { current: THREE.PerspectiveCamera | null } = { current: null }
+    const SceneProbe = makeProbe(capture)
+    const renderer = await ReactThreeTestRenderer.create(
+      <StrictMode>
+        <AgvMonitorScene
+          mapDescriptor={seed.descriptor}
+          vehicleSource={source}
+          worldTransform={seed.worldTransform}
+        />
+        <SceneProbe />
+      </StrictMode>,
+    )
+    await flush()
+    await advance(renderer, 2)
+    const camera = capture.current!
+
+    // 双击跟随请求：经 fleet 组 onDoubleClick → 组合层命令引用 → 相机跟随。
+    // 只有外壳携带 userData.batchId，以此为命中对象。
+    const fleetGroup = findByName(renderer.scene, 'fleet-monitoring-feature')
+    expect(fleetGroup).toHaveLength(1)
+    const shell = renderer.scene.findAll(
+      (node) =>
+        (node.instance as unknown as { userData?: { batchId?: unknown } }).userData
+          ?.batchId === 0,
+    )
+    expect(shell).toHaveLength(1)
+    await renderer.fireEvent(fleetGroup[0], 'doubleClick', {
+      instanceId: 0,
+      object: shell[0].instance,
+      nativeEvent: { clientX: 10, clientY: 10 },
+    } as unknown as Record<string, unknown>)
+    await advance(renderer, 2)
+
+    // 跟随点 = 车体中心（§2.5：参考点沿车头轴平移 centerOffset，theta=0 → +x）
+    const pose = seed.worldTransform.toWorldXZ(
+      vehicle.position.x + vehicle.dimension.centerOffset,
+      vehicle.position.y,
+    )
+    const overviewPose = computeOverviewPose(seed.sceneBounds, camera.fov)
+    // 进入跟随时注视点 = 包围盒世界中心（origin），偏移 = 取景机位自身：
+    // 相机位姿 = 车体中心 + 取景机位相对原点的偏移
+    expect(camera.position.x).toBeCloseTo(pose.x + overviewPose.position.x, 3)
+    expect(camera.position.z).toBeCloseTo(pose.z + overviewPose.position.z, 3)
+    expect(camera.position.y).toBeCloseTo(overviewPose.position.y, 5)
+
+    // 车辆移动 → 下一帧相机平移同一位移（相对偏移保持）
+    position.x = 5.5
+    source.emit({
+      type: 'update',
+      schemaVersion: 'test/1',
+      mapId: seed.mapId,
+      sequence: 2,
+      receivedAt: 2_000,
+      vehicle: { ...vehicle, position: { ...vehicle.position, x: 5.5 } },
+    })
+    await advance(renderer, 2)
+    const movedPose = seed.worldTransform.toWorldXZ(
+      5.5 + vehicle.dimension.centerOffset,
+      vehicle.position.y,
+    )
+    expect(camera.position.x - movedPose.x).toBeCloseTo(overviewPose.position.x, 3)
+    expect(camera.position.z - movedPose.z).toBeCloseTo(overviewPose.position.z, 3)
+    // 车辆移动后相机随之平移（不再是旧位姿）
+    expect(camera.position.x).not.toBeCloseTo(pose.x + overviewPose.position.x, 1)
     renderer.unmount()
   })
 })

@@ -91,6 +91,24 @@ vi.mock('@/features/fleet-monitoring', async (importOriginal) => {
   }
 })
 
+/** 捕获传给相机 Feature 的包围盒（TASK-013 接线：组合层桥接取景来源） */
+const cameraCapture = vi.hoisted(() => ({
+  bounds: undefined as unknown,
+}))
+
+vi.mock('@/features/camera-navigation', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/camera-navigation')>()
+  return {
+    ...actual,
+    // jsdom 无 R3F 宿主：相机 Feature 以 DOM 替身验证 App 层接线合同
+    CameraNavigationFeature: (props: { bounds: unknown }) => {
+      cameraCapture.bounds = props.bounds
+      return <div data-testid="camera-feature" />
+    },
+  }
+})
+
 vi.mock('@/app/bootstrap/bootstrapApplication', () => ({
   bootstrapApplication: vi.fn(),
 }))
@@ -179,6 +197,7 @@ afterEach(() => {
   mockBootstrap.mockReset()
   capture.mapDescriptor = undefined
   fleetCapture.worldTransform = undefined
+  cameraCapture.bounds = undefined
   selectCapture.options = []
   selectCapture.returnValue = null
 })
@@ -238,6 +257,9 @@ describe('App DOM 外壳', () => {
     // TASK-010 接线：世界变换与描述符同源注入车队 Feature（坐标唯一口径）
     await waitFor(() => expect(fleetCapture.worldTransform).not.toBeNull())
     expect(fleetCapture.worldTransform).toBe(result.worldTransform)
+    // TASK-013 接线：相机 Feature 的取景包围盒取自同一种子的场景包围盒
+    await waitFor(() => expect(cameraCapture.bounds).not.toBeNull())
+    expect(cameraCapture.bounds).toBe(result.mapModel.sceneBounds)
   })
 
   it('数据源选择按就绪配置执行一次，Mock 分支携带地图拓扑（TASK-009）', async () => {

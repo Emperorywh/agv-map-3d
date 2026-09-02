@@ -143,4 +143,25 @@ describe('FleetRuntimeProvider（TASK-007）', () => {
     expect(() => render(<Orphan />)).toThrow(/FleetRuntimeProvider 子树/)
     consoleSpy.mockRestore()
   })
+
+  it('onRuntimeAvailable：以恒定运行时引用通知一次，StrictMode 重挂载幂等（TASK-013）', () => {
+    const notified: unknown[] = []
+    const { unmount } = render(
+      <StrictMode>
+        <FleetRuntimeProvider source={null} onRuntimeAvailable={(runtime) => {
+          notified.push(runtime)
+        }}>
+          <Probe onRender={() => {}} />
+        </FleetRuntimeProvider>
+      </StrictMode>,
+    )
+    // StrictMode 双执行：两次通知携带同一运行时引用（回调幂等即可）
+    expect(notified.length).toBeGreaterThanOrEqual(1)
+    expect(new Set(notified).size).toBe(1)
+    unmount()
+    // 卸载后不再通知
+    const countAfterUnmount = notified.length
+    act(() => {})
+    expect(notified.length).toBe(countAfterUnmount)
+  })
 })

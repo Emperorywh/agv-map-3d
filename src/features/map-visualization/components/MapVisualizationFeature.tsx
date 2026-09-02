@@ -16,8 +16,8 @@
  * 3. 灯光阴影相机按当前地图包围盒静态配置（SPEC §5.4），不逐帧更新；
  * 4. decorationsEnabled 只影响装饰动画（呼吸灯），不隐藏任何业务语义对象
  *    （SPEC §6.5：质量降级不隐藏核心语义）；
- * 5. 初始取景为最小可见性接线（45° 俯视取景数学），交互相机与跟随由
- *    camera-navigation Feature（TASK-013）接管后移除。
+ * 5. 本组件不移动相机：初始取景、轨道、跟随与俯瞰全部归 camera-navigation
+ *    （TASK-013，SPEC §5.5/§8），相机位姿只由该 Feature 写入。
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
@@ -111,7 +111,6 @@ export function MapVisualizationFeature({
             physical={view.geometry.physical}
             nameAtlas={nameAtlas}
           />
-          <InitialFraming bounds={view.mapModel.sceneBounds} />
         </>
       ) : null}
     </>
@@ -212,35 +211,4 @@ function createStaticDirectionalLight(bounds: SceneBounds, shadowMapSize: number
   target.position.set(bounds.centerWorldX, 0, bounds.centerWorldZ)
   light.target = target
   return { light, target }
-}
-
-interface InitialFramingProps {
-  bounds: SceneBounds
-}
-
-/**
- * 临时初始取景（TASK-004 最小可见性接线）：
- * 45° 俯视自动取景一次；TASK-013 的 camera-navigation Feature 接入
- * OrbitControls 与跟随后被其初始机位逻辑取代并移除。
- */
-function InitialFraming({ bounds }: InitialFramingProps) {
-  const camera = useThree((state) => state.camera)
-  useEffect(() => {
-    const diagonal = Math.max(bounds.diagonal, 1)
-    // 45° 俯角：水平距离与高度相等；略带方位角避免完全轴向视角。
-    // R3F 默认相机是透视相机，取景参数只对透视投影有意义。
-    const perspective = camera as THREE.PerspectiveCamera
-    const offset = diagonal * 0.55
-    camera.position.set(
-      bounds.centerWorldX + offset,
-      offset,
-      bounds.centerWorldZ + offset,
-    )
-    camera.lookAt(bounds.centerWorldX, 0, bounds.centerWorldZ)
-    // 远平面覆盖全图并对角线余量，避免大地图被裁剪
-    perspective.near = 0.5
-    perspective.far = Math.max(diagonal * 6, 1000)
-    perspective.updateProjectionMatrix()
-  }, [bounds, camera])
-  return null
 }
