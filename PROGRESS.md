@@ -28,9 +28,9 @@
 | 项目 | 当前值 |
 |---|---|
 | 工作区 | `C:\code\agv-map-3d` |
-| 分支 | `rxx`，跟踪 `origin/rxx`；TASK-001～TASK-015 提交均已推送（与远端同步） |
-| HEAD | TASK-015 实施提交（已推送） |
-| 未提交差异 | 本轮 TASK-016 实施改动：新增 `src/app/webgl/`（状态机 + Hook + 测试）；`App.tsx`/`AgvMonitorScene.tsx`/`MapVisualizationFeature.tsx`/`FleetMonitoringFeature.tsx` 恢复接线；地图与车队 Feature 共置恢复重建测试与车队集成测试扩展；`gui-test-screenshots/task-016/` 自测取证；本文件 |
+| 分支 | `rxx`，跟踪 `origin/rxx`；TASK-001～TASK-014 提交均已推送；TASK-015、TASK-016 实施提交及恢复自测取证收尾提交在本地待推送（领先 2 个提交） |
+| HEAD | TASK-016 收尾提交（`941f9c8` 实施 + 本轮恢复自测截图取证与进度文档校准） |
+| 未提交差异 | 无 |
 | 用户输入 | `docs/SPEC_20260901_agv-3d-monitor.md`、原型图、`json/map.json`、`json/vehicle.json` 无差异 |
 
 每个 Task 开始和结束时以实际 `git status --short --branch` 为准，并直接更新本节当前值；不得恢复旧状态或把差异写成历史日志。
@@ -229,9 +229,9 @@ Task 开始后，把本卡直接替换为实际进行中的工作：当前修改
 | 部署冒烟 | `pnpm smoke:dist`（根路径与子路径静态冒烟） | 通过 |
 | 生产无 Mock 全局 | `grep -c "__AGV_MOCK__" dist/assets/*.js` | 0 命中（死代码消除生效） |
 | 差异检查 | `git diff --check` | 通过（无空白错误；仅 CRLF 提示） |
-| 浏览器自测 | TASK-016 浏览器恢复自测（2026-09-02，Chromium 内嵌面板，dev 模式 1280×720，`dataSource=mock` 60 台，真实 `WEBGL_lose_context` 扩展路径）：基线完整场景（地图+车队）截图存档 `gui-test-screenshots/task-016/01-before-loss.png`；`loseContext()` 后捕获 `WEBGL_CONTEXT_LOST`（warn，已暂停帧提交）诊断、画面转黑（GPU 内容丢失）而页面仍只有原 Canvas（body 仅 #root+canvas），期间数据源继续推进（simTime 20.52→21.73，恢复期间最新数据保留）；`restoreContext()` 后捕获 `WEBGL_CONTEXT_RESTORED`→`WEBGL_RECOVERY_SUCCEEDED`（generation 1）诊断，无任何 error 诊断；恢复后像素级验证（rAF 帧循环恢复 + `gl.readPixels` 全屏采样 122 种独立颜色、非清屏像素占比 20.3%——地图与车队真实重建渲染，`preserveDrawingBuffer=false` 下截图管线不可用，以页内像素证据替代）+ 唯一 Canvas + body 零 DOM 覆盖层；第二次 丢失→恢复 循环同样完整成功（generation 2，91 种颜色/19.8% 非清屏，fleetSize 守恒 60，simTime 177.9→182.0 持续推进）——重复换代幂等成立；三次连续失败→永久停止渲染路径由 App 级单测以注入时钟锁定（`WEBGL_RECOVERY_FAILED` error 诊断 + frameloop 恒 never + stopped 吸收态） | 通过（2026-09-02 TASK-016 自测） |
+| 浏览器自测 | TASK-016 浏览器恢复自测（2026-09-02，无头 Chromium（SwiftShader WebGL，同一 Chromium 引擎）+ 真实 `WEBGL_lose_context` 扩展路径，dev 模式 1280×720，`dataSource=mock` 60 台；截图与结论存档 `gui-test-screenshots/task-016/`）：基线完整场景（地图语义图层 + 车队，01）；`loseContext()` 后应用事件回调观测到 `preventDefault`（真实事件 `defaultPrevented=true`）、`WEBGL_CONTEXT_LOST`（warn，已暂停帧提交）诊断、画面回到清屏色（02）、`gl.isContextLost()=true`、页面仍只有原 Canvas（body 仅 #root + vite client script，无 DOM 兜底），期间 Mock 仿真持续推进（恢复期间最新数据保留）；`restoreContext()` 后 `WEBGL_CONTEXT_RESTORED`→`WEBGL_RECOVERY_SUCCEEDED`（generation 1）诊断、`isContextLost()=false`、完整场景像素级重建（03，地坪/路网/节点/语义图层与车队全部在位）；第二次 丢失→恢复 循环同样完整成功（generation 2，04）——重复换代幂等成立；全程 canvas 数恒为 1。恢复中车辆更新一帧对齐、恢复期部分失败回滚（环境失败计入失败计数）与连续三次失败永久停止渲染（`WEBGL_RECOVERY_FAILED` error 诊断 + frameloop 恒 never + stopped 吸收态）由共置单测以注入时钟与真实 DOM 事件锁定 | 通过（2026-09-02 TASK-016 自测） |
 
-浏览器自测备注：内嵌浏览器面板被宿主窗口完全遮挡时渲染进程被冻结（rAF 停滞、Canvas 子树挂载延迟），本轮以新建标签页激活面板完成自测；该遮挡路径不派发 `visibilitychange`（宿主环境特性，见 TASK-015 备注），恢复事件语义由共置单测以真实 DOM 事件锁定。`config.json` 当前为 `dataSource=mock`。2026-09-02 全量观感评估（地图语义图层、车辆、标签、告警环与交互语义全部在真实场景成立；观感差距归 TASK-018 调优）结论继续有效。
+浏览器自测备注：宿主工作站锁屏、内嵌浏览器面板被完全遮挡时其渲染进程被冻结（rAF 停滞、新建页面的 WebGL 渲染器初始化挂起），本轮恢复自测改以无头 Chromium 完成——真实 WebGL 上下文与真实 `WEBGL_lose_context` 扩展路径不受宿主锁屏影响；该遮挡路径不派发 `visibilitychange`（宿主环境特性，见 TASK-015 备注），恢复事件语义由共置单测以真实 DOM 事件锁定。`config.json` 当前为 `dataSource=mock`。2026-09-02 全量观感评估（地图语义图层、车辆、标签、告警环与交互语义全部在真实场景成立；观感差距归 TASK-018 调优）结论继续有效。
 
 本节只保留当前 Task 的最终有效验证状态。重跑后直接替换结果；失败被修复后删除已失效的失败描述，不追加验证流水账。
 
