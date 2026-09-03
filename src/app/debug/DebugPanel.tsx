@@ -8,7 +8,7 @@
  *          （低频重申，覆盖车队批次的动态重建），逐层排除即可定位视觉
  *          artifact 的归属对象；
  *       2. Grid / Axes / BoundingBox / DirectionalLightHelper：声明式挂载
- *          的标准辅助对象（尺寸锚定地图包围盒与地坪 5m 分缝口径）；
+ *          的标准辅助对象（尺寸锚定地图包围盒与 5m 网格口径）；
  *       3. 相机位姿复制：把当前相机位置/FOV 与 OrbitControls 目标点输出
  *          为 JSON（剪贴板 + 控制台），作为截图取证与 FROZEN 机位记录。
  * 边界：只经 useThree 读取场景/相机、经组合层注入的 controlsRef 只读观察
@@ -25,7 +25,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { button, useControls } from 'leva'
 import * as THREE from 'three'
-import { GRID_Y, GROUND_TILE_M } from '@/features/map-visualization'
+import { GRID_Y } from '@/features/map-visualization'
 import type { SceneBounds } from '@/features/map-visualization'
 import {
   DEBUG_LAYERS,
@@ -46,11 +46,13 @@ export interface DebugPanelProps {
 }
 
 /* ==================== 调试视觉常量（集中在文件头，禁止散落） ==================== */
-/** 调试 Grid 抬升：高于地坪刻线（GRID_Y=0.02）一层，避免 z-fighting */
+/** 调试 Grid 抬升：贴地参考高度（GRID_Y=0.02）之上再加一层，避免 z-fighting */
 const DEBUG_GRID_LIFT_M = 0.01
+/** 调试 Grid 单元（米）：与 Grid (5m) 标签一致 */
+const DEBUG_GRID_CELL_M = 5
 /** 调试 Grid 相对地图的扩展比例：包围盒外扩一点，边缘网格可辨 */
 const DEBUG_GRID_EXTENSION_RATIO = 1.2
-/** Grid 双色（分缝线用主色系与地坪刻线区分：冷蓝调是「调试层」的语言） */
+/** Grid 双色（分缝线用主色系区分：冷蓝调是「调试层」的语言） */
 const DEBUG_GRID_CENTER_COLOR = '#4a7dbb'
 const DEBUG_GRID_COLOR = '#2b3a4e'
 /** Axes 三轴长度（米）：总览距离下可辨 */
@@ -130,7 +132,7 @@ export default function DebugPanel({ sceneBounds, controlsRef }: DebugPanelProps
     const size = Math.ceil(Math.max(sizeX, sizeZ) * DEBUG_GRID_EXTENSION_RATIO)
     return {
       size,
-      divisions: Math.max(Math.round(size / GROUND_TILE_M), 1),
+      divisions: Math.max(Math.round(size / DEBUG_GRID_CELL_M), 1),
       centerX: sceneBounds.centerWorldX,
       centerZ: sceneBounds.centerWorldZ,
     }

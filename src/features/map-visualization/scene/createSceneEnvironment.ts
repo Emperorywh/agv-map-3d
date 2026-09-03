@@ -63,7 +63,7 @@ export const createGradientEnvironment: SceneEnvironmentFactory = (gl) => {
   const scene = createGradientScene()
   let renderTarget: THREE.WebGLRenderTarget
   try {
-    // 0.04 的模糊半径：给镜面反射一点柔和度，工业地坪不需要锐利反射
+    // 0.04 的模糊半径：给镜面反射一点柔和度，静态场景不需要锐利反射
     renderTarget = pmrem.fromScene(scene, 0.04)
   } finally {
     // 渐变球只在采样阶段使用，采样后立即释放其几何与材质

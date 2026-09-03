@@ -1,20 +1,17 @@
 /**
- * 车辆场景视觉常量（SPEC §2.6、§5.1～§5.4、§6.4、§7.2、§7.3；TASK-010/011/012）。
+ * 车辆场景视觉常量（SPEC §2.6、§5.1～§5.4、§6.4、§7.2、§7.3；TASK-010/011）。
  *
  * 职责：集中定义程序化通用 AGV 的全部外观常量——各部件的固定尺寸与颜色、
  *       主状态 → 车体色的映射表、警示灯旋转/闪烁参数、车底假阴影参数、车辆
- *       标签的尺寸、LOD 投影阈值、重点标签上限与边框配色，以及选中/L1/L2
- *       分层光环与红黄交通锁资源的高度、配色与几何参数——供几何构建、图集、
- *       材质、光环与交通资源层共同引用，保证车辆视觉语言只有一份事实源。
+ *       标签的尺寸、LOD 投影阈值、重点标签上限与边框配色——供几何构建、图
+ *       集与材质共同引用，保证车辆视觉语言只有一份事实源。
  * 边界：只包含数值与颜色常量及纯映射表，不创建任何 Three.js 对象；地图侧
- *       静态外观属 map-visualization 的 mapAppearance；告警环与交通锁的几何
- *       构建、哈希与合并窗口语义分别属 vehicleRings / trafficRectangle /
- *       trafficGeometry 模块，本模块只提供它们共用的外观数值。
+ *       静态外观属 map-visualization 的 mapAppearance。
  * 关键不变量：
  * 1. 主状态色映射覆盖 VehiclePrimaryDisplayState 全部取值且次序与投影规则
  *    一致：STALE 冻结灰、DISCONNECTED 深灰、FRESH 业务色（SPEC §2.6）；
  *    状态不得只靠颜色表达——方向由 +x 方向楔表达、故障由旋转警示灯表达、
- *    文字由图集化标签表达（TASK-011）、告警由分层光环表达（TASK-012）；
+ *    文字由图集化标签表达（TASK-011）；
  * 2. 充电色与地图 charge 节点同色系（#31d9e8），执行色与 work 节点同色系，
  *    保持全场景色彩语义统一；
  * 3. 部件固定高度为厘米级经验值（与当前车宽 0.7m 量级协调），不随车辆
@@ -23,10 +20,8 @@
  *    （SPEC §5.2），熄灭用零缩放矩阵表达（不存在 instanceColor.a）；
  * 5. 标签 LOD 阈值与重点上限来自 SPEC §6.4：投影 ≥8px 显示名称、≥20px 增加
  *    电量条与完整状态，远景最多 20 个重点标签（优先级截断属 labelLod）；
- * 6. 光环与交通锁复用标签边框配色（选中白 / L1 黄 / L2 红），保证「同一告警
- *    语义在全场景只有一种颜色」（SPEC §7.3，TASK-012）；透明层按 renderOrder
- *    分层：假阴影(0.012) → 光环(0.03) → 交通锁面板(0.2，P1-8 抬升的悬浮
- *    面板) → 面板文字贴花，互不 z-fight。
+ * 6. 标签边框配色（选中白 / L1 黄 / L2 红）为告警语义在标签内的表达口径；
+ *    透明贴花按 renderOrder 分层：假阴影(0.012) → 标签(10/11)，互不 z-fight。
  */
 
 /** 图层高度：车辆贴花 lowest 优先级低于地图名称层，假阴影贴地避免 z-fighting */
@@ -173,8 +168,8 @@ export const LABEL_FULL_MIN_PX = 20
 export const LABEL_IMPORTANT_MAX = 20
 
 /**
- * 标签边框配色（SPEC §7.3 的标签内表达；3D 告警环属 TASK-012，须复用同色）：
- * 选中白、L1 黄、L2 红。电量条颜色按电量档位在 shader 内取值（同阈值常量）。
+ * 标签边框配色（SPEC §7.3 的标签内表达）：选中白、L1 黄、L2 红。
+ * 电量条颜色按电量档位在 shader 内取值（同阈值常量）。
  */
 export const LABEL_BORDER_SELECTED_COLOR = '#ffffff'
 export const LABEL_BORDER_L1_COLOR = '#ffd21e'
@@ -192,58 +187,3 @@ export const LABEL_BATTERY_CRITICAL_COLOR = '#ff2d2d'
  */
 export const LABEL_FONT_FAMILY =
   '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
-
-/* ============ 选中/告警环与交通资源外观（SPEC §5.1、§5.3、§7.3；TASK-012） ============ */
-
-/** 光环贴地高度：高于交通锁贴片，低于标签层（透明层按 renderOrder 分层） */
-export const RING_Y_M = 0.03
-
-/** 光环尺寸基准（米）：车辆最大长宽边在该基准时长宽比为 1（当前夹具同量级） */
-export const RING_SIZE_REFERENCE_M = 1.8
-
-/**
- * 分层光环半径系数（米，基准车）：从内到外依次为选中、L1、L2——
- * SPEC §7.3「按从内到外选中、L1、L2 排列」由半径单调递增表达。
- */
-export const RING_LAYER_RADII_M = [1.25, 1.65, 2.05] as const
-
-/** 光环环带内外半径比：环宽随半径等比缩放（单位环几何的固定比例） */
-export const RING_INNER_RATIO = 0.86
-
-/** 光环圆周分段数：近景下边缘平滑的最低段数 */
-export const RING_SEGMENTS = 48
-
-/** 光环透明度：三层共用同一材质，靠颜色区分语义 */
-export const RING_OPACITY = 0.9
-
-/**
- * 交通锁面板（P1-8）：矩形是调度系统上报的真实闭锁/申请范围，**不放大业务
- * 形状**，只增强表达——面板抬升至 0.2m（Reference 的悬浮面板感），透明度
- * 0.4 → 0.5，边缘加一圈亮色描边条带（与面板同色相、亮度更高），面板中央
- * 叠「已锁定/申请中」文字贴花。
- */
-export const TRAFFIC_LOCK_Y_M = 0.2
-
-/** 交通锁贴片透明度：locked 红与 applying 黄共用材质（顶点色区分） */
-export const TRAFFIC_LOCK_OPACITY = 0.5
-
-/** 边缘亮色描边条带：宽度、高于面板的高度与亮度乘数（同色相更亮） */
-export const TRAFFIC_LOCK_BORDER_WIDTH_M = 0.05
-export const TRAFFIC_LOCK_BORDER_LIFT_M = 0.008
-export const TRAFFIC_LOCK_BORDER_BRIGHTNESS = 1.6
-
-/** 面板文字贴花：单元宽（px，高 = 宽/4，比例 4:1）与文字/描边颜色 */
-export const TRAFFIC_LOCK_TEXT_CELL_PX = 512
-export const TRAFFIC_LOCK_TEXT_HEIGHT_M = 0.24
-export const TRAFFIC_LOCK_TEXT_COLOR = '#ffffff'
-export const TRAFFIC_LOCK_TEXT_STROKE_COLOR = 'rgba(8, 10, 14, 0.9)'
-export const TRAFFIC_LOCK_FONT_FAMILY =
-  '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
-
-/**
- * 交通锁脉冲外观（SPEC §6.5 行动 3「关闭交通锁脉冲」的可关效果本体；TASK-014）：
- * 透明度在 [min, 1]× 基准透明度区间内按正弦周期呼吸，locked/applying 语义
- * 靠顶点色保持不变；脉冲关闭时系数恒为 1（恒定不透明度）。
- */
-export const TRAFFIC_PULSE_PERIOD_S = 1.2
-export const TRAFFIC_PULSE_MIN = 0.7

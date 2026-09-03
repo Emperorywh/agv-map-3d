@@ -122,8 +122,8 @@ function normalizeAgvKey(value: unknown): string | null {
 
 /**
  * 位置校验：x/y/theta 全部为有限数值才有效。
- * 无效时坐标以 0 占位但 positionValid=false——渲染层据标志跳过车体与光环
- * （SPEC §7.3：坐标无效的车辆无法放置车体和告警环），数据仍保留供诊断。
+ * 无效时坐标以 0 占位但 positionValid=false——渲染层据标志跳过车体与标签
+ * （坐标无效的车辆无法放置车体和标签），数据仍保留供诊断。
  */
 function validatePosition(
   raw: unknown,

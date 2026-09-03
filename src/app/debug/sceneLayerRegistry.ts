@@ -38,13 +38,9 @@ export interface DebugLayerSpec {
 
 /** 调试图层清单：与 map-visualization / fleet-monitoring 图层命名同步 */
 export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
-  { key: 'ground', label: '地坪', objectNames: ['map-ground'] },
   { key: 'roadSurface', label: '路面', objectNames: ['map-path-surface'] },
   { key: 'roadCenterline', label: '道路中线', objectNames: ['map-path-centerline'] },
   { key: 'nodes', label: '节点盘', objectNames: ['map-nodes'] },
-  { key: 'warehouseZones', label: '仓储区域块', objectNames: ['map-warehouse-zones'] },
-  { key: 'warehouseRacks', label: '货架行', objectNames: ['map-warehouse-racks'] },
-  { key: 'warehousePads', label: '库位方垫', objectNames: ['map-landmark-pads'] },
   {
     key: 'park',
     label: '停车点',
@@ -60,22 +56,13 @@ export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
       'map-charge-lights',
     ],
   },
-  { key: 'exclusiveOutline', label: '独占区描边', objectNames: ['map-exclusive-outline'] },
-  { key: 'exclusiveFill', label: '独占区填充', objectNames: ['map-exclusive-fill'] },
-  { key: 'groupNames', label: '区域名称', objectNames: ['map-group-names'] },
   {
     key: 'vehicles',
     label: '车体',
     objectNamePrefixes: ['fleet-'],
-    excludedNamePrefixes: ['fleet-label-', 'fleet-rings-'],
+    excludedNamePrefixes: ['fleet-label-'],
   },
   { key: 'vehicleLabels', label: '车辆标签', objectNamePrefixes: ['fleet-label-'] },
-  { key: 'vehicleRings', label: '状态环', objectNamePrefixes: ['fleet-rings-'] },
-  {
-    key: 'trafficLocks',
-    label: '交通锁',
-    objectNames: ['traffic-locks', 'traffic-lock-borders', 'traffic-lock-texts'],
-  },
 ]
 
 /**

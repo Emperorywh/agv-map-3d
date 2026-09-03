@@ -510,8 +510,7 @@ function stripJointFrames(
  * 关节顶点取相邻段法线的平均方向，并按 1/cos(半角) 补偿斜接长度（钳制到
  * 3×halfWidth 防止近回折处的退化放大）——同一路径的弯道无逐段接缝毛边。
  * capStart/capEnd 为真时在首末端点补圆片端帽（三角扇）。零长度段被跳过；
- * 全部顶点烘焙同一高度 y。独占区外沿条带（buildExclusiveGroupsGeometry）
- * 复用同一展开，保证路面与蓝色外沿在弯道/路口的覆盖关系一致。
+ * 全部顶点烘焙同一高度 y。
  */
 export function appendPolylineStrip(
   positions: number[],

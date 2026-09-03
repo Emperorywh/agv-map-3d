@@ -3,7 +3,6 @@
  * P2-2 停车凸起 slab）。
  *
  * 职责：把 buildLandmarkData 的纯数据一次性上载为静态合批 GPU 对象——
- *       - 地面标识方垫 InstancedMesh（仓库浅黄贴地垫，实例颜色区分）；
  *       - 停车凸起 slab（P2-2：紫色薄板抬升 4cm）与微光光晕（加法混合外沿）；
  *       - 充电桩立柱 InstancedMesh（青色，投射实时阴影 P0-8）与底部光环；
  *       - 充电呼吸灯 InstancedMesh（正弦亮度脉动，受 decorationsEnabled 开关）；
@@ -17,9 +16,9 @@
  *       （单一所有者）注入，本组件只消费不释放图集；本组件创建的全部
  *       geometry/material/实例缓冲在卸载或数据更换时对称释放。
  * 关键不变量：
- * 1. 每类地标恰好一个 Draw Call（方垫/slab/光晕/立柱/光环/贴花/呼吸灯/名称
- *    各一个对象），实例差异全部由矩阵与实例颜色表达，静态上载一次后不再逐
- *    帧改写；
+ * 1. 每类地标恰好一个 Draw Call（slab/光晕/立柱/光环/贴花/呼吸灯/名称各一
+ *    个对象），实例差异全部由矩阵与实例颜色表达，静态上载一次后不再逐帧改
+ *    写；
  * 2. 呼吸脉动与 LOD 淡出只写 uniforms（uTime/uPulseEnabled/uViewportHeightPx），
  *    不触碰实例缓冲、不进 React state——decorationsEnabled=false 时
  *    uPulseEnabled=0，呼吸灯与底环恒定全亮，其余地标不受影响；
@@ -49,11 +48,9 @@ import {
   createChargeFadePulseMaterial,
   createNameFadeMaterial,
   createPulseMaterial,
-  createSceneGatedMaterial,
   type PulseUniforms,
   type ScreenSizeFadeUniforms,
 } from '../scene/semanticMaterials'
-import type { SceneDetailController } from '../scene/sceneDetailController'
 import {
   CHARGE_FADE_END_PX,
   CHARGE_FADE_START_PX,
@@ -72,7 +69,6 @@ import {
   CHARGE_RING_PULSE_MIN_BRIGHTNESS,
   LANDMARK_NAME_FADE_FAR_M,
   LANDMARK_NAME_FADE_NEAR_M,
-  LANDMARK_PAD_OPACITY,
   NAME_QUAD_Y,
   NODE_COLORS,
   PARK_GLYPH_HEIGHT_M,
@@ -89,15 +85,12 @@ export interface LandmarksLayerProps {
   readonly nameAtlas: MapNameAtlas | null
   /** 装饰动画能力开关：false 时呼吸灯恒定全亮（SPEC §6.5 预留） */
   readonly decorationsEnabled: boolean
-  /** 场景细节控制器（P0-5.1）；null 时仓储方垫门控使用自建等级 uniform */
-  readonly sceneDetail?: SceneDetailController | null
 }
 
 /** 组件自建 GPU 资源集合：合批对象 + 帧 uniforms + 释放清单 */
 interface LandmarkResources {
   /** 资源代序号：每次重建递增，作为 primitive 的 key 强制走卸载/挂载路径 */
   readonly id: number
-  pads: THREE.InstancedMesh
   parkSlabs: THREE.InstancedMesh
   parkHalos: THREE.InstancedMesh
   piles: THREE.InstancedMesh
@@ -123,21 +116,14 @@ export function LandmarksLayer({
   worldTransform,
   nameAtlas,
   decorationsEnabled,
-  sceneDetail = null,
 }: LandmarksLayerProps) {
   const data = useMemo(
     () => buildLandmarkData(mapModel, worldTransform),
     [mapModel, worldTransform],
   )
   const resources = useMemo(
-    () =>
-      createLandmarkResources(
-        data,
-        nameAtlas,
-        decorationsEnabled,
-        sceneDetail?.uniforms.uSceneLevel,
-      ),
-    [data, nameAtlas, decorationsEnabled, sceneDetail],
+    () => createLandmarkResources(data, nameAtlas, decorationsEnabled),
+    [data, nameAtlas, decorationsEnabled],
   )
   useEffect(() => () => disposeLandmarkResources(resources), [resources])
 
@@ -161,7 +147,6 @@ export function LandmarksLayer({
           key 随资源代变化：R3F 对已有 primitive 的 object 换新依赖「兄弟序列
           尾部」探测，与条件渲染子元素组合时重建会被静默丢弃（实测）；
           key 变化强制 React 走干净的卸载/挂载路径，旧对象必然离场。 */}
-      <primitive key={`pads-${resources.id}`} object={resources.pads} dispose={null} />
       <primitive key={`park-slabs-${resources.id}`} object={resources.parkSlabs} dispose={null} />
       <primitive key={`park-halos-${resources.id}`} object={resources.parkHalos} dispose={null} />
       <primitive key={`piles-${resources.id}`} object={resources.piles} dispose={null} />
@@ -182,35 +167,11 @@ function createLandmarkResources(
   data: LandmarkData,
   atlas: MapNameAtlas | null,
   decorationsEnabled: boolean,
-  sceneLevelUniform?: { value: number },
 ): LandmarkResources {
   const owned: { dispose(): void }[] = []
   const fadeUniforms: ScreenSizeFadeUniforms[] = []
   const pulseUniforms: PulseUniforms[] = []
   const id = ++landmarkResourcesSeq
-
-  // —— 仓库贴地方垫（P0-5.5/5.1）：实例颜色 = 仓库浅黄；材质带场景等级
-  //    门控（minLevel=2）：总览与作业区由仓储区域色块/货架行接管，单个
-  //    库位标识只在车辆近景显示 ——
-  const padGeometry = new THREE.PlaneGeometry(1, 1)
-  padGeometry.rotateX(-Math.PI / 2)
-  owned.push(padGeometry)
-  const padMaterial = createSceneGatedMaterial({
-    color: '#ffffff',
-    opacity: LANDMARK_PAD_OPACITY,
-    minLevel: 2,
-    sceneLevelUniform: sceneLevelUniform ?? { value: 0 },
-  }).material
-  padMaterial.name = 'map-warehouse-pad'
-  owned.push(padMaterial)
-  const pads = new THREE.InstancedMesh(
-    padGeometry,
-    padMaterial,
-    Math.max(data.warehousePadCount, 0),
-  )
-  pads.name = 'map-landmark-pads'
-  uploadStaticInstances(pads, data.warehousePadCount, data.warehousePadMatrices, data.warehousePadColors)
-  owned.push(pads)
 
   // —— 停车凸起 slab（P2-2）：单位盒底面烘焙在 y=0，矩阵给足迹/板厚；紫色 ——
   const slabGeometry = new THREE.BoxGeometry(1, 1, 1)
@@ -356,7 +317,6 @@ function createLandmarkResources(
 
   return {
     id,
-    pads,
     parkSlabs,
     parkHalos,
     piles,

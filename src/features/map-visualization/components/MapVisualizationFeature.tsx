@@ -3,11 +3,10 @@
  *
  * 职责：协调地图场景的全部静态表达——背景渐变/暗角（P2-6，Canvas 不可用
  *       降级纯色清屏）、环境与灯光（方向光 + 渐变环境 PMREM（P2-5）+
- *       静态阴影相机）、工业地坪、去重物理路径、
- *       节点实例层，以及 TASK-005 的业务语义层（充电桩/呼吸灯、仓库与停车
- *       地面标识、名称合批、独占区蓝色外沿与近景名称）；地图生命周期由
+ *       静态阴影相机）、去重物理路径、节点实例层，以及 TASK-005 的业务语义
+ *       层（充电桩/呼吸灯、停车地面标识与名称合批）；地图生命周期由
  *       useMapVisualization 驱动，名称图集由本组件经 useMapNameAtlas 单一持有。
- *       TASK-016 接入上下文恢复重建：contextGeneration 资源代递增时，五个
+ *       TASK-016 接入上下文恢复重建：contextGeneration 资源代递增时，三个
  *       图层经 keyed Fragment 整体重挂（旧 GPU 对象由各图层所有权 effect 释
  *       放、新对象同提交内重建），环境工厂随后重建（PMREM 渲染目标是唯一无
  *       CPU 侧数据源、three.js 无法自动重传的资源）。
@@ -23,8 +22,8 @@
  *    （SPEC §6.5：质量降级不隐藏核心语义）；
  * 5. 本组件不移动相机：初始取景、轨道、跟随与俯瞰全部归 camera-navigation
  *    （TASK-013，SPEC §5.5/§8），相机位姿只由该 Feature 写入；
- * 6. 恢复重建顺序（TASK-016，SPEC §11.9）：同一恢复提交内按「地图五图层
- *    （地坪→路径→节点→地标→独占区）→ 环境」落地——图层 Fragment 在
+ * 6. 恢复重建顺序（TASK-016，SPEC §11.9）：同一恢复提交内按「地图三图层
+ *    （路径→节点→地标）→ 环境」落地——图层 Fragment 在
  *    SceneLighting 之前，React 兄弟按 JSX 顺序执行 effect，因此环境重建
  *    恒在地图资源之后；MapGeometry 纯数据与名称图集（Canvas 源纹理）不换
  *    代，其 GPU 缓冲由 three.js 上下文恢复后的新鲜缓存自动重传；
@@ -58,12 +57,9 @@ import {
   MAP_CLEAR_COLOR,
   SCENE_FOG_DENSITY_PER_DIAGONAL,
 } from '../scene/mapAppearance'
-import { GroundLayer } from './GroundLayer'
 import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { NodesLayer } from './NodesLayer'
 import { LandmarksLayer } from './LandmarksLayer'
-import { WarehouseRacksLayer } from './WarehouseRacksLayer'
-import { ExclusiveGroupsLayer } from './ExclusiveGroupsLayer'
 import {
   computeCameraFocusDistance,
   createSceneDetailController,
@@ -148,8 +144,8 @@ export function MapVisualizationFeature({
   useEffect(() => () => background?.dispose(), [background])
 
   // 三级场景细节控制器（视觉对齐 P0-5.1）：随视图（对角线）创建；驱动组件
-  // 每帧写共享 uSceneLevel uniform，节点/仓储方垫/货架行在 GPU 侧按等级与
-  // 角色显隐。与 render-quality 的性能降级正交，不复用状态。
+  // 每帧写共享 uSceneLevel uniform，节点实例层在 GPU 侧按等级与角色显隐。
+  // 与 render-quality 的性能降级正交，不复用状态。
   const sceneDetail = useMemo(
     () => (view !== null ? createSceneDetailController(view.mapModel.sceneBounds.diagonal) : null),
     [view],
@@ -171,7 +167,6 @@ export function MapVisualizationFeature({
         // 载 primitive 换 object 的重建丢弃问题；图层自身 key 仍携带视图版
         // 本，视图原子替换语义不变。
         <Fragment key={`map-resources-${contextGeneration}`}>
-          <GroundLayer key={`ground-${view.version}`} bounds={view.mapModel.sceneBounds} />
           <PhysicalPathsLayer key={`paths-${view.version}`} geometry={view.geometry} />
           <NodesLayer
             key={`nodes-${view.version}`}
@@ -184,20 +179,6 @@ export function MapVisualizationFeature({
             worldTransform={view.worldTransform}
             nameAtlas={nameAtlas}
             decorationsEnabled={decorationsEnabled}
-            sceneDetail={sceneDetail}
-          />
-          <WarehouseRacksLayer
-            key={`warehouse-racks-${view.version}`}
-            mapModel={view.mapModel}
-            worldTransform={view.worldTransform}
-            sceneDetail={sceneDetail}
-          />
-          <ExclusiveGroupsLayer
-            key={`exclusive-${view.version}`}
-            mapModel={view.mapModel}
-            worldTransform={view.worldTransform}
-            physical={view.geometry.physical}
-            nameAtlas={nameAtlas}
           />
           {sceneDetail !== null ? (
             <SceneDetailDriver key={`scene-detail-${view.version}`} controller={sceneDetail} />
@@ -300,7 +281,7 @@ function SceneLighting({
   useEffect(() => () => lighting?.light.dispose(), [lighting])
 
   // 场景雾（P1-3）：FogExp2 密度按地图对角线缩放，雾色 = 清屏底色——远处
-  // 地面渐隐进背景，配合 50m 地坪边距消除「黑色孤岛」；近景无感知。fog 是
+  // 对象渐隐进背景，总览画面边缘与背景色自然融合；近景无感知。fog 是
   // 纯 CPU 场景属性（非 GPU 资源），不参与 TASK-016 资源换代。
   useEffect(() => {
     if (bounds === null) {

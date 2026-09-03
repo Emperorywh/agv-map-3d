@@ -9,16 +9,16 @@
  *          [0, 4]；
  *       3. 等级 → 能力开关映射（四个降级动作严格按 SPEC 顺序叠加）与 DPR 上
  *          限计算；
- *       4. 能力映射保证任何等级都保留核心监控语义——车辆、物理路径、主状态
- *          与 L1/L2 告警环不在任何可关能力之列。
+ *       4. 能力映射保证任何等级都保留核心监控语义——车辆、物理路径与主状态
+ *          不在任何可关能力之列。
  * 边界：本模块只做决策，不触碰渲染器、React state 或其他 Feature——采样由
  *       useAdaptiveQuality 喂入（时间戳为调用方累计的单调帧时间），能力开关
  *       由 app 组合层映射为各 Feature 的显式 props（SPEC §12.3）。测试/基准
  *       可经 autoEnabled=false 完全绕过自动降级（不在本模块内表达）。
  * 关键不变量：
  * 1. 等级语义固定：0 = 完整画质；1 = 仅保留重点标签和近景标签；2 = 阴影贴图
- *    降为 1024；3 = 关闭动态阴影与交通锁脉冲；4 = DPR 上限降为 1 并停用非关
- *    键装饰动画；高级别隐含全部低级别动作；
+ *    降为 1024；3 = 关闭动态阴影；4 = DPR 上限降为 1 并停用非关键装饰动画；
+ *    高级别隐含全部低级别动作；
  * 2. 迟滞两侧互斥：平均帧时间不可能同时 >105% 预算且 <75% 预算；持续计时在
  *    条件被破坏的瞬间清零重新累积，杜绝瞬时抖动触发等级变化；
  * 3. 冷却按方向独立裁决且共用同一「上次变化时刻」：降级要求距上次变化 ≥5s、
@@ -93,17 +93,15 @@ export interface QualityCapabilities {
   readonly shadowMapSize: number
   /** 行动 3：动态阴影渲染开关（false 时方向光不再投射阴影） */
   readonly dynamicShadowsEnabled: boolean
-  /** 行动 3：交通锁脉冲开关（false 时交通矩形恒定不透明度） */
-  readonly trafficPulseEnabled: boolean
   /** 行动 4：非关键装饰动画开关（充电呼吸灯等） */
   readonly decorationsEnabled: boolean
 }
 
 /**
  * 等级 → 能力开关映射：四个降级动作按 SPEC §6.5 顺序逐级叠加（高级别隐含
- * 全部低级别动作）。任何等级都不包含隐藏车辆、路径、主状态或 L1/L2 告警环
- * 的开关——核心语义不可降级。阴影分辨率取「降级值与基准值的较小者」，基准
- * 配置本身低于 1024 时不再进一步下调。
+ * 全部低级别动作）。任何等级都不包含隐藏车辆或路径的开关——核心语义不可
+ * 降级。阴影分辨率取「降级值与基准值的较小者」，基准配置本身低于 1024 时
+ * 不再进一步下调。
  */
 export function capabilitiesForLevel(
   level: QualityLevel,
@@ -116,7 +114,6 @@ export function capabilitiesForLevel(
     importantLabelsOnly: level >= 1,
     shadowMapSize,
     dynamicShadowsEnabled: level < 3,
-    trafficPulseEnabled: level < 3,
     decorationsEnabled: level < 4,
   })
 }

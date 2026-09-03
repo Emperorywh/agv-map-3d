@@ -16,12 +16,12 @@
 //       4. 质量能力映射（SPEC §12.3「质量等级由组合层映射为标签、阴影和装
 //          饰能力开关」）：订阅 render-quality 的只读质量等级，经
 //          capabilitiesForLevel 映射为地图（阴影分辨率/动态阴影/装饰动画）
-//          与车队（标签重点模式/交通锁脉冲）的显式 props；RenderQuality
+//          与车队（标签重点模式）的显式 props；RenderQuality
 //          Feature 挂在场景内采样帧时间并应用 DPR 上限；车队规模经只读运
 //          行时 count 的闭包注入（决定目标帧率档位）；
 //       5. 上下文恢复编排（TASK-016，SPEC §11.9）：app 状态机递增资源代经
 //          contextGeneration 下发，MapVisualizationFeature（地图 → 环境）
-//          与 FleetMonitoringFeature（车辆 → 标签 → 环 → 交通资源）在同一
+//          与 FleetMonitoringFeature（车辆 → 标签）在同一
 //          React 提交内按确定顺序重建全部 GPU 资源；本组件持有「恢复期重
 //          建失败」旗标（地图环境工厂失败时置位）并在资源代提交完成后一次
 //          性结算上抛——React 子组件 effect 先于本组件 effect 执行，故结算
@@ -292,9 +292,9 @@ export function AgvMonitorScene({
         staleAfterMs={staleAfterMs}
         onRuntimeAvailable={setFleetRuntime}
       >
-        {/* 恢复重建顺序（TASK-016）：地图（五图层）→ 环境 → 车辆 → 标签 →
-            环 → 交通资源——由「地图 Feature 在前、车队 Feature 在后」与各自
-            内部图层顺序保证；资源代经 props 下发驱动整代重建。 */}
+        {/* 恢复重建顺序（TASK-016）：地图（三图层）→ 环境 → 车辆 → 标签——
+            由「地图 Feature 在前、车队 Feature 在后」与各自内部图层顺序保证；
+            资源代经 props 下发驱动整代重建。 */}
         <MapVisualizationFeature
           map={mapDescriptor}
           shadowMapSize={capabilities.shadowMapSize}
@@ -308,7 +308,6 @@ export function AgvMonitorScene({
         <FleetMonitoringFeature
           worldTransform={worldTransform}
           importantLabelsOnly={capabilities.importantLabelsOnly}
-          trafficPulseEnabled={capabilities.trafficPulseEnabled}
           contextGeneration={contextGeneration}
           diagnostics={diagnostics}
           onInstancesReady={markFleetReady}

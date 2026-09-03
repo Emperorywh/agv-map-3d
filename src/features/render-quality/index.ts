@@ -9,7 +9,7 @@
  *       Feature 互不导入（SPEC §12.4），能力开关由 app 组合层映射后经各
  *       Feature 的公开 props 传入。
  * 关键不变量：质量等级是本 Feature 唯一的运行时输出；任何等级的能力映射都
- *       不包含隐藏车辆、物理路径、主状态或 L1/L2 告警环的开关（SPEC §6.5）。
+ *       不包含隐藏车辆、物理路径或主状态的开关（SPEC §6.5）。
  */
 export { RenderQualityFeature } from './components/RenderQualityFeature'
 export type { RenderQualityFeatureProps } from './components/RenderQualityFeature'

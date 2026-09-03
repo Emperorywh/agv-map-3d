@@ -1,87 +1,45 @@
 /**
  * 地图场景视觉常量（SPEC §5.1、§5.4；TASK-004 核心地图 + TASK-005 语义图层）。
  *
- * 职责：集中定义静态地图对象（清屏底色、工业地坪、网格刻线、物理路径、节点
- *       站点、充电桩/呼吸灯、仓库与停车地面标识、独占区蓝色外沿、名称图集与
- *       名称四边形）与灯光环境的全部外观常量，供几何构建与图层组件共同引用，
- *       保证同一视觉语言只有一份事实源。
+ * 职责：集中定义静态地图对象（清屏底色、物理路径、节点站点、充电桩/呼吸灯、
+ *       停车地面标识、名称图集与名称四边形）与灯光环境的全部外观常量，供几
+ *       何构建与图层组件共同引用，保证同一视觉语言只有一份事实源。
  * 边界：只包含数值与颜色常量，不创建任何 Three.js 对象、不含业务语义推导；
- *       车辆、标签与光环外观属 fleet-monitoring 的 fleetAppearance。
+ *       车辆与标签外观属 fleet-monitoring 的 fleetAppearance。
  * 关键不变量：
- * 1. 图层高度阶梯（GROUND_Y → GRID_Y → EXCLUSIVE_OUTLINE_Y → EXCLUSIVE_FILL_Y →
- *    PATH_SURFACE_Y → PATH_CENTERLINE_Y → LANDMARK_PAD_Y →
- *    NODE_Y → NAME_QUAD_Y）单调递增且
- *    间隔足够小（厘米级）：静态贴花靠微小高度差避免 z-fighting，在米制地图
- *    尺度下肉眼不可见；独占区外沿位于路面之下，只露出比路面宽出的边缘；
- * 2. 颜色语言沿用原型参考：深色工业地坪、深灰路径、蓝绿 work 站点、浅黄仓库、
- *    青色 charge、紫色 park、灰色未知兜底（SPEC §2.1 默认表现）；独占区为
- *    低透明度蓝色（SPEC §2.3）；
+ * 1. 图层高度阶梯（GRID_Y → PATH_SURFACE_Y → PATH_CENTERLINE_Y →
+ *    NODE_Y → NAME_QUAD_Y）单调递增且间隔足够小（厘米级）：静态贴花靠微小
+ *    高度差避免 z-fighting，在米制地图尺度下肉眼不可见；
+ * 2. 颜色语言沿用原型参考：深灰路径、蓝绿 work 站点、青色 charge、紫色
+ *    park、灰色未知兜底（SPEC §2.1 默认表现）；
  * 3. 尺度链保持「路 > 车 > 节点」的包含关系（视觉差距分析 P0-3）：路面宽度
  *    ≥ 2× 车宽（0.7m），节点直径 ≤ 路宽的 1/3——节点是嵌在路口里的小圆点，
  *    不随缩放变化；
  * 4. 名称距离显隐（NEAR/FAR）为平滑过渡区间：近于 NEAR 全显、远于 FAR 全隐、
- *    之间线性淡出，独占区名称比地标名称可见范围更大（SPEC §2.3 远距离隐藏）。
+ *    之间线性淡出（地标名称的可见范围口径）。
  */
 
 /**
  * 场景清屏底色（地图未就绪或失败重试期间页面保持的唯一颜色，SPEC §7.4）。
  * P1-1：提亮至 Reference 色域（Reference 实测 #161b22，取 #14181f 保持
- * 「路面 > 地面 > 背景」的明度阶梯），消除纯黑背景把地坪衬成孤岛的观感。
+ * 「路面 > 背景」的明度阶梯）。
  */
 export const MAP_CLEAR_COLOR = '#14181f'
 
-/** 工业地坪颜色与粗糙度（MeshStandardMaterial，接收阴影）。
- *  P1-1：#16191f → #1e232b，对齐 Reference 地面 #242931 的深灰蓝档位，
- *  让深灰路面重新「浮」在地面上。 */
-export const GROUND_COLOR = '#1e232b'
-export const GROUND_ROUGHNESS = 0.95
-export const GROUND_METALNESS = 0.05
-
-/**
- * 地面按地图包围盒向四周扩展的边距（P1-3：10m → 90m）。271m 的地图只留
- * 10m 边距时地坪边缘入画形成「黑色孤岛」；实机验证 50m 在 16:9 总览下
- * 菱形四角仍露背景，90m 使地坪边缘在总览取景下整体出画，残余边界由雾融
- * 进背景色。
- */
-export const GROUND_MARGIN_M = 90
-
-/* ==================== 工业地坪贴图（P1-2，替代 5m 方格刻线） ====================
- * 此前 5m LineBasicMaterial 刻线在总览呈「方格纸」、近景却因 1px 不可见。
- * 改为一张 5m 平铺 Canvas 贴图（1m 细线 + 5m 分缝，均为低对比乘色）：
- * 总览下 mipmap 均化为近纯色不再喧宾夺主，近景露出细密工业地坪纹理。 */
-/** 贴图一格对应的世界尺寸（米）：一格 = 5m 分缝包围 5×5 个 1m 细线格 */
-export const GROUND_TILE_M = 5
-/** 贴图分辨率（像素/格，2 的幂）：1px ≈ 2cm，足够表达细线 */
-export const GROUND_TILE_TEXTURE_PX = 256
-/** 细线间隔（米）：1m 细刻线 */
-export const GROUND_FINE_LINE_SPACING_M = 1
-/** 细线亮度乘数（×地坪色）：与地面明度差 ≤ 8%，低对比不抢戏 */
-export const GROUND_FINE_LINE_STRENGTH = 0.93
-/** 5m 分缝亮度乘数：比细线深一档，表达工业地坪的分块 */
-export const GROUND_SEAM_STRENGTH = 0.86
-
 /**
  * 场景雾（P1-3）：FogExp2 密度 = 该系数 / 地图对角线（当前 ≈ 0.00092/m）。
- * 雾色 = 清屏底色，总览距离（450~800m）下远处地面渐隐进背景（远角雾因子
- * ~40%、近缘 ~16%），配合 90m 地坪边距彻底消除「黑色孤岛」；近景
+ * 雾色 = 清屏底色，总览距离（450~800m）下远处对象渐隐进背景；近景
  * （< 100m）雾因子 < 1%，无感知。
  */
 export const SCENE_FOG_DENSITY_PER_DIAGONAL = 0.25
 
 /** 图层高度阶梯（世界 y，单位米；见关键不变量 1） */
-export const GROUND_Y = 0
 export const GRID_Y = 0.02
-/** 独占区蓝色外沿：位于路面之下、网格之上，只露出宽出路面的边缘 */
-export const EXCLUSIVE_OUTLINE_Y = 0.03
-/** 独占区半透明面填充（P1-7）：略高于外沿、路面之下，整块区域着色 */
-export const EXCLUSIVE_FILL_Y = 0.035
 export const PATH_SURFACE_Y = 0.04
 export const PATH_CENTERLINE_Y = 0.06
-/** 仓库/停车地面标识方垫：略低于节点圆盘，让节点圆点叠在垫面之上 */
-export const LANDMARK_PAD_Y = 0.07
 export const NODE_Y = 0.08
-/** 名称四边形：略高于节点圆盘，保证文字不被节点或垫面遮挡 */
-export const NAME_QUAD_Y = 0.09
+/** 名称四边形：高于节点圆台顶（NODE_Y + NODE_RING_TOP_M），文字不被节点遮挡 */
+export const NAME_QUAD_Y = 0.19
 
 /**
  * 物理路径路面条带宽度与颜色（深灰路面，Unlit 双面保证任意绕序可见）。
@@ -113,44 +71,57 @@ export const JUNCTION_PAD_SCALE = 1.5
 /** 路口补面圆盘离散段数（路口是近景焦点，比端帽 16 段更圆） */
 export const JUNCTION_PAD_SEGMENTS = 24
 
-/* ==================== 仓储聚合（视觉对齐 P0-5.5） ====================
- * 1,185 个 warehouse 节点逐点方垫在总览形成黄色点阵地毯。按节点间距聚类
- * 为仓储区域（zone），区域内按共线关系聚类为货架行（row）：总览只显示区
- * 域色块、作业区显示行轮廓、近景才显示单个库位方垫（节点盘与方垫由场景
- * 等级门控）。聚类为缺省启发式，后续可被显式视觉配置覆盖（§5.5）。 */
-/** 仓储聚类间距阈值（米）：节点两两间距 ≤ 该值归入同一仓储区域 */
-export const WAREHOUSE_CLUSTER_SPACING_M = 4
-/** 货架行聚类：成员沿副轴投影的一维间距阈值（米） */
-export const WAREHOUSE_ROW_GAP_M = 2
-/** 货架行最小宽度（米）：退化行（单列节点）保持一个方垫的可读宽度 */
-export const WAREHOUSE_ROW_MIN_WIDTH_M = 1.1
-/** 货架行轮廓沿主轴的端部延伸（米），使行轮廓盖住两端节点的方垫 */
-export const WAREHOUSE_ROW_END_PAD_M = 0.55
-/** 仓储区域色块高度（世界 y）：网格之上、独占区外沿之下 */
-export const WAREHOUSE_ZONE_FILL_Y = 0.025
-/** 仓储区域色块颜色与透明度：仓库黄的极低透明度整块着色 */
-export const WAREHOUSE_ZONE_FILL_COLOR = '#e3cf7a'
-export const WAREHOUSE_ZONE_FILL_OPACITY = 0.1
-/** 货架行凸起 slab 高度（米）与颜色透明度：形态对齐停车 slab 的微凸语言 */
-export const WAREHOUSE_RACK_HEIGHT_M = 0.05
-export const WAREHOUSE_RACK_COLOR = '#b39a5c'
-export const WAREHOUSE_RACK_OPACITY = 0.6
-
 /**
  * 节点站点圆盘半径与离散段数（一个 InstancedMesh 渲染全部节点，SPEC §5.1）。
- * 半径 ≤ 0.5× 半路宽（P0-3）：节点是嵌在路口里的小圆点；段数 20 保证近景
- * 圆形轮廓可辨（12 段的多边形边缘在近景明显）。
+ * NODE_RADIUS_M 是状态色外环的外半径；暗色底座再外扩 NODE_BASE_MARGIN_M，
+ * 整体外径（NODE_OUTER_RADIUS_M ≤ 0.5× 半路宽，P0-3）保持「嵌在路口里的
+ * 小圆点」尺度链不被立体化破坏；段数 20 保证近景圆形轮廓可辨（12 段的
+ * 多边形边缘在近景明显）。
  */
 export const NODE_RADIUS_M = 0.25
 export const NODE_CIRCLE_SEGMENTS = 20
+/** 暗色底座超出状态色外环的边距（米）：兼作节点整体的「嵌 into 路面」暗轮廓 */
+export const NODE_BASE_MARGIN_M = 0.04
+/** 节点整体外半径（底座外沿，米）：屏幕尺寸淡出的投影口径 */
+export const NODE_OUTER_RADIUS_M = NODE_RADIUS_M + NODE_BASE_MARGIN_M
 
-/**
- * 节点暗描边（P2-3/5.1）：盘外一圈几何内环（宽度 + 暗色顶点色），Reference 的
- * 节点有清晰的「嵌 into 路面」轮廓。描边颜色 = 实例色 × 该亮度乘数（顶点色与
- * 实例颜色在着色器中相乘）——保持节点色相的深描边比纯黑更协调。
- */
-export const NODE_OUTLINE_WIDTH_M = 0.04
-export const NODE_OUTLINE_STRENGTH = 0.22
+/* ==================== 节点多层同心圆台（视觉对齐 P2-8） ====================
+ * 原型（docs/prototypes/agv-3d-scene-prototype.png）的节点是标志性的同心圆
+ * 立体结构：暗色底座 → 状态色发光外环 → 暗色内台面 → 亮色中心圆盘，四层
+ * 圆台堆叠、边缘带倒角。以下常量逐层定义半径/高度/倒角与顶点色亮度乘数
+ * （最终色 = 实例色 × 乘数），是 nodeStackGeometry 的唯一事实源。
+ * 乘数 >1 的「发光层」借助 ACES 色调映射的肩部滚降把实例色推向亮色过曝，
+ * 与原型外环与中心盘的辉光观感一致。 */
+
+/** 底座顶面高度（米）：底座自 NODE_Y 起的抬升，形成嵌入路面的台阶感 */
+export const NODE_BASE_HEIGHT_M = 0.045
+/** 底座底部倒角高度（米）：外沿自下向上的收斜边 */
+export const NODE_BASE_CHAMFER_M = 0.02
+/** 状态色外环顶面高度（米）：节点堆叠的总高 */
+export const NODE_RING_TOP_M = 0.1
+/** 外环顶部倒角高度（米）：顶外沿的斜切亮边 */
+export const NODE_RING_CHAMFER_M = 0.01
+/** 外环内半径比例（× NODE_RADIUS_M）：环带宽度与内部开口 */
+export const NODE_RING_INNER_RATIO = 0.64
+/** 暗色内台顶面高度（米）：外环与中心盘之间的暗色环形台面 */
+export const NODE_SHELF_TOP_M = 0.055
+/** 中心圆盘半径比例（× NODE_RADIUS_M）与顶面高度（米）：顶面与外环持平，
+ *  低角度下中心盘不被外环内壁遮挡（原型中心高光始终可见） */
+export const NODE_CENTER_RADIUS_RATIO = 0.4
+export const NODE_CENTER_TOP_M = 0.1
+
+/** 暗色层亮度乘数：底座（保持节点色相的深色，比纯黑更协调） */
+export const NODE_BASE_STRENGTH = 0.16
+/** 暗色层亮度乘数：内台面（比底座再暗半档，拉开层次） */
+export const NODE_SHELF_STRENGTH = 0.13
+/** 外环亮度乘数：侧壁与顶环 = 实例色原样，顶部倒角过曝提亮 */
+export const NODE_RING_STRENGTH = 1.0
+export const NODE_RING_CHAMFER_STRENGTH = 1.25
+/** 外环内壁亮度乘数：背光内壁压暗，形成环带的体积感 */
+export const NODE_RING_INNER_WALL_STRENGTH = 0.4
+/** 中心盘亮度乘数：侧壁略暗、顶面过曝提亮（原型中心的高光圆盘） */
+export const NODE_CENTER_SIDE_STRENGTH = 0.9
+export const NODE_CENTER_TOP_STRENGTH = 1.35
 
 /**
  * 节点屏幕尺寸淡出（P1-5/2.3 的 shader LOD）：投影直径 < start 逐帧变透明、
@@ -183,7 +154,7 @@ export const DEFAULT_SHADOW_MAP_SIZE = 2048
  * 自定义渐变环境（P2-5/9.4）：替代 RoomEnvironment 的「棚拍灯箱」感——
  * 大球面顶点色渐变（天顶冷白 → 地平灰蓝 → 天底深灰蓝）经 PMREM 预滤波为
  * IBL。整体亮度低于灯箱环境，受光车体色的饱和度回血（P1 遗留的「车体偏
- * 浅」即源于 IBL 过亮）；模糊半径 0.04 沿用（工业地坪不需要锐利反射）。
+ * 浅」即源于 IBL 过亮）；模糊半径 0.04 沿用（静态场景不需要锐利反射）。
  */
 export const ENVIRONMENT_ZENITH_COLOR = '#c9d7e8'
 export const ENVIRONMENT_HORIZON_COLOR = '#3a4250'
@@ -193,7 +164,7 @@ export const ENVIRONMENT_GROUND_COLOR = '#161a21'
  * 页面背景渐变与暗角（P2-6）：Canvas 生成的屏幕空间背景纹理（顶部冷灰蓝 →
  * 底部更深、四角暗角），替代纯色清屏，提供 Reference 的聚焦感。Canvas 不可
  * 用（无头测试环境）时降级为 MAP_CLEAR_COLOR 纯色；雾色仍为清屏底色——雾
- * 把远处地面渐隐进背景中间档，暗角只压屏幕边缘。
+ * 把远处对象渐隐进背景中间档，暗角只压屏幕边缘。
  */
 export const BACKGROUND_TEXTURE_PX = 512
 export const BACKGROUND_TOP_COLOR = '#181d26'
@@ -202,25 +173,6 @@ export const BACKGROUND_BOTTOM_COLOR = '#10141b'
 export const BACKGROUND_VIGNETTE_STRENGTH = 0.3
 
 /* ==================== TASK-005 地图业务语义图层 ==================== */
-
-/**
- * 独占区蓝色外沿条带总宽度：比路面（1.8m）宽出蓝色边缘（SPEC §2.3），
- * 路面加宽后同步放大，保证每侧露出 ~0.3m 的可见蓝边。
- */
-export const EXCLUSIVE_OUTLINE_WIDTH_M = 2.4
-export const EXCLUSIVE_OUTLINE_COLOR = '#4f8dff'
-/** 低透明度：外沿只是空间提示，不得遮蔽路面与节点（SPEC §2.3） */
-export const EXCLUSIVE_OUTLINE_OPACITY = 0.3
-
-/**
- * 独占区半透明面填充（P1-7/8.1 路线 2）：成员物理路径采样点的凸包多边形，
- * 沿边外扩 padding 后整块填充。当前地图的独占区均为细长走廊形（48×6m 等），
- * 凸包与真实路网形状高度贴合；填充位于路面之下（EXCLUSIVE_FILL_Y），路面
- * 保持不透明覆盖，Reference 观感为「半透明蓝色区域 + 亮色描边」。
- */
-export const EXCLUSIVE_FILL_COLOR = '#37465e'
-export const EXCLUSIVE_FILL_OPACITY = 0.5
-export const EXCLUSIVE_FILL_PADDING_M = 1.2
 
 /** 充电桩立柱尺寸（宽×深×高，米）与颜色（青色，与 charge 节点同色系） */
 export const CHARGE_PILE_WIDTH_M = 0.4
@@ -263,15 +215,12 @@ export const CHARGE_FADE_END_PX = 2.5
 /** 底环脉冲（P2-1）：与呼吸灯同周期随动呼吸，最暗亮度高于灯球（环是弱陪衬） */
 export const CHARGE_RING_PULSE_MIN_BRIGHTNESS = 0.55
 
-/** 仓库地面标识方垫边长（浅黄），贴地平面（透明度与停车共用旧档位口径） */
-export const WAREHOUSE_PAD_SIZE_M = 1.1
-/** 停车点 slab 足迹边长（紫色）：与旧方垫一致，形态由凸起与光晕增强（P2-2） */
+/** 停车点 slab 足迹边长（紫色） */
 export const PARK_PAD_SIZE_M = 1.4
-export const LANDMARK_PAD_OPACITY = 0.32
 
 /**
  * 停车点凸起 slab（P2-2/8.5）：紫色薄板抬升 3~5cm + 微光光晕（加法混合的
- * 外沿贴面），形态此前已对，属纯外观微调；仓库方垫保持贴地平面不变。
+ * 外沿贴面），形态此前已对，属纯外观微调。
  */
 export const PARK_SLAB_HEIGHT_M = 0.04
 export const PARK_SLAB_OPACITY = 0.5
@@ -288,14 +237,12 @@ export const MAP_NAME_PADDING_PX = 6
 export const MAP_NAME_CANVAS_WIDTH = 4096
 export const MAP_NAME_CANVAS_MAX_HEIGHT = 4096
 
-/** 名称文字颜色：独占区浅蓝、停车符号白色（紫色方垫之上） */
-export const GROUP_NAME_COLOR = '#7db2ff'
+/** 名称文字颜色：停车符号白色（紫色 slab 之上） */
 export const PARK_GLYPH_COLOR = '#ffffff'
 /** 名称描边颜色：深色底图上保证任意底色可读 */
 export const NAME_STROKE_COLOR = 'rgba(8, 10, 14, 0.9)'
 
 /** 名称四边形世界高度（米）：宽度 = 单元宽高比 × 高度，随文字长度自适应 */
-export const GROUP_NAME_HEIGHT_M = 1.6
 export const PARK_GLYPH_HEIGHT_M = 0.8
 
 /**
@@ -305,6 +252,3 @@ export const PARK_GLYPH_HEIGHT_M = 0.8
  */
 export const LANDMARK_NAME_FADE_NEAR_M = 30
 export const LANDMARK_NAME_FADE_FAR_M = 70
-/** 独占区名称距离显隐区间：分组名称语义层级更高，可见范围更大 */
-export const GROUP_NAME_FADE_NEAR_M = 40
-export const GROUP_NAME_FADE_FAR_M = 90
