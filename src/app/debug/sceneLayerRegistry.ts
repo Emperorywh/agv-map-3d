@@ -41,10 +41,18 @@ export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
   { key: 'roadSurface', label: '路面', objectNames: ['map-path-surface'] },
   {
     key: 'roadEdges',
-    label: '道路蓝边',
+    label: '道路路缘',
     objectNames: ['map-path-edge-core', 'map-path-edge-halo'],
   },
-  { key: 'roadArrows', label: '方向箭头', objectNames: ['map-path-arrows'] },
+  /**
+   * 黄色中心实线与箭头共用同一道路标线语义，调试时必须同步显隐，避免只剩
+   * 箭头或只剩实线而误判几何构建结果。
+   */
+  {
+    key: 'roadMarkings',
+    label: '中心线与方向',
+    objectNames: ['map-path-center-lines', 'map-path-direction-arrows'],
+  },
   { key: 'nodes', label: '节点盘', objectNames: ['map-nodes'] },
   {
     key: 'park',

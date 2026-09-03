@@ -34,50 +34,74 @@ export const GRID_Y = 0.02
 export const PATH_SURFACE_Y = 0.04
 export const PATH_EDGE_HALO_Y = 0.052
 export const PATH_EDGE_Y = 0.058
-export const PATH_ARROW_Y = 0.066
+export const PATH_CENTER_LINE_Y = 0.064
+export const PATH_DIRECTION_ARROW_Y = 0.068
 export const NODE_Y = 0.08
 /** 名称四边形：高于节点圆台顶（NODE_Y + NODE_TOP_M），文字不被节点遮挡 */
 export const NAME_QUAD_Y = 0.19
 
-/* ==================== 物理路径（原型路网复刻） ====================
- * 路网表达对齐路网原型图：暗色路面条带 + 路缘「发光蓝边」+ 黄色方向箭头。
- * 蓝边由两层条带合成——亮色细芯线（颜色乘 BOOST 借 ACES 肩部过曝出「灯管」
- * 感）与加法混合的宽晕圈（贴地微光）；路口以环形蓝边收口，断头端以半圆
- * 弧包边。箭头方向取路径逻辑边的行进方向（优先非回边），沿弧长等距布置。
+/* ==================== 物理路径（实体道路俯视表达） ====================
+ * 路网按真实道路的层次表达：暗色沥青路面、两侧混凝土路肩与浅色路缘，
+ * 中央黄色实线负责连接节点，叠加的箭头负责表达逻辑边方向。路口轮廓会裁掉
+ * 落在相邻路面内的弧段，只留下道路联合区域真正可见的外缘。
  */
-/** 路面条带宽度（米）：≥ 2× 车宽（0.7m），保持「路 > 车 > 节点」尺度链 */
-export const PATH_SURFACE_WIDTH_M = 1.8
-/** 路面色：比背景略亮的暗色铺装板，明度阶梯在蓝边与背景之间 */
-export const PATH_SURFACE_COLOR = '#2b303a'
+/**
+ * 路面条带宽度（米）：地图内相邻工位支路的中心距最小约 1.5m，路宽必须留出
+ * 明确的暗缝，否则相邻 U 形支路会黏成蓝色线团。1.2m 仍宽于 0.7m 车体，
+ * 同时保持「路 > 车 > 节点」的尺度关系。
+ */
+export const PATH_SURFACE_WIDTH_M = 1.2
+/**
+ * 路面色：带少量暖灰的沥青色，比背景稳定高一个明度台阶，又不会抢过
+ * 黄色中心标线与节点状态色。
+ */
+export const PATH_SURFACE_COLOR = '#292b2d'
 
-/** 蓝边细芯线宽（米）与颜色；BOOST > 1 过曝提亮出霓虹灯管感 */
-export const PATH_EDGE_WIDTH_M = 0.07
-export const PATH_EDGE_COLOR = '#3fc3ff'
-export const PATH_EDGE_BOOST = 1.8
-/** 蓝边晕圈宽（米）、颜色与加法混合透明度：贴在路面上的微光溢出（路口
- * 多边界交叠，透明度须压低防加法混合过曝） */
-export const PATH_EDGE_HALO_WIDTH_M = 0.26
-export const PATH_EDGE_HALO_COLOR = '#1e7fe0'
-export const PATH_EDGE_HALO_OPACITY = 0.18
+/**
+ * 路缘顶部浅色压边：细线模拟实体路缘受光面，宽度保持克制，避免相邻支路
+ * 的边界在密集库位区黏连。
+ */
+export const PATH_EDGE_WIDTH_M = 0.055
+export const PATH_EDGE_COLOR = '#d7d2c3'
+export const PATH_EDGE_BOOST = 1
+/**
+ * 路肩基座宽度、颜色与不透明度：较宽的中灰条带从沥青路面外侧托住浅色
+ * 路缘，形成可辨识的实体高度层次；内部重叠边仍在几何构建阶段被裁掉。
+ */
+export const PATH_EDGE_HALO_WIDTH_M = 0.18
+export const PATH_EDGE_HALO_COLOR = '#696b68'
+export const PATH_EDGE_HALO_OPACITY = 1
 
-/** 路口补面半径 = 半路宽 × 该系数：蓝边在路口以同半径圆环收口 */
-export const JUNCTION_PAD_SCALE = 1.15
-/** 路口补面圆盘离散段数（圆环蓝边与补面同段数对齐） */
+/** 路口补面半径 = 半路宽 × 该系数：同半径圆环仅保留未被相邻路面覆盖的外弧 */
+export const JUNCTION_PAD_SCALE = 1.12
+/** 路口补面圆盘离散段数（候选圆形路缘与补面使用同一段数对齐） */
 export const JUNCTION_PAD_SEGMENTS = 24
 /** 断头端半圆包边弧的离散段数 */
 export const PATH_END_ARC_SEGMENTS = 10
 
-/** 黄色方向箭头外形（米）：全长、杆半宽、头半宽与头长，沿路径切线放置 */
-export const PATH_ARROW_LENGTH_M = 0.9
-export const PATH_ARROW_SHAFT_HALF_WIDTH_M = 0.1
-export const PATH_ARROW_HEAD_HALF_WIDTH_M = 0.24
-export const PATH_ARROW_HEAD_LENGTH_M = 0.38
-/** 箭头沿弧长的布置间距（米），相位取间距之半（短路径居中一枚） */
-export const PATH_ARROW_SPACING_M = 2.2
-/** 箭头与路径端部的最小退距（米）：不压路口环与断头端弧（短路径自动缩小） */
-export const PATH_ARROW_END_MARGIN_M = 0.45
-export const PATH_ARROW_COLOR = '#ffc93c'
-export const PATH_ARROW_BOOST = 1.2
+/**
+ * 节点间黄色中心实线：每条去重后的物理路径各绘制一次，完整保留直线与
+ * 贝塞尔曲线形状；端点精确落在路径起止节点中心并由上层节点圆盘自然收口。
+ */
+export const PATH_CENTER_LINE_WIDTH_M = 0.055
+export const PATH_MARKING_COLOR = '#f2c94c'
+export const PATH_MARKING_BOOST = 1
+
+/**
+ * 方向箭头位于每个逻辑方向起点量起的 30% 弧长处。双向逻辑边共享同一条
+ * 物理路径时，会自然得到位于 30% 与 70% 的两个反向箭头，互不覆盖。
+ */
+export const PATH_DIRECTION_ARROW_POSITION_RATIO = 0.3
+export const PATH_DIRECTION_ARROW_LENGTH_M = 0.34
+export const PATH_DIRECTION_ARROW_SHAFT_HALF_WIDTH_M = 0.04
+export const PATH_DIRECTION_ARROW_HEAD_HALF_WIDTH_M = 0.14
+export const PATH_DIRECTION_ARROW_HEAD_LENGTH_M = 0.17
+/**
+ * 方向箭头采用真实道路常见的暖白标线，与黄色中心实线建立明确的色相差异；
+ * 轻微提亮用于抵消远景缩小后的亮度损失，不使用透明或发光混合。
+ */
+export const PATH_DIRECTION_ARROW_COLOR = '#fff4d6'
+export const PATH_DIRECTION_ARROW_BOOST = 1.08
 
 /**
  * 节点站点圆盘半径与离散段数（一个 InstancedMesh 渲染全部节点，SPEC §5.1）。

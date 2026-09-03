@@ -2,8 +2,9 @@
  * 相机导航生命周期 Hook（SPEC §5.5、§8、§12.3；TASK-013；视觉对齐 P0-5.2
  * 默认作业区聚焦）。
  *
- * 职责：在唯一 Canvas 内自持 OrbitControls 实例（旋转/平移/滚轮缩放 + 阻尼、
- *       最小 2m / 最大地图对角线 3 倍）、按地图包围盒 45° 自动取景（初始取景
+ * 职责：在唯一 Canvas 内自持 OrbitControls 实例（旋转/平移/光标定点滚轮缩
+ *       放 + 阻尼、最小 0.25m / 最大地图对角线 3 倍）、按地图包围盒 45° 自
+ *       动取景（初始取景
  *       与空格俯瞰共用同一数学）、双击跟随状态机（进入时捕获相对偏移、每帧
  *       读取只读目标、手动拖拽或目标删除立即退出）、监听器对称清理；并把
  *       { follow, exitFollow, overview } 命令经 commandsRef 交给 app 组合层
@@ -25,7 +26,8 @@
  *    缩放关闭，两者不会互相抢占；
  * 4. 拖拽判定与车辆选择的拖拽抑制同阈值（6px）：单击（含双击的第一次单击）
  *    不退出跟随、不移动相机；
- * 5. 距离限制恒等式：minDistance=2，maxDistance=max(对角线×3, 2+间隔)，
+ * 5. 距离限制恒等式：minDistance=0.25，maxDistance=max(对角线×3,
+ *    minDistance+间隔)，
  *    bounds 变化时与取景同时重设，任何时刻都满足 max > min；
  * 6. 默认聚焦一次性且不抢镜：只移动 position/target，不缩拢 near/far 与
  *    距离限制；用户已交互（按下/滚轮/空格）后到达的聚焦请求被静默丢弃。
@@ -37,7 +39,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FocusBounds, SceneBounds } from '@/features/map-visualization'
 import type { FollowTargetReader } from '@/features/fleet-monitoring'
 import { useCameraNavigationStore } from '../model/cameraNavigationStore'
-import { computeOverviewPose } from '../model/overviewFraming'
+import {
+  CAMERA_MIN_DISTANCE_M,
+  computeOverviewPose,
+} from '../model/overviewFraming'
 
 /** 相机命令合同：app 组合层经 commandsRef 持有并转发双击跟随/俯瞰请求 */
 export interface CameraNavigationCommands {
@@ -91,6 +96,13 @@ const DEFAULT_DRAG_EXIT_THRESHOLD_PX = 6
 const WHEEL_DOLLY_BASE = 0.95
 /** 滚轮一格（deltaY=±100）对应的缩放强度 */
 const WHEEL_DOLLY_NOTCH = 100
+
+/**
+ * 自由浏览与车辆跟随共用的滚轮缩放速度。
+ * 略高于 OrbitControls 默认值，使新增的 8 倍近景范围无需过多滚轮操作即可
+ * 到达，同时保留足够细的步进以检查相邻路径。
+ */
+const CAMERA_ZOOM_SPEED = 1.25
 
 export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const { bounds, initialFocusBounds, readFollowTarget, commandsRef, controlsRef } = options
@@ -193,7 +205,13 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   useEffect(() => {
     const controlsInstance = new OrbitControls(camera, gl.domElement)
     controlsInstance.enableDamping = true
-    controlsInstance.minDistance = 2
+    /**
+     * 围绕光标命中的屏幕位置推进镜头，密集地图中可直接对准某个节点或路径
+     * 连续放大；最近距离与自动取景共用同一常量，避免初始化阶段口径漂移。
+     */
+    controlsInstance.zoomToCursor = true
+    controlsInstance.zoomSpeed = CAMERA_ZOOM_SPEED
+    controlsInstance.minDistance = CAMERA_MIN_DISTANCE_M
     internalControlsRef.current = controlsInstance
     if (controlsRef !== undefined) {
       controlsRef.current = controlsInstance
@@ -323,7 +341,9 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
         return
       }
       const { offset } = followRef.current
-      const factor = WHEEL_DOLLY_BASE ** ((event.deltaY / WHEEL_DOLLY_NOTCH))
+      const factor = WHEEL_DOLLY_BASE ** (
+        (event.deltaY / WHEEL_DOLLY_NOTCH) * CAMERA_ZOOM_SPEED
+      )
       const nextLength = THREE.MathUtils.clamp(
         offset.length() * factor,
         controlsNow.minDistance,

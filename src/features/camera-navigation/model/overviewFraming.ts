@@ -20,8 +20,18 @@
  *    冲突时以「最小距离 + 间隔」抬高最大距离，OrbitConstraints 不会塌缩。
  */
 
-/** 相机允许的最近距离（米，SPEC §5.5） */
-export const CAMERA_MIN_DISTANCE_M = 2
+/**
+ * 相机允许的最近观察距离（米）。
+ * 0.25m 相比原来的 2m 提供 8 倍近景放大能力，密集节点与相邻路径可被逐条
+ * 检查；同时保留有限下限，避免相机穿过地面或无限逼近目标点。
+ */
+export const CAMERA_MIN_DISTANCE_M = 0.25
+
+/**
+ * 近景模式使用的透视相机近裁剪面（米）。
+ * 该值需显著小于最近观察距离，否则继续放大时节点圆台和路径会先被裁掉。
+ */
+const CAMERA_NEAR_PLANE_M = 0.05
 
 /** 俯瞰取景的包围余量系数：四角投影包络距离 × 该系数 = 10% 边缘呼吸空间 */
 const OVERVIEW_FIT_MARGIN = 1.1
@@ -112,7 +122,7 @@ export function computeOverviewPose(bounds: {
       z: bounds.centerWorldZ + horizontal / Math.SQRT2,
     },
     target: { x: bounds.centerWorldX, z: bounds.centerWorldZ },
-    near: 0.5,
+    near: CAMERA_NEAR_PLANE_M,
     // 远平面覆盖最大距离余量，避免大地图远景被裁剪
     far: Math.max(diagonal * 6, 1000),
     minDistance,
