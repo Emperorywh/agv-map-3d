@@ -60,6 +60,7 @@ import {
   loadStartupMap,
 } from './bootstrap/bootstrapApplication'
 import { selectVehicleDataSource } from './bootstrap/selectVehicleDataSource'
+import { resolveDebugPanelEnabled } from './debug/debugGate'
 import { AgvMonitorScene } from './scene/AgvMonitorScene'
 import { useWebGLContextRecovery, type ContextRecoveryRenderer } from './webgl/useWebGLContextRecovery'
 
@@ -117,6 +118,19 @@ export function App() {
   // 捕获进 state 供恢复 Hook 挂监听；StrictMode 重挂产生的旧渲染器随 R3F
   // 自身清理，state 始终指向最新一次创建的渲染器。
   const [renderer, setRenderer] = useState<ContextRecoveryRenderer | null>(null)
+
+  // DEBUG MODE 门控（开发宪法 §8）：仅开发环境按 ?debug=（显式开/关并记忆）
+  // 与会话记忆（刷新保持）判定；生产构建 DEV=false 使本调用连同判定与存储
+  // 访问一起被死代码消除，leva 面板不进产物。
+  const debugPanelEnabled = useMemo(() => {
+    if (!import.meta.env.DEV) {
+      return false
+    }
+    return resolveDebugPanelEnabled(true, {
+      query: new URLSearchParams(window.location.search),
+      session: window.sessionStorage,
+    })
+  }, [])
 
   // WebGL 上下文恢复状态机（不变量 7）：丢失即暂停提交（frameloop never），
   // 恢复后经资源代驱动重建、结算成功才回到 running。
@@ -354,6 +368,7 @@ export function App() {
         onContextRecoverySettled={settleContextRecovery}
         diagnostics={diagnostics}
         startedAt={startedAtRef.current}
+        debugPanelEnabled={debugPanelEnabled}
       />
     </Canvas>
   )

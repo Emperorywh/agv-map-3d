@@ -53,7 +53,7 @@ export type {
 } from './model/types'
 export { MapVisualizationFeature } from './components/MapVisualizationFeature'
 export type { MapVisualizationFeatureProps } from './components/MapVisualizationFeature'
-export { DEFAULT_SHADOW_MAP_SIZE } from './scene/mapAppearance'
+export { DEFAULT_SHADOW_MAP_SIZE, GRID_Y, GROUND_TILE_M } from './scene/mapAppearance'
 export { useMapVisualization } from './hooks/useMapVisualization'
 export type {
   MapView,

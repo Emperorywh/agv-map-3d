@@ -36,7 +36,8 @@
 // 议、不发起网络请求、不读取运行时配置，也不持有任何逐帧数据（跟随位姿由
 // 相机 Feature 的 ref 状态机逐帧读取；帧时间样本由 render-quality 的 ref 状
 // 态机持有，SPEC §4）。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { CameraNavigationCommands } from '@/features/camera-navigation'
 import { CameraNavigationFeature } from '@/features/camera-navigation'
 import {
@@ -96,6 +97,11 @@ export interface AgvMonitorSceneProps {
    * appInteractive」口径）。
    */
   startedAt?: number
+  /**
+   * DEBUG MODE 门控（开发宪法 §8）：仅开发环境由 App 按 ?debug=与会话记忆
+   * 计算后注入；默认 false（生产与测试渲染器永不挂载）。
+   */
+  debugPanelEnabled?: boolean
 }
 
 /** 默认聚焦决策的重试参数：首批车辆事件到达前的等待节奏与预算上限 */
@@ -103,6 +109,13 @@ const FOCUS_RETRY_INTERVAL_MS = 500
 const FOCUS_RETRY_LIMIT = 20
 /** 位置归属分量包围盒的扩展边距（米）：贴边车辆仍计入所属区域 */
 const FOCUS_MARGIN_M = 2
+
+// DEBUG MODE（开发宪法 §8）：调试面板只在开发环境且显式门控时挂载。生产构
+// 建 import.meta.env.DEV 被静态替换为 false，lazy 动态 import 连同 leva 依赖
+// 与面板代码一起被死代码消除（与 App 的 mock dev bridge 同一模式）。
+const DebugPanel = import.meta.env.DEV
+  ? lazy(() => import('@/app/debug/DebugPanel'))
+  : null
 
 export function AgvMonitorScene({
   mapDescriptor = null,
@@ -115,10 +128,16 @@ export function AgvMonitorScene({
   onContextRecoverySettled,
   diagnostics,
   startedAt,
+  debugPanelEnabled = false,
 }: AgvMonitorSceneProps) {
   // 相机命令出口：车辆双击跟随请求的唯一转交通道（组合层桥接，不经过
   // Feature 间 Store 或事件总线）；引用在相机 Feature 卸载时被置 null。
   const cameraCommandsRef = useRef<CameraNavigationCommands | null>(null)
+
+  // OrbitControls 只读观察引用（开发宪法 §8 调试取证）：相机 Feature 原生
+  // 支持的诊断注入口，调试面板经它读取轨道目标点；生产环境不挂载面板，
+  // 引用空闲不产生任何行为。
+  const debugControlsRef = useRef<OrbitControls | null>(null)
 
   // 只读运行时引用：Provider 就绪时经回调拿到一次（低频，仅此一次更新），
   // 用于构建跟随目标读取器；高频事件流不经过本组件。
@@ -265,6 +284,7 @@ export function AgvMonitorScene({
         initialFocusBounds={initialFocusBounds}
         readFollowTarget={readFollowTarget}
         commandsRef={cameraCommandsRef}
+        controlsRef={debugControlsRef}
         onReady={markCameraReady}
       />
       <FleetRuntimeProvider
@@ -298,6 +318,13 @@ export function AgvMonitorScene({
           }}
         />
       </FleetRuntimeProvider>
+      {/* DEBUG MODE（开发宪法 §8）：门控在 App（DEV + ?debug=）；Suspense 等
+          待 leva 面板动态块加载，加载前场景照常渲染 */}
+      {DebugPanel !== null && debugPanelEnabled ? (
+        <Suspense fallback={null}>
+          <DebugPanel sceneBounds={sceneBounds} controlsRef={debugControlsRef} />
+        </Suspense>
+      ) : null}
     </group>
   )
 }
