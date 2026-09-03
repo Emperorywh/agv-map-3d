@@ -15,8 +15,9 @@
  * 1. 归一化签名只由几何坐标决定：BEZIER 反向 = 端点与控制点整体逆序；同一
  *    节点对之间几何不同的平行路径不会被合并（不得按节点对去重，SPEC §2.2）；
  * 2. BEZIER 固定采样 BEZIER_SAMPLE_SEGMENTS=24 段（全应用唯一离散化口径，
- *    与逻辑边物理长度共用 sampleCubicBezier）；因此中心线段总数恒为
- *    LINE 物理路径数 ×1 + BEZIER 物理路径数 ×24（当前地图 44,559）；
+ *    与逻辑边物理长度共用 sampleCubicBezier）；因此逻辑中心线段总数恒为
+ *    LINE 物理路径数 ×1 + BEZIER 物理路径数 ×24（当前地图 44,559）——该计
+ *    数是逻辑口径，中线几何按 P1-4 虚线化后顶点数与之不同；
  * 3. 重复几何数 = 逻辑边总数 − 物理路径数（当前地图 4,197）；每条逻辑边都
  *    能映射到唯一物理路径，映射无遗漏、无悬空；
  * 4. 静态几何顶点全部位于世界坐标并已烘焙图层高度（见 mapAppearance 阶梯），
@@ -24,7 +25,10 @@
  *    dispose() 明确释放（资源所有权：创建者释放）；
  * 5. 路面条带为共享顶点 polyline strip（P0-4）：关节顶点 = 相邻段平均法线
  *    + 斜接长度补偿（钳制 3× 半宽），路径两端补圆片端帽盖住路口接缝；展开
- *    逻辑集中在 appendPolylineStrip，独占区外沿用同一展开保证覆盖一致。
+ *    逻辑集中在 stripJointFrames/appendPolylineStrip，独占区外沿用同一展开
+ *    保证覆盖一致。路缘描边（P1-4 原方案）实机验证后放弃：路口处各路径边线
+ *    相互交叉/断头形成杂乱花瓣，路面与地面的明度对比已提供铺装板边界；P1-4
+ *    保留的部分为虚线中线与路面提亮。
  */
 import * as THREE from 'three'
 import type { MapModel, MapEdge, EdgeType } from '../model/types'
@@ -35,6 +39,8 @@ import {
 } from '../model/edgeGeometry'
 import type { WorldTransform } from '@/shared/spatial'
 import {
+  CENTERLINE_DASH_OFF_M,
+  CENTERLINE_DASH_ON_M,
   NODE_COLORS,
   NODE_Y,
   PATH_CENTERLINE_Y,
@@ -194,7 +200,7 @@ export interface NodeInstanceData {
 export interface MapGeometry {
   /** 物理路径路面条带（三角形合批，静态） */
   readonly pathsSurface: THREE.BufferGeometry
-  /** 物理路径中线（LineSegments 合批，静态） */
+  /** 物理路径中线虚线（LineSegments 合批，静态） */
   readonly pathsCenterline: THREE.BufferGeometry
   /** 节点实例矩阵与颜色（图层据此创建唯一 InstancedMesh） */
   readonly nodeInstances: NodeInstanceData
@@ -228,16 +234,7 @@ export function buildMapGeometry(
   for (const path of physical.physicalPaths) {
     // 统一坐标转换：平面点 → 世界地面点（mapX-originX, 0, mapY-originY）
     const worldPoints = path.points.map((p) => worldTransform.toWorldXZ(p.x, p.y))
-    for (let i = 1; i < worldPoints.length; i += 1) {
-      const a = worldPoints[i - 1]
-      const b = worldPoints[i]
-      // 零长度段不产生几何（校验层保证长度为正，此处兜底防退化三角形）
-      if (a.x === b.x && a.z === b.z) {
-        continue
-      }
-      centerlinePositions.push(a.x, PATH_CENTERLINE_Y, a.z)
-      centerlinePositions.push(b.x, PATH_CENTERLINE_Y, b.z)
-    }
+    appendDashedCenterline(centerlinePositions, worldPoints)
     appendPolylineStrip(
       surfacePositions,
       surfaceIndices,
@@ -289,27 +286,26 @@ export interface PolylineStripCaps {
   readonly capEnd: boolean
 }
 
+/** 折线的斜接骨架：关节点与每个关节的展开偏移（斜接长度补偿后） */
+interface StripJointFrames {
+  readonly joints: readonly { readonly x: number; readonly z: number }[]
+  readonly jointOffsetX: readonly number[]
+  readonly jointOffsetZ: readonly number[]
+}
+
 /**
- * 把世界坐标折线按 halfWidth 展开为共享顶点条带并追加进位置/索引累积数组。
- * 关节顶点取相邻段法线的平均方向，并按 1/cos(半角) 补偿斜接长度（钳制到
- * 3×halfWidth 防止近回折处的退化放大）——同一路径的弯道无逐段接缝毛边。
- * capStart/capEnd 为真时在首末端点补圆片端帽（三角扇），盖住路口处不同
- * 物理路径条带之间的叠片与尖角缺口。零长度段被跳过；全部顶点烘焙同一高度 y。
- * 独占区外沿条带（buildExclusiveGroupsGeometry）复用同一展开，保证路面与
- * 蓝色外沿在弯道/路口的覆盖关系一致。
+ * 计算折线条带的斜接骨架：关节展开方向取相邻段法线平均，并按 1/cos(半角)
+ * 补偿斜接长度（钳制 3×halfWidth 防止近回折处的退化放大）。路面条带与
+ * 路缘边线条带（P1-4）共用同一骨架，保证边线精确贴合路面边缘。
  */
-export function appendPolylineStrip(
-  positions: number[],
-  indices: number[],
+function stripJointFrames(
   worldPoints: readonly { readonly x: number; readonly z: number }[],
   halfWidth: number,
-  y: number,
-  caps: PolylineStripCaps,
-): void {
+): StripJointFrames {
   // 有效段方向（跳过零长度段）：dir = normalize(b - a)，左法线 = (-dz, dx)
   const dirX: number[] = []
   const dirZ: number[] = []
-  const joints: { readonly x: number; readonly z: number }[] = []
+  const joints: { x: number; z: number }[] = []
   for (let i = 1; i < worldPoints.length; i += 1) {
     const a = worldPoints[i - 1]
     const b = worldPoints[i]
@@ -325,9 +321,6 @@ export function appendPolylineStrip(
     joints.push(b)
     dirX.push(dx / length)
     dirZ.push(dz / length)
-  }
-  if (dirX.length === 0) {
-    return
   }
 
   /** 关节展开偏移：首末关节用相邻段法线，内部关节用平均法线 + 斜接补偿 */
@@ -367,6 +360,31 @@ export function appendPolylineStrip(
     jointOffsetX.push(nx * miter)
     jointOffsetZ.push(nz * miter)
   }
+  return { joints, jointOffsetX, jointOffsetZ }
+}
+
+/**
+ * 把世界坐标折线按 halfWidth 展开为共享顶点条带并追加进位置/索引累积数组。
+ * 关节顶点取相邻段法线的平均方向，并按 1/cos(半角) 补偿斜接长度（钳制到
+ * 3×halfWidth 防止近回折处的退化放大）——同一路径的弯道无逐段接缝毛边。
+ * capStart/capEnd 为真时在首末端点补圆片端帽（三角扇），盖住路口处不同
+ * 物理路径条带之间的叠片与尖角缺口。零长度段被跳过；全部顶点烘焙同一高度 y。
+ * 独占区外沿条带（buildExclusiveGroupsGeometry）复用同一展开，保证路面与
+ * 蓝色外沿在弯道/路口的覆盖关系一致。
+ */
+export function appendPolylineStrip(
+  positions: number[],
+  indices: number[],
+  worldPoints: readonly { readonly x: number; readonly z: number }[],
+  halfWidth: number,
+  y: number,
+  caps: PolylineStripCaps,
+): void {
+  const { joints, jointOffsetX, jointOffsetZ } = stripJointFrames(worldPoints, halfWidth)
+  if (joints.length === 0) {
+    return
+  }
+  const segmentCount = joints.length - 1
 
   // 关节顶点对：偶数位 = 中心 + 偏移，奇数位 = 中心 − 偏移；段四边形共享关节对
   const base = positions.length / 3
@@ -376,7 +394,7 @@ export function appendPolylineStrip(
       joints[j].x - jointOffsetX[j], y, joints[j].z - jointOffsetZ[j],
     )
   }
-  for (let s = 0; s < dirX.length; s += 1) {
+  for (let s = 0; s < segmentCount; s += 1) {
     const a = base + s * 2
     const b = base + s * 2 + 2
     indices.push(a, a + 1, b + 1, a, b + 1, b)
@@ -405,6 +423,46 @@ export function appendPolylineStrip(
   }
   if (caps.capEnd) {
     appendCap(joints.length - 1)
+  }
+}
+
+/**
+ * 虚线中线（P1-4）：按弧长把折线切成「DASH_ON 实段 + DASH_OFF 空段」，
+ * 相位跨关节连续（弯道处虚线不断裂重启）。零长度段跳过；全部顶点烘焙
+ * 同一高度 y，输出为 LineSegments 的成对端点序列。
+ */
+function appendDashedCenterline(
+  positions: number[],
+  worldPoints: readonly { readonly x: number; readonly z: number }[],
+): void {
+  const period = CENTERLINE_DASH_ON_M + CENTERLINE_DASH_OFF_M
+  let phase = 0
+  for (let i = 1; i < worldPoints.length; i += 1) {
+    const a = worldPoints[i - 1]
+    const b = worldPoints[i]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const length = Math.hypot(dx, dz)
+    // 零长度段不产生几何（校验层保证长度为正，此处兜底防退化）
+    if (length === 0) {
+      continue
+    }
+    const ux = dx / length
+    const uz = dz / length
+    let t = 0
+    while (t < length) {
+      const inDash = phase < CENTERLINE_DASH_ON_M
+      const remainingPhase = inDash ? CENTERLINE_DASH_ON_M - phase : period - phase
+      const step = Math.min(remainingPhase, length - t)
+      if (inDash) {
+        positions.push(
+          a.x + ux * t, PATH_CENTERLINE_Y, a.z + uz * t,
+          a.x + ux * (t + step), PATH_CENTERLINE_Y, a.z + uz * (t + step),
+        )
+      }
+      t += step
+      phase = (phase + step) % period
+    }
   }
 }
 

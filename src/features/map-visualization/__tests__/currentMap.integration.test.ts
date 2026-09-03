@@ -14,9 +14,9 @@
  * 6. 物理路径去重（TASK-004 / A1、A3）：5,068 条物理路径（3,351 LINE /
  *    1,717 BEZIER）、4,197 条反向重复几何、约 44,559 个中心线段，
  *    映射覆盖全部逻辑边；
- * 7. 语义图层（TASK-005 / A1、A2）：59 个充电桩实例、1,187 块地面方垫
- *    （1,185 仓库 + 2 停车）、1,185 个仓库名称锚点、7 个独占区名称锚点，
- *    分组成员物理路径全部有效且外沿合并为单个几何。
+ * 7. 语义图层（TASK-005 / A1、A2）：59 个充电桩实例、1,185 块仓库地面方垫
+ *    + 2 块停车凸起 slab（P2-2）、7 个独占区名称锚点（仓库名称已按 P0-5
+ *    移除），分组成员物理路径全部有效且外沿合并为单个几何。
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -34,11 +34,14 @@ import {
   layoutNameAtlas,
 } from '@/features/map-visualization/scene/mapNameAtlas'
 import {
+  CENTERLINE_DASH_OFF_M,
+  CENTERLINE_DASH_ON_M,
   MAP_NAME_CANVAS_MAX_HEIGHT,
   MAP_NAME_CANVAS_WIDTH,
   MAP_NAME_FONT_PX,
   MAP_NAME_PADDING_PX,
   NODE_COLORS,
+  PARK_SLAB_HEIGHT_M,
 } from '@/features/map-visualization/scene/mapAppearance'
 import * as THREE from 'three'
 
@@ -225,8 +228,34 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
   })
 
   it('静态几何规模与节点实例数据正确（一个 InstancedMesh 渲染全部节点）', () => {
+    // P1-4 中线虚线化：顶点数 = 按弧长相位切分的实段数 × 2（虚线口径，
+    // 与实现同一周期常量独立走一遍相位模拟作为合同锁定）
+    const DASH_ON = CENTERLINE_DASH_ON_M
+    const PERIOD = CENTERLINE_DASH_ON_M + CENTERLINE_DASH_OFF_M
+    let expectedDashPairs = 0
+    for (const path of geometry.physical.physicalPaths) {
+      let phase = 0
+      for (let i = 1; i < path.points.length; i += 1) {
+        const a = path.points[i - 1]
+        const b = path.points[i]
+        const len = Math.hypot(b.x - a.x, b.y - a.y)
+        if (len === 0) {
+          continue
+        }
+        let t = 0
+        while (t < len) {
+          const inDash = phase < DASH_ON
+          const step = Math.min(inDash ? DASH_ON - phase : PERIOD - phase, len - t)
+          if (inDash) {
+            expectedDashPairs += 1
+          }
+          t += step
+          phase = (phase + step) % PERIOD
+        }
+      }
+    }
     const centerline = geometry.pathsCenterline.getAttribute('position')
-    expect(centerline.count).toBe(EXPECTED.centerSegmentCount * 2)
+    expect(centerline.count).toBe(expectedDashPairs * 2)
     // P0-4 共享顶点条带：每条物理路径 = 2(S+1) 个关节顶点 + 双端圆帽 2×17
     const stripVertices = (path: { points: readonly unknown[] }): number =>
       2 * (path.points.length - 1 + 1) + 2 * 17
@@ -289,40 +318,43 @@ describe('当前地图（json/map.json）语义图层事实（TASK-005 / A1、A2
     expect(landmarks.chargeMatrices[14]).toBeCloseTo(world.z, 4)
   })
 
-  it('地面标识数量正确：1,187 块方垫（1,185 仓库浅黄 + 2 停车紫），颜色按节点序逐块核对', () => {
-    expect(landmarks.padCount).toBe(1185 + 2)
-    expect(landmarks.padMatrices).toHaveLength((1185 + 2) * 16)
-    expect(landmarks.padColors).toHaveLength((1185 + 2) * 3)
+  it('地面标识数量正确（P2-2）：1,185 块仓库方垫 + 2 块停车凸起 slab，颜色按节点序逐块核对', () => {
+    expect(landmarks.warehousePadCount).toBe(1185)
+    expect(landmarks.warehousePadMatrices).toHaveLength(1185 * 16)
+    expect(landmarks.warehousePadColors).toHaveLength(1185 * 3)
+    expect(landmarks.parkSlabCount).toBe(2)
+    expect(landmarks.parkSlabMatrices).toHaveLength(2 * 16)
+    expect(landmarks.parkHaloMatrices).toHaveLength(2 * 16)
     // P0-5：仓库名称锚点已整体移除，停车锚点保留
     expect('warehouseNameAnchors' in landmarks).toBe(false)
     expect(landmarks.parkAnchors).toHaveLength(2)
 
-    // 按节点遍历序逐块核对：颜色与类别色表一致（节点序与方垫序同源）
+    // 仓库方垫按节点遍历序逐块核对：颜色与仓库色表一致（节点序与方垫序同源）
     let padIndex = 0
-    let warehouseCount = 0
-    let parkCount = 0
     for (const node of mapModel.nodeList) {
-      if (node.category !== 'warehouse' && node.category !== 'park') {
+      if (node.category !== 'warehouse') {
         continue
       }
-      const expected = new THREE.Color(NODE_COLORS[node.category])
-      expect(landmarks.padColors[padIndex * 3]).toBeCloseTo(expected.r, 5)
-      expect(landmarks.padColors[padIndex * 3 + 1]).toBeCloseTo(expected.g, 5)
-      expect(landmarks.padColors[padIndex * 3 + 2]).toBeCloseTo(expected.b, 5)
+      const expected = new THREE.Color(NODE_COLORS.warehouse)
+      expect(landmarks.warehousePadColors[padIndex * 3]).toBeCloseTo(expected.r, 5)
+      expect(landmarks.warehousePadColors[padIndex * 3 + 1]).toBeCloseTo(expected.g, 5)
+      expect(landmarks.warehousePadColors[padIndex * 3 + 2]).toBeCloseTo(expected.b, 5)
       // 矩阵平移列与节点世界坐标一致
       const world = worldTransform.toWorldXZ(node.x, node.y)
-      expect(landmarks.padMatrices[padIndex * 16 + 12]).toBeCloseTo(world.x, 4)
-      expect(landmarks.padMatrices[padIndex * 16 + 14]).toBeCloseTo(world.z, 4)
-      if (node.category === 'warehouse') {
-        warehouseCount += 1
-      } else {
-        parkCount += 1
-      }
+      expect(landmarks.warehousePadMatrices[padIndex * 16 + 12]).toBeCloseTo(world.x, 4)
+      expect(landmarks.warehousePadMatrices[padIndex * 16 + 14]).toBeCloseTo(world.z, 4)
       padIndex += 1
     }
-    expect(padIndex).toBe(1187)
-    expect(warehouseCount).toBe(1185)
-    expect(parkCount).toBe(2)
+    expect(padIndex).toBe(1185)
+
+    // 停车 slab：平移列与停车节点世界坐标一致，y 缩放 = 板厚（P2-2）
+    const parkNodes = mapModel.nodeList.filter((node) => node.category === 'park')
+    for (let i = 0; i < parkNodes.length; i += 1) {
+      const world = worldTransform.toWorldXZ(parkNodes[i].x, parkNodes[i].y)
+      expect(landmarks.parkSlabMatrices[i * 16 + 12]).toBeCloseTo(world.x, 4)
+      expect(landmarks.parkSlabMatrices[i * 16 + 14]).toBeCloseTo(world.z, 4)
+      expect(landmarks.parkSlabMatrices[i * 16 + 5]).toBeCloseTo(PARK_SLAB_HEIGHT_M, 5)
+    }
   })
 
   it('名称条目收集（P0-5）：仓库节点名称不再收集，仅 7 分组 + 1 停车字形，key 全部唯一', () => {

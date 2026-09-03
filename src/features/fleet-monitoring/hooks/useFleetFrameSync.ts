@@ -2,10 +2,10 @@
  * 脏槽位逐帧批量提交（SPEC §4、§5.2、§6.3、§11.6、§11.13；TASK-010）。
  *
  * 职责：作为车队运行时脏集合的唯一帧消费者——每帧 consumeDirty 一次，把
- *       pose/display/removed 差异写入已挂载批次的实例缓冲：位姿差 → 七个
+ *       pose/display/removed 差异写入已挂载批次的实例缓冲：位姿差 → 九个
  *       部件矩阵（按每车尺寸与 centerOffset 合成世界矩阵）；显示差 → 外壳/
- *       方向楔实例颜色、平台/托盘可见性与信标激活集合；删除 → 释放槽位并
- *       零缩放清场。FAULT 信标按累积时间旋转闪烁（矩阵自旋 + 亮度脉动）。
+ *       方向楔实例颜色、平台/托盘/纸箱可见性与信标激活集合；删除 → 释放槽
+ *       位并零缩放清场。FAULT 信标按累积时间旋转闪烁（矩阵自旋 + 亮度脉动）。
  * 边界：只在本 Hook 的 useFrame 中触碰实例缓冲与运行时脏集合；全部中间
  *       状态（脏标记、信标集合、累积时间、THREE 草稿对象）为 Hook 自有
  *       普通对象，绝不进入 React state/zustand（SPEC §4）。批次结构变化
@@ -301,7 +301,7 @@ function writeVehicleFull(
   writeVehicleDisplay(controller, runtime, table, worldTransform, batches, key)
 }
 
-/** 位姿写入：整车可见时合成七部件中的六个矩阵；不可见时整车零缩放 */
+/** 位姿写入：整车可见时合成九部件中的八个矩阵；不可见时整车零缩放 */
 function writeVehiclePose(
   controller: FrameSyncController,
   runtime: FleetRuntime,
@@ -337,8 +337,9 @@ function writeVehiclePose(
     if (kind === 'beacon') {
       continue // 信标矩阵由显示路径（激活/熄灭）与动画路径负责
     }
-    // 平台/托盘仅在载货时真实放置；其余部件常显
-    const partVisible = kind === 'platform' || kind === 'pallet' ? layout.loaded : true
+    // 平台/托盘/纸箱仅在载货时真实放置；车轮/其余部件常显
+    const partVisible =
+      kind === 'platform' || kind === 'pallet' || kind === 'cargo' ? layout.loaded : true
     if (!partVisible) {
       zeroPartMatrix(controller, batches, slot.batch, slot.slot, kind)
       continue
@@ -390,9 +391,9 @@ function writeVehicleDisplay(
     WEDGE_COLOR_BRIGHTNESS,
   )
 
-  // 平台/托盘可见性：loadState 属显示差，变化时重写两者矩阵
+  // 平台/托盘/纸箱可见性：loadState 属显示差，变化时重写三者矩阵
   const pose = computeVehicleWorldPose(entity.snapshot, worldTransform)
-  for (const kind of ['platform', 'pallet'] as const) {
+  for (const kind of ['platform', 'pallet', 'cargo'] as const) {
     if (layout.loaded) {
       writePlacementMatrix(controller, batches, slot.batch, slot.slot, kind, layout[kind], pose, 0)
     } else {
@@ -492,7 +493,7 @@ function zeroPartMatrix(
   controller.matrixDirty[batchIndex][VEHICLE_PART_KINDS.indexOf(kind)] = true
 }
 
-/** 整车清零：七个部件全部零缩放（删除/非法车的清场表达） */
+/** 整车清零：九个部件全部零缩放（删除/非法车的清场表达） */
 function zeroSlot(
   controller: FrameSyncController,
   batches: readonly FleetBatchMeshes[],

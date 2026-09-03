@@ -3,10 +3,11 @@
  *
  * 职责：把交通锁聚合资源（createTrafficLocksResources）挂载到场景，并在
  *       useFrame 中以单调时钟驱动 sync——归一化、100ms 合并窗口与「规范化
- *       哈希变化才重建」的全部语义都封装在资源对象内，本组件只负责挂载、
- *       驱动与脉冲 uniforms 写入（TASK-014 接入 pulseEnabled 能力开关：
- *       SPEC §6.5 行动 3 关闭交通锁脉冲），不触碰任何 React 状态（几何重建
- *       发生在资源对象内部，对 React 不可见也无需可见）。
+ *       哈希变化才重建」的全部语义都封装在资源对象内，本组件只负责挂载
+ *       （面板/描边/文字三网格，P1-8）、驱动与脉冲 uniforms 写入（TASK-014
+ *       接入 pulseEnabled 能力开关：SPEC §6.5 行动 3 关闭交通锁脉冲），不
+ *       触碰任何 React 状态（几何重建发生在资源对象内部，对 React 不可见也
+ *       无需可见）。
  * 边界：本组件拥有聚合资源（网格、材质、当前几何）并在卸载时幂等释放；
  *       不做矩形校验裁决（模型层职责）、不做坐标换算（资源对象按注入的
  *       WorldTransform 完成）。世界变换引用变化（地图恢复换代）由 sync 内部
@@ -71,5 +72,13 @@ export function TrafficLocksLayer({
     return null
   }
   // dispose={null}：全部资源由本组件 effect 显式释放，禁止 R3F 二次释放
-  return <primitive object={resources.mesh} dispose={null} />
+  return (
+    <>
+      <primitive object={resources.mesh} dispose={null} />
+      {/* P1-8 表达增强：边缘亮色描边（共享面板材质）与「已锁定/申请中」文字
+          贴花（Canvas 不可用时网格恒不可见），几何均由 sync 同签同换 */}
+      <primitive object={resources.borderMesh} dispose={null} />
+      <primitive object={resources.textMesh} dispose={null} />
+    </>
+  )
 }

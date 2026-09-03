@@ -55,6 +55,7 @@ import {
 import { LABEL_BG_ATTR, LABEL_BG_ATTRIBUTE_NAMES } from '../scene/labelMaterials'
 import {
   capImportantLabels,
+  isFarImportantRank,
   labelAlertLevel,
   labelChipOf,
   labelImportanceRank,
@@ -337,14 +338,15 @@ function tickLabelFrame(
       cache.levelNext = 0
     }
 
-    // 远景候选登记（<8px 的重点车，按优先级截断到前 20）
+    // 远景候选登记（<8px，P1-12 白名单：总览只保留 selected + FAULT，
+    // 即秩 0/1；STALE/断连/低电量只在近中景显示标签）
     if (cache.levelNext === 0) {
       const rank = labelImportanceRank({
         selected: cache.selectedNext,
         primary: entity.displayState.primary,
         alerts: entity.staticState.alerts,
       })
-      if (rank !== null) {
+      if (isFarImportantRank(rank)) {
         const flat = slot.batch * SLOT_BATCH_CAPACITY + slot.slot
         controller.farFlat[farCount] = flat
         controller.farRank[farCount] = rank

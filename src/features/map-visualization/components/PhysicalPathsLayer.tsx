@@ -1,10 +1,10 @@
 /**
- * 物理路径图层（SPEC §5.1 物理路径行；TASK-004）。
+ * 物理路径图层（SPEC §5.1 物理路径行；TASK-004；P1-4 视觉差距修订）。
  *
- * 职责：把 buildMapGeometry 产出的静态合批几何（路面条带 + 中线）以固定材质
- *       上载到场景，共两个 Draw Call：路面 Mesh 与中线 LineSegments。
+ * 职责：把 buildMapGeometry 产出的静态合批几何（路面条带 + 中线虚线）以固
+ *       定材质上载到场景，共两个 Draw Call：路面 Mesh 与中线 LineSegments。
  * 边界：几何对象由 MapGeometry（地图运行时）拥有并在模型原子替换时释放；
- *       本组件只拥有两个材质，并在卸载或几何更换时释放它们，绝不释放
+ *       本组件只拥有三个材质，并在卸载或几何更换时释放它们，绝不释放
  *       外部几何。组件不感知去重逻辑，只消费已构建好的世界坐标几何。
  * 关键不变量：
  * 1. 几何更换（地图恢复）时：新几何先渲染、旧几何由 useMapVisualization 的
@@ -15,7 +15,10 @@
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { MapGeometry } from '../scene/buildMapGeometry'
-import { PATH_CENTERLINE_COLOR, PATH_SURFACE_COLOR } from '../scene/mapAppearance'
+import {
+  PATH_CENTERLINE_COLOR,
+  PATH_SURFACE_COLOR,
+} from '../scene/mapAppearance'
 
 export function PhysicalPathsLayer({ geometry }: PhysicalPathsLayerProps) {
   const objects = useMemo(

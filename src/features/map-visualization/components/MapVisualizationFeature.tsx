@@ -1,8 +1,9 @@
 /**
  * 地图可视化 Feature 公开根组件（SPEC §5.1、§5.4、§12.3；TASK-004/005/016）。
  *
- * 职责：协调地图场景的全部静态表达——清屏底色、环境与灯光（方向光 +
- *       RoomEnvironment/PMREM + 静态阴影相机）、工业地坪、去重物理路径、
+ * 职责：协调地图场景的全部静态表达——背景渐变/暗角（P2-6，Canvas 不可用
+ *       降级纯色清屏）、环境与灯光（方向光 + 渐变环境 PMREM（P2-5）+
+ *       静态阴影相机）、工业地坪、去重物理路径、
  *       节点实例层，以及 TASK-005 的业务语义层（充电桩/呼吸灯、仓库与停车
  *       地面标识、名称合批、独占区蓝色外沿与近景名称）；地图生命周期由
  *       useMapVisualization 驱动，名称图集由本组件经 useMapNameAtlas 单一持有。
@@ -45,15 +46,17 @@ import {
   type MapNameAtlasFactory,
 } from '../hooks/useMapNameAtlas'
 import {
-  createRoomEnvironment,
+  createGradientEnvironment,
   type SceneEnvironmentFactory,
 } from '../scene/createSceneEnvironment'
+import { createBackgroundGradient } from '../scene/createBackgroundGradient'
 import { createMapNameAtlas } from '../scene/mapNameAtlas'
 import {
   DEFAULT_SHADOW_MAP_SIZE,
   DIRECTIONAL_LIGHT_INTENSITY,
   LIGHT_SHADOW_MARGIN_M,
   MAP_CLEAR_COLOR,
+  SCENE_FOG_DENSITY_PER_DIAGONAL,
 } from '../scene/mapAppearance'
 import { GroundLayer } from './GroundLayer'
 import { PhysicalPathsLayer } from './PhysicalPathsLayer'
@@ -73,7 +76,7 @@ export interface MapVisualizationFeatureProps {
    * 方向光不再投射阴影（shadow camera 配置保留，恢复只需翻回开关）；默认 true。
    */
   dynamicShadowsEnabled?: boolean
-  /** 环境工厂注入点；默认 RoomEnvironment+PMREM，测试注入替身 */
+  /** 环境工厂注入点；默认顶点色渐变环境+PMREM（P2-5），测试注入替身 */
   environmentFactory?: SceneEnvironmentFactory
   /** 名称图集工厂注入点；默认真实 Canvas 工厂，测试注入替身 */
   nameAtlasFactory?: MapNameAtlasFactory
@@ -102,7 +105,7 @@ export function MapVisualizationFeature({
   diagnostics,
   shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
   dynamicShadowsEnabled = true,
-  environmentFactory = createRoomEnvironment,
+  environmentFactory = createGradientEnvironment,
   nameAtlasFactory = createMapNameAtlasDefault,
   decorationsEnabled = true,
   contextGeneration = 0,
@@ -132,10 +135,21 @@ export function MapVisualizationFeature({
     diagnostics,
   })
 
+  // 背景渐变纹理（P2-6）：模块级静态资源，挂载时创建一次；Canvas 不可得
+  // （无头测试环境）时为 null，降级为 MAP_CLEAR_COLOR 纯色清屏。Canvas 源
+  // 纹理上下文恢复后由 three.js 自动重传，不随资源换代。
+  const background = useMemo(() => createBackgroundGradient(), [])
+  useEffect(() => () => background?.dispose(), [background])
+
   return (
     <>
-      {/* 清屏底色始终存在：地图未就绪或失败重试期间页面保持该颜色 */}
-      <color attach="background" args={[MAP_CLEAR_COLOR]} />
+      {/* 背景（P2-6）：渐变 + 暗角纹理优先，Canvas 不可用时保持纯色清屏——
+          地图未就绪或失败重试期间页面同样保持背景色 */}
+      {background !== null ? (
+        <primitive object={background.texture} attach="background" />
+      ) : (
+        <color attach="background" args={[MAP_CLEAR_COLOR]} />
+      )}
       {view !== null ? (
         // key 绑定资源代（TASK-016）：上下文恢复时代号变化强制五个图层整体
         // 卸载/挂载——旧 GPU 对象由各图层所有权 effect 释放，新对象在同一
@@ -245,6 +259,22 @@ function SceneLighting({
   )
   useEffect(() => () => lighting?.light.dispose(), [lighting])
 
+  // 场景雾（P1-3）：FogExp2 密度按地图对角线缩放，雾色 = 清屏底色——远处
+  // 地面渐隐进背景，配合 50m 地坪边距消除「黑色孤岛」；近景无感知。fog 是
+  // 纯 CPU 场景属性（非 GPU 资源），不参与 TASK-016 资源换代。
+  useEffect(() => {
+    if (bounds === null) {
+      return
+    }
+    scene.fog = new THREE.FogExp2(
+      MAP_CLEAR_COLOR,
+      SCENE_FOG_DENSITY_PER_DIAGONAL / Math.max(bounds.diagonal, 1),
+    )
+    return () => {
+      scene.fog = null
+    }
+  }, [scene, bounds])
+
   if (lighting === null) {
     return null
   }
@@ -265,6 +295,13 @@ function SceneLighting({
         object={lighting.target}
         dispose={null}
       />
+      {/* 冷色半球光（P1-9）：暗部补冷蓝灰环境光，明暗过渡更接近 Reference；
+          强度 0.5，与方向光降档（P0-7）后的总量平衡，不过曝 */}
+      <primitive
+        key={`map-hemisphere-${lighting.id}`}
+        object={lighting.hemisphere}
+        dispose={null}
+      />
     </>
   )
 }
@@ -277,6 +314,8 @@ interface StaticLighting {
   readonly id: number
   light: THREE.DirectionalLight
   target: THREE.Object3D
+  /** 冷色半球光（P1-9）：与方向光同代创建与释放 */
+  hemisphere: THREE.HemisphereLight
 }
 
 /**
@@ -284,6 +323,7 @@ interface StaticLighting {
  * 阴影相机按「灯光空间下的地图四角」包络（P0-8）：此前按 对角线/2 + margin 的
  * 正方形覆盖 311m 见方，近半面积在地图之外；改按四角在光空间的 min/max 设
  * left/right/top/bottom 与 near/far，有效分辨率显著提升（同贴图尺寸下）。
+ * 同时创建冷色半球光（P1-9：天顶冷蓝 / 地面深灰，强度 0.5），补匀暗部。
  */
 function createStaticDirectionalLight(
   bounds: SceneBounds,
@@ -357,6 +397,9 @@ function createStaticDirectionalLight(
   target.name = 'map-light-target'
   target.position.set(bounds.centerWorldX, 0, bounds.centerWorldZ)
   light.target = target
+
+  const hemisphere = new THREE.HemisphereLight(0x3a4660, 0x14171c, 0.5)
+  hemisphere.name = 'map-hemisphere-light'
   sceneLightingSeq += 1
-  return { id: sceneLightingSeq, light, target }
+  return { id: sceneLightingSeq, light, target, hemisphere }
 }

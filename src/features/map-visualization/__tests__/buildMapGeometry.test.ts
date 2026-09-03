@@ -110,26 +110,59 @@ describe('buildMapGeometry：世界坐标静态几何', () => {
   const { mapModel, worldTransform } = buildSyntheticMap()
   const geometry = buildMapGeometry(mapModel, worldTransform)
 
-  it('中线几何与统一坐标转换一致：逐段等于采样点的世界坐标', () => {
+  it('中线虚线几何（P1-4）：全部顶点位于路径上、高度一致、单段不超实线长', () => {
     const positions = geometry.pathsCenterline.getAttribute('position')
     const physical = dedupePhysicalPaths(mapModel)
-    let cursor = 0
-    for (const path of physical.physicalPaths) {
-      for (let i = 1; i < path.points.length; i += 1) {
-        const a = worldTransform.toWorldXZ(path.points[i - 1].x, path.points[i - 1].y)
-        const b = worldTransform.toWorldXZ(path.points[i].x, path.points[i].y)
-        expect(positions.getX(cursor)).toBeCloseTo(a.x, 6)
-        expect(positions.getY(cursor)).toBeCloseTo(PATH_CENTERLINE_Y, 6)
-        expect(positions.getZ(cursor)).toBeCloseTo(a.z, 6)
-        cursor += 1
-        expect(positions.getX(cursor)).toBeCloseTo(b.x, 6)
-        expect(positions.getZ(cursor)).toBeCloseTo(b.z, 6)
-        cursor += 1
+
+    // 每个虚线段端点必须落在某条物理路径的某段上（共线 + 参数在段内）
+    const onPath = (x: number, z: number): boolean => {
+      for (const path of physical.physicalPaths) {
+        for (let i = 1; i < path.points.length; i += 1) {
+          const a = worldTransform.toWorldXZ(path.points[i - 1].x, path.points[i - 1].y)
+          const b = worldTransform.toWorldXZ(path.points[i].x, path.points[i].y)
+          const dx = b.x - a.x
+          const dz = b.z - a.z
+          const len2 = dx * dx + dz * dz
+          if (len2 === 0) {
+            continue
+          }
+          const t = ((x - a.x) * dx + (z - a.z) * dz) / len2
+          if (t < -1e-6 || t > 1 + 1e-6) {
+            continue
+          }
+          const px = a.x + dx * t
+          const pz = a.z + dz * t
+          if (Math.hypot(px - x, pz - z) < 1e-4) {
+            return true
+          }
+        }
       }
+      return false
     }
-    // 每段两个端点顶点
-    expect(cursor).toBe(physical.centerSegmentCount * 2)
-    expect(cursor * 3).toBe(positions.array.length)
+
+    const vertexCount = positions.count
+    expect(vertexCount).toBeGreaterThan(0)
+    expect(vertexCount % 2).toBe(0)
+    for (let v = 0; v < vertexCount; v += 1) {
+      expect(positions.getY(v)).toBeCloseTo(PATH_CENTERLINE_Y, 6)
+      expect(onPath(positions.getX(v), positions.getZ(v))).toBe(true)
+    }
+    // 每条虚线段（成对顶点）长度 ≤ 实段长（相位跨关节连续，端点截断除外）
+    for (let d = 0; d < vertexCount / 2; d += 1) {
+      const ax = positions.getX(d * 2)
+      const az = positions.getZ(d * 2)
+      const bx = positions.getX(d * 2 + 1)
+      const bz = positions.getZ(d * 2 + 1)
+      expect(Math.hypot(bx - ax, bz - az)).toBeLessThanOrEqual(1.0 + 1e-6)
+    }
+  })
+
+  it('中线虚线首段从路径起点开始（相位 0 = 实段）', () => {
+    const positions = geometry.pathsCenterline.getAttribute('position')
+    const first = dedupePhysicalPaths(mapModel).physicalPaths[0]
+    const start = worldTransform.toWorldXZ(first.points[0].x, first.points[0].y)
+    expect(positions.getX(0)).toBeCloseTo(start.x, 6)
+    expect(positions.getZ(0)).toBeCloseTo(start.z, 6)
   })
 
   it('节点实例矩阵与颜色：平移到世界坐标、类别颜色正确、count 一致', () => {
@@ -172,10 +205,15 @@ describe('buildMapGeometry：世界坐标静态几何', () => {
     const positions = scaled.pathsCenterline.getAttribute('position')
     const start = scaledTransform.toWorldXZ(0, 0)
     const end = scaledTransform.toWorldXZ(4, 0)
+    // P1-4 虚线化：首段仍从路径起点开始，全部顶点落在唯一线段上
     expect(positions.getX(0)).toBeCloseTo(start.x, 6)
     expect(positions.getZ(0)).toBeCloseTo(start.z, 6)
-    expect(positions.getX(1)).toBeCloseTo(end.x, 6)
-    expect(positions.getZ(1)).toBeCloseTo(end.z, 6)
+    expect(positions.count).toBeGreaterThan(2)
+    for (let v = 0; v < positions.count; v += 1) {
+      expect(positions.getZ(v)).toBeCloseTo(start.z, 6)
+      expect(positions.getX(v)).toBeGreaterThanOrEqual(Math.min(start.x, end.x) - 1e-5)
+      expect(positions.getX(v)).toBeLessThanOrEqual(Math.max(start.x, end.x) + 1e-5)
+    }
     scaled.dispose()
   })
 

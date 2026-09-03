@@ -14,6 +14,7 @@ import {
 } from '@/shared/spatial'
 import { createFleetRuntime, type FleetRuntime } from '../model/createFleetRuntime'
 import { createTrafficLocksResources } from '../scene/trafficGeometry'
+import { TRAFFIC_LOCK_BORDER_LIFT_M, TRAFFIC_LOCK_BORDER_WIDTH_M, TRAFFIC_LOCK_Y_M } from '../scene/fleetAppearance'
 import { snapshotEvent, snapshotOf, updateEvent } from './testVehicles'
 
 const world = (): WorldTransform =>
@@ -174,7 +175,8 @@ describe('交通锁聚合（100ms 合并窗口与哈希重建判据）', () => {
       const next = world()
       expect(resources.sync(runtime.entities(), next, 5_010)).toBe(true)
       const position = resources.mesh.geometry.getAttribute('position')
-      expect(position.getY(0)).toBeCloseTo(0.02, 6)
+      // P1-8：面板抬升至悬浮高度（TRAFFIC_LOCK_Y_M = 0.2）
+      expect(position.getY(0)).toBeCloseTo(TRAFFIC_LOCK_Y_M, 6)
     } finally {
       resources.dispose()
     }
@@ -228,6 +230,44 @@ describe('交通锁几何表达（locked 红 / applying 黄 / 索引三角化）
       resources.sync(runtime.entities(), world(), 5_000)
       expect(resources.mesh.visible).toBe(true)
       expect(resources.mesh.geometry.getAttribute('position').count).toBe(4)
+    } finally {
+      resources.dispose()
+    }
+  })
+
+  it('P1-8 表达增强：描边几何 16 顶点/矩形、亮度更高、悬浮于面板之上', () => {
+    const runtime = createFleetRuntime()
+    apply(runtime, [vehicle('v1', [RECT_A], [])], 1000)
+    const resources = createTrafficLocksResources()
+    try {
+      resources.sync(runtime.entities(), world(), 5_000)
+      expect(resources.borderMesh.visible).toBe(true)
+      const geometry = resources.borderMesh.geometry
+      // 4 条边 × 4 顶点；索引 4 条 × 6
+      expect(geometry.getAttribute('position').count).toBe(16)
+      expect(geometry.getIndex()!.count).toBe(24)
+      const color = geometry.getAttribute('color')
+      const locked = new THREE.Color('#ff2d2d')
+      // 顶点色 = 面板色 × 亮度乘数（超 1 的 HDR 值，ACES 下更亮）
+      expect(color.getX(0)).toBeCloseTo(locked.r * 1.6, 5)
+      // 描边高于面板（同帧几何烘焙两个高度）
+      const position = geometry.getAttribute('position')
+      expect(position.getY(0)).toBeCloseTo(TRAFFIC_LOCK_Y_M + TRAFFIC_LOCK_BORDER_LIFT_M, 6)
+      expect(TRAFFIC_LOCK_BORDER_WIDTH_M).toBeGreaterThan(0)
+    } finally {
+      resources.dispose()
+    }
+  })
+
+  it('P1-8 文字贴花：无 Canvas 环境下降级为网格不可见（不阻断）', () => {
+    const runtime = createFleetRuntime()
+    apply(runtime, [vehicle('v1', [RECT_A], [])], 1000)
+    const resources = createTrafficLocksResources()
+    try {
+      resources.sync(runtime.entities(), world(), 5_000)
+      // 测试环境无 Canvas 2D → 图集为 null → 文字几何为空且恒不可见
+      expect(resources.textMesh.visible).toBe(false)
+      expect(resources.textMesh.geometry.getAttribute('position')).toBeUndefined()
     } finally {
       resources.dispose()
     }

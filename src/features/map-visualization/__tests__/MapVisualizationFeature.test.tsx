@@ -155,13 +155,17 @@ describe('MapVisualizationFeature 场景组合', () => {
     const nodes = expectSingleInstanced(renderer.scene, 'map-nodes')
     expect(nodes.count).toBe(4)
 
-    // TASK-005 地标：方垫 = warehouse + park；充电桩/光环/呼吸灯 = charge 数
+    // TASK-005 地标（P2-2）：方垫 = warehouse；slab/光晕 = park；充电组 = charge 数。
+    // 闪电贴花（P2-1）依赖 Canvas，无头测试环境整体降级为不创建
     const pads = expectSingleInstanced(renderer.scene, 'map-landmark-pads')
-    expect(pads.count).toBe(2)
+    expect(pads.count).toBe(1)
     expect(pads.hasColor).toBe(true)
+    expect(expectSingleInstanced(renderer.scene, 'map-park-slabs').count).toBe(1)
+    expect(expectSingleInstanced(renderer.scene, 'map-park-halos').count).toBe(1)
     expect(expectSingleInstanced(renderer.scene, 'map-charge-piles').count).toBe(1)
     expect(expectSingleInstanced(renderer.scene, 'map-charge-rings').count).toBe(1)
     expect(expectSingleInstanced(renderer.scene, 'map-charge-lights').count).toBe(1)
+    expect(findByName(renderer.scene, 'map-charge-bolts')).toHaveLength(0)
 
     // 名称合批（P0-5 后仓库 0）：停车字形 1 → 4 顶点；分组名称 1 → 4 顶点
     const landmarkNames = findByName(renderer.scene, 'map-landmark-names')
@@ -274,6 +278,11 @@ describe('MapVisualizationFeature 场景组合', () => {
       material: { userData: { uniforms: { uPulseEnabled: { value: number } } } }
     }
     expect(lights.material.userData.uniforms.uPulseEnabled.value).toBe(0)
+    // P2-1：底环脉冲与呼吸灯同一开关（初值即刻生效）
+    const rings = toThree(findByName(renderer.scene, 'map-charge-rings')[0]) as unknown as {
+      material: { userData: { uniforms: { uPulseEnabled: { value: number } } } }
+    }
+    expect(rings.material.userData.uniforms.uPulseEnabled.value).toBe(0)
     // 开关不隐藏业务语义：方垫/立柱/名称仍然在场
     expect(findByName(renderer.scene, 'map-landmark-pads')).toHaveLength(1)
     expect(findByName(renderer.scene, 'map-charge-piles')).toHaveLength(1)

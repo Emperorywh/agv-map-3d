@@ -75,6 +75,19 @@ export function labelImportanceRank(input: LabelImportanceInput): number | null 
 }
 
 /**
+ * 总览档重点标签白名单（视觉差距分析 P1-12/7.3）：投影 < 8px 的总览距离下，
+ * 只保留秩 ≤ 该值的重点车（选中 + FAULT，即秩 0/1）——总览画面的芯片数量
+ * 从「所有重点」收敛到「告警本体」，STALE/断连/低电量车只在近中景显示标签。
+ * 该秩体系同时仍是远景截断（capImportantLabels）的优先级排序依据。
+ */
+export const FAR_IMPORTANT_MAX_RANK = 1
+
+/** 总览档重点准入判定：秩非空且在白名单内（类型谓词收窄非空秩） */
+export function isFarImportantRank(rank: number | null): rank is number {
+  return rank !== null && rank <= FAR_IMPORTANT_MAX_RANK
+}
+
+/**
  * 标签边框告警级（SPEC §7.3）：L2 红含 FAULT/STALE/OFFLINE（断连投影）、
  * CRITICAL_BATTERY 与 INVALID_DATA；L1 黄含 LOW_BATTERY 与 LOW_LOCALIZATION；
  * L2 优先于 L1。多告警并存时不丢失最高级。

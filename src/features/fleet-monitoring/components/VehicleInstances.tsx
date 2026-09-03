@@ -1,7 +1,7 @@
 /**
  * 车辆实例批次图层（SPEC §4、§5.2、§6.3、§11.13、§12.5；TASK-010）。
  *
- * 职责：把程序化 AGV 以「批次 × 七部件 InstancedMesh」挂载到场景——按当前
+ * 职责：把程序化 AGV 以「批次 × 九部件 InstancedMesh」挂载到场景——按当前
  *       批次数挂载对应数量的批次对象，并把逐帧提交交给 useFleetFrameSync
  *       （脏集合的唯一帧消费者）。实例槽位表与批次数由 FleetMonitoringFeature
  *       持有并与车辆标签图层共享（TASK-011：标签槽位 = 车体槽位），批次扩
@@ -12,14 +12,17 @@
  *       外壳网格携带 userData.batchId，供拾取层把 (batchId, instanceId)
  *       映射回实体键（映射本体在槽位表 resolve，选择接线属 TASK-012）。
  * 关键不变量：
- * 1. 每批次恒为 7 个 InstancedMesh（底盘/外壳/楔/平台/托盘/信标/阴影），
- *    200 台（单批次）车辆主体 Draw Call = 7 ≤ 8（SPEC §6.3）；不参与拾取
- *    的部件关闭 raycast，仅外壳保留拾取（SPEC §5.2）；
+ * 1. 每批次恒为 9 个 InstancedMesh（底盘/外壳/楔/平台/托盘/纸箱/信标/车轮/
+ *    假阴影），200 台（单批次）车辆主体 Draw Call = 9。P1-6 视觉差距修订：
+ *    在 SPEC §6.3 的 7 部件（预算 ≤8）基础上按视觉分析授权新增车轮与载货
+ *    纸箱 2 个部件（静态合批批次内增量 2 DC，预算偏差已在进展文档记录）；
+ *    不参与拾取的部件关闭 raycast，仅外壳保留拾取（SPEC §5.2）；
  * 2. 全部实例矩阵初始为零缩放：空槽位与超容量等待的车辆绝不以默认单位阵
  *    出现在原点；count 恒等于批次容量，可见性完全由矩阵表达；
  * 3. 车辆受光主体部件投射实时阴影（P0-8：castShadow=true），车底假阴影贴片
- *    保留作接触暗部（SPEC §5.4；阴影开关由灯光 castShadow 总控）；
- *    InstancedMesh 关闭视锥剔除（包围球不随实例动态变化）；
+ *    保留作接触暗部（SPEC §5.4；阴影开关由灯光 castShadow 总控）；车轮不投
+ *    （藏于底盘阴影内）、纸箱投射；InstancedMesh 关闭视锥剔除（包围球不随
+ *    实例动态变化）；
  * 4. key 携带批次数：批次数变化时全部批次走卸载/挂载路径——R3F 对已挂载
  *    primitive 换 object 依赖「兄弟序列尾部」探测，与条件子树组合时重建
  *    会被静默丢弃（TASK-005 实测），key 变化强制干净重建；
@@ -118,43 +121,58 @@ function createBatches(resources: VehicleResources, batchCount: number): FleetBa
   return batches
 }
 
+/** 部件 → 共用几何/材质的静态映射（VehicleResources 单一所有者的只读视图） */
+const PART_GEOMETRY_KEYS: Record<VehiclePartKind, keyof VehicleResources> = {
+  chassis: 'box',
+  shell: 'box',
+  wedge: 'wedge',
+  platform: 'box',
+  pallet: 'box',
+  cargo: 'cargo',
+  beacon: 'beacon',
+  wheels: 'wheels',
+  shadow: 'shadow',
+}
+
+const PART_MATERIAL_KEYS: Record<VehiclePartKind, keyof VehicleResources> = {
+  chassis: 'chassisMaterial',
+  shell: 'shellMaterial',
+  wedge: 'wedgeMaterial',
+  platform: 'platformMaterial',
+  pallet: 'palletMaterial',
+  cargo: 'cargoMaterial',
+  beacon: 'beaconMaterial',
+  wheels: 'wheelMaterial',
+  shadow: 'shadowMaterial',
+}
+
+/** 投射实时阴影的受光主体部件（车轮藏于底盘阴影内、贴片/信标不投） */
+const SHADOW_CASTING_PARTS: ReadonlySet<VehiclePartKind> = new Set([
+  'chassis',
+  'shell',
+  'wedge',
+  'platform',
+  'pallet',
+  'cargo',
+])
+
 /** 创建单个部件 InstancedMesh：零缩放初始化、动态用法、拾取与阴影语义 */
 function createPartMesh(
   resources: VehicleResources,
   kind: VehiclePartKind,
   batchIndex: number,
 ): THREE.InstancedMesh {
-  const geometry =
-    kind === 'chassis' || kind === 'shell' || kind === 'platform' || kind === 'pallet'
-      ? resources.box
-      : kind === 'wedge'
-        ? resources.wedge
-        : kind === 'beacon'
-          ? resources.beacon
-          : resources.shadow
-  const material =
-    kind === 'chassis'
-      ? resources.chassisMaterial
-      : kind === 'shell'
-        ? resources.shellMaterial
-        : kind === 'wedge'
-          ? resources.wedgeMaterial
-          : kind === 'platform'
-            ? resources.platformMaterial
-            : kind === 'pallet'
-              ? resources.palletMaterial
-              : kind === 'beacon'
-                ? resources.beaconMaterial
-                : resources.shadowMaterial
+  const geometry = resources[PART_GEOMETRY_KEYS[kind]] as THREE.BufferGeometry
+  const material = resources[PART_MATERIAL_KEYS[kind]] as THREE.Material
 
   const capacity = SLOT_BATCH_CAPACITY
   const mesh = new THREE.InstancedMesh(geometry, material, capacity)
   mesh.name = `fleet-${kind}-b${batchIndex}`
   mesh.count = capacity
   mesh.matrixAutoUpdate = false
-  // P0-8 实时阴影：受光主体部件（底盘/外壳/楔/平台/托盘）投射阴影，假阴影
-  // 贴片与信标不投（贴片是接收暗部本体、信标悬空无意义）；地面 receiveShadow
-  mesh.castShadow = kind === 'chassis' || kind === 'shell' || kind === 'wedge' || kind === 'platform' || kind === 'pallet'
+  // P0-8 实时阴影：受光主体部件投射阴影，假阴影贴片与信标不投（贴片是
+  // 接收暗部本体、信标悬空无意义）；地面 receiveShadow
+  mesh.castShadow = SHADOW_CASTING_PARTS.has(kind)
   mesh.receiveShadow = false
   mesh.frustumCulled = false
 

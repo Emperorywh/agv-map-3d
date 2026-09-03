@@ -1,11 +1,14 @@
 /*
- * 地标实例数据构建测试（与实现共置；TASK-005；P0-5 移除仓库名称锚点）。
+ * 地标实例数据构建测试（与实现共置；TASK-005；P0-5 移除仓库名称锚点；
+ * P2-2 停车点拆分为凸起 slab + 光晕数据）。
  *
  * 职责：锁定 buildLandmarkData 的纯数据合同（当前夹具）：
- * 1. 数量恒等：立柱/光环/呼吸灯矩阵数 = charge 节点数；方垫数 = warehouse +
- *    park 节点数；停车字形锚点数 = park 数；仓库名称锚点恒为不存在（P0-5）；
+ * 1. 数量恒等：立柱/光环/呼吸灯矩阵数 = charge 节点数；仓库方垫数 =
+ *    warehouse 节点数；停车 slab/光晕数 = park 数 = 停车字形锚点数；
+ *    仓库名称锚点恒为不存在（P0-5）；
  * 2. 位置恒等：全部世界坐标与 WorldTransform.toWorldXZ 一致（§2.5 同源）；
- * 3. 方垫缩放与实例颜色：仓库浅黄 + 停车紫，颜色表与 padColors 数值一致；
+ * 3. 方垫缩放与实例颜色：仓库浅黄，颜色表与 warehousePadColors 数值一致；
+ *    停车 slab 为平移+xz/板厚非等比缩放（P2-2）；
  * 4. work/unknown 节点不产生任何地标语义。
  */
 import { describe, expect, it } from 'vitest'
@@ -16,6 +19,8 @@ import { buildLandmarkData } from '../scene/buildLandmarkData'
 import {
   NODE_COLORS,
   PARK_PAD_SIZE_M,
+  PARK_SLAB_HALO_SIZE_RATIO,
+  PARK_SLAB_HEIGHT_M,
   WAREHOUSE_PAD_SIZE_M,
 } from '../scene/mapAppearance'
 import { makeNode } from './fixtures'
@@ -42,12 +47,15 @@ describe('buildLandmarkData 地标实例数据', () => {
   const { mapModel, worldTransform } = buildFixture()
   const data = buildLandmarkData(mapModel, worldTransform)
 
-  it('数量恒等：charge 1 组矩阵、方垫 2 个、停车锚点 1 个', () => {
+  it('数量恒等：charge 1 组矩阵、仓库方垫 1 个、停车 slab/光晕 1 个、停车锚点 1 个', () => {
     expect(data.chargeCount).toBe(1)
     expect(data.chargeMatrices).toHaveLength(16)
-    expect(data.padCount).toBe(2)
-    expect(data.padMatrices).toHaveLength(2 * 16)
-    expect(data.padColors).toHaveLength(2 * 3)
+    expect(data.warehousePadCount).toBe(1)
+    expect(data.warehousePadMatrices).toHaveLength(16)
+    expect(data.warehousePadColors).toHaveLength(3)
+    expect(data.parkSlabCount).toBe(1)
+    expect(data.parkSlabMatrices).toHaveLength(16)
+    expect(data.parkHaloMatrices).toHaveLength(16)
     expect(data.parkAnchors).toHaveLength(1)
   })
 
@@ -67,27 +75,32 @@ describe('buildLandmarkData 地标实例数据', () => {
     expect(data.parkAnchors[0]).toMatchObject({ nodeId: 'p1', x: parkWorld.x, z: parkWorld.z })
   })
 
-  it('方垫按类别缩放与着色：仓库浅黄、停车紫，矩阵为平移+等比 xz 缩放', () => {
+  it('仓库方垫按类别缩放与着色（浅黄），矩阵为平移+等比 xz 缩放', () => {
     const expectedWarehouse = new THREE.Color(NODE_COLORS.warehouse)
-    const expectedPark = new THREE.Color(NODE_COLORS.park)
 
-    // 第一块方垫 = 仓库（节点序：w1 在 p1 之前）
-    expect(data.padMatrices[0]).toBeCloseTo(WAREHOUSE_PAD_SIZE_M, 5)
-    expect(data.padMatrices[5]).toBeCloseTo(1, 5)
-    expect(data.padMatrices[10]).toBeCloseTo(WAREHOUSE_PAD_SIZE_M, 5)
-    expect(data.padColors[0]).toBeCloseTo(expectedWarehouse.r, 5)
-    expect(data.padColors[1]).toBeCloseTo(expectedWarehouse.g, 5)
-    expect(data.padColors[2]).toBeCloseTo(expectedWarehouse.b, 5)
+    expect(data.warehousePadMatrices[0]).toBeCloseTo(WAREHOUSE_PAD_SIZE_M, 5)
+    expect(data.warehousePadMatrices[5]).toBeCloseTo(1, 5)
+    expect(data.warehousePadMatrices[10]).toBeCloseTo(WAREHOUSE_PAD_SIZE_M, 5)
+    expect(data.warehousePadColors[0]).toBeCloseTo(expectedWarehouse.r, 5)
+    expect(data.warehousePadColors[1]).toBeCloseTo(expectedWarehouse.g, 5)
+    expect(data.warehousePadColors[2]).toBeCloseTo(expectedWarehouse.b, 5)
+  })
 
-    // 第二块方垫 = 停车
-    expect(data.padMatrices[16]).toBeCloseTo(PARK_PAD_SIZE_M, 5)
-    expect(data.padColors[3]).toBeCloseTo(expectedPark.r, 5)
-    expect(data.padColors[4]).toBeCloseTo(expectedPark.g, 5)
-    expect(data.padColors[5]).toBeCloseTo(expectedPark.b, 5)
+  it('P2-2：停车 slab 为平移+xz/板厚非等比缩放，光晕随动放大', () => {
+    // slab：足迹 = PARK_PAD_SIZE_M，y 缩放 = 板厚，基线在地面（y 平移 0）
+    expect(data.parkSlabMatrices[0]).toBeCloseTo(PARK_PAD_SIZE_M, 5)
+    expect(data.parkSlabMatrices[5]).toBeCloseTo(PARK_SLAB_HEIGHT_M, 5)
+    expect(data.parkSlabMatrices[10]).toBeCloseTo(PARK_PAD_SIZE_M, 5)
+    expect(data.parkSlabMatrices[13]).toBeCloseTo(0, 5)
+
+    // 光晕：足迹 = PARK_PAD_SIZE_M × 光晕比例
+    expect(data.parkHaloMatrices[0]).toBeCloseTo(PARK_PAD_SIZE_M * PARK_SLAB_HALO_SIZE_RATIO, 5)
+    expect(data.parkHaloMatrices[10]).toBeCloseTo(PARK_PAD_SIZE_M * PARK_SLAB_HALO_SIZE_RATIO, 5)
   })
 
   it('work 与 unknown 节点不产生地标语义（未知类型只由节点层灰色兜底）', () => {
-    expect(data.padCount).toBe(2)
+    expect(data.warehousePadCount).toBe(1)
     expect(data.chargeCount).toBe(1)
+    expect(data.parkSlabCount).toBe(1)
   })
 })

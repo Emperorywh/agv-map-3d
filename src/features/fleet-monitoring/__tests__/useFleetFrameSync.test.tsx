@@ -295,7 +295,7 @@ describe('VehicleInstances 逐帧同步（TASK-010）', () => {
     await advance(renderer)
     const matrixWrites = probes.reduce((sum, p) => sum + p.matrix.count(), 0)
     expect(matrixWrites).toBeGreaterThan(0)
-    expect(matrixWrites).toBeLessThanOrEqual(7)
+    expect(matrixWrites).toBeLessThanOrEqual(8)
 
     // 心跳不触碰实体：仍零提交
     runtime.applyEvent(heartbeatEvent(2000))
@@ -421,7 +421,7 @@ describe('VehicleInstances 逐帧同步（TASK-010）', () => {
     expect(renderedCount(shell)).toBe(1)
   })
 
-  it('200/250/256 台单批次（7 个部件对象）；257 台扩两批（14 个）', async () => {
+  it('200/250/256 台单批次（9 个部件对象）；257 台扩两批（18 个）', async () => {
     // 250 台压力模式不扩批；一台渲染器只挂载一次（test-renderer 限制）
     const fleet250 = Array.from({ length: 250 }, (_, i) => makeSnapshot(i, { agvKey: `v${i}` }))
     const runtime = createFleetRuntime()
@@ -429,8 +429,9 @@ describe('VehicleInstances 逐帧同步（TASK-010）', () => {
     const mounted = track(await mountFleet({ runtime }))
     const { renderer } = mounted
     await advance(renderer)
-    // 200 台验收规模同样单批次：每部件 1 个 InstancedMesh = 1 Draw Call，共 7 ≤ 8
-    expect(fleetMeshes(renderer)).toHaveLength(7)
+    // 200 台验收规模同样单批次：每部件 1 个 InstancedMesh = 1 Draw Call；
+    // P1-6 视觉差距修订新增车轮/纸箱 2 部件 → 9（原 SPEC 预算 7≤8，偏差已记录）
+    expect(fleetMeshes(renderer)).toHaveLength(9)
     expect(renderedCount(findMesh(renderer, 'fleet-shell-b0') as THREE.InstancedMesh)).toBe(250)
 
     runtime.applyEvent(
@@ -447,7 +448,7 @@ describe('VehicleInstances 逐帧同步（TASK-010）', () => {
     )
     await advance(renderer) // 扩批通知 → setState
     await advance(renderer) // 新批次挂载后的全量重写
-    expect(fleetMeshes(renderer)).toHaveLength(14)
+    expect(fleetMeshes(renderer)).toHaveLength(18)
     expect(renderedCount(findMesh(renderer, 'fleet-shell-b0') as THREE.InstancedMesh)).toBe(256)
     expect(renderedCount(findMesh(renderer, 'fleet-shell-b1') as THREE.InstancedMesh)).toBe(1) // 第 257 台
   })

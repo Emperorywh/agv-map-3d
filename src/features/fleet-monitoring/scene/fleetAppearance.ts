@@ -24,8 +24,9 @@
  * 5. 标签 LOD 阈值与重点上限来自 SPEC §6.4：投影 ≥8px 显示名称、≥20px 增加
  *    电量条与完整状态，远景最多 20 个重点标签（优先级截断属 labelLod）；
  * 6. 光环与交通锁复用标签边框配色（选中白 / L1 黄 / L2 红），保证「同一告警
- *    语义在全场景只有一种颜色」（SPEC §7.3，TASK-012）；贴地层次自下而上
- *    依次为：假阴影(0.012) < 交通锁(0.02) < 光环(0.03)，透明层互不 z-fight。
+ *    语义在全场景只有一种颜色」（SPEC §7.3，TASK-012）；透明层按 renderOrder
+ *    分层：假阴影(0.012) → 光环(0.03) → 交通锁面板(0.2，P1-8 抬升的悬浮
+ *    面板) → 面板文字贴花，互不 z-fight。
  */
 
 /** 图层高度：车辆贴花 lowest 优先级低于地图名称层，假阴影贴地避免 z-fighting */
@@ -37,12 +38,28 @@ export const VEHICLE_SHADOW_WIDTH_RATIO = 1.7
 export const VEHICLE_SHADOW_COLOR = '#000000'
 export const VEHICLE_SHADOW_OPACITY = 0.35
 
-/** 底盘：全车长宽 × 固定高度，离地间隙之上（深灰金属） */
+/**
+ * 底盘：全车长宽 × 固定高度，离地间隙之上（深灰金属）。
+ * P1-6「深色底围」：0.05 → 0.09——加高的深色底盘带在深色外壳（状态色）下方
+ * 形成可见的暗色基座，对齐 Reference「深色底盘 + 饱和色外壳」的双色比例，
+ * 不新增部件（底围 = 底盘本体）。
+ */
 export const CHASSIS_CLEARANCE_M = 0.03
-export const CHASSIS_HEIGHT_M = 0.05
+export const CHASSIS_HEIGHT_M = 0.09
 export const CHASSIS_COLOR = '#2b3038'
 export const CHASSIS_METALNESS = 0.55
 export const CHASSIS_ROUGHNESS = 0.45
+
+/** 车轮（P1-6）：真实尺寸固定（同信标的「不随车体缩放」模式），
+ *  四只合并为一份几何；布局只给中心与 1:1:1 缩放。 */
+export const WHEEL_RADIUS_M = 0.06
+export const WHEEL_THICKNESS_M = 0.045
+/** 轮距：沿车长方向 ±0.5m（1.8m 基准车的 0.55 倍轴距）、车宽方向 ±0.28m */
+export const WHEEL_OFFSET_X_M = 0.5
+export const WHEEL_OFFSET_Z_M = 0.28
+export const WHEEL_COLOR = '#15181d'
+export const WHEEL_METALNESS = 0.4
+export const WHEEL_ROUGHNESS = 0.7
 
 /** 外壳：车体主体，高度固定，长度 = 车长 − 方向楔长（颜色来自主状态） */
 export const SHELL_HEIGHT_M = 0.16
@@ -51,11 +68,14 @@ export const SHELL_WIDTH_RATIO = 0.96
 export const SHELL_METALNESS = 0.2
 export const SHELL_ROUGHNESS = 0.6
 
-/** 方向楔：占车长比例（钳制到绝对范围），明确 +x 车头方向 */
+/**
+ * 方向箭头（P2-7，前「方向楔」）：占车长比例（钳制到绝对范围），明确 +x
+ * 车头方向；几何为带尾部凹口的细长箭头棱柱（俯视「➤」轮廓）。
+ */
 export const WEDGE_LENGTH_RATIO = 0.22
 export const WEDGE_MIN_LENGTH_M = 0.12
 export const WEDGE_MAX_LENGTH_M = 0.5
-/** 楔色为主状态色乘以该亮度系数：同色系但更暗，保持一体感 */
+/** 箭头色为主状态色乘以该亮度系数：同色系但更暗，保持一体感（P2-7 起作用于箭头形） */
 export const WEDGE_COLOR_BRIGHTNESS = 0.72
 
 /** 载荷平台（loaded 时显示）：厚度固定，footprint 用 loadLength/loadWidth */
@@ -66,6 +86,17 @@ export const PALLET_HEIGHT_M = 0.07
 export const PALLET_LENGTH_RATIO = 0.8
 export const PALLET_WIDTH_RATIO = 0.8
 export const PALLET_COLOR = '#8a6b42'
+
+/**
+ * 载货纸箱（P1-6，loaded 时显示）：托盘之上叠两只不同高度的纸箱色小盒
+ * （一份合并几何，footprint 随载荷尺寸缩放、堆叠高度固定）。
+ */
+export const CARGO_STACK_HEIGHT_M = 0.16
+export const CARGO_LENGTH_RATIO = 0.8
+export const CARGO_WIDTH_RATIO = 0.8
+export const CARGO_COLOR = '#c09a66'
+export const CARGO_METALNESS = 0.0
+export const CARGO_ROUGHNESS = 0.9
 
 /** 警示灯：穹顶 + 旋转扫掠叶片的一体信标（真实尺寸，不随车体缩放） */
 export const BEACON_DOME_RADIUS_M = 0.055
@@ -185,11 +216,29 @@ export const RING_SEGMENTS = 48
 /** 光环透明度：三层共用同一材质，靠颜色区分语义 */
 export const RING_OPACITY = 0.9
 
-/** 交通锁贴片贴地高度：高于假阴影、低于光环 */
-export const TRAFFIC_LOCK_Y_M = 0.02
+/**
+ * 交通锁面板（P1-8）：矩形是调度系统上报的真实闭锁/申请范围，**不放大业务
+ * 形状**，只增强表达——面板抬升至 0.2m（Reference 的悬浮面板感），透明度
+ * 0.4 → 0.5，边缘加一圈亮色描边条带（与面板同色相、亮度更高），面板中央
+ * 叠「已锁定/申请中」文字贴花。
+ */
+export const TRAFFIC_LOCK_Y_M = 0.2
 
 /** 交通锁贴片透明度：locked 红与 applying 黄共用材质（顶点色区分） */
-export const TRAFFIC_LOCK_OPACITY = 0.4
+export const TRAFFIC_LOCK_OPACITY = 0.5
+
+/** 边缘亮色描边条带：宽度、高于面板的高度与亮度乘数（同色相更亮） */
+export const TRAFFIC_LOCK_BORDER_WIDTH_M = 0.05
+export const TRAFFIC_LOCK_BORDER_LIFT_M = 0.008
+export const TRAFFIC_LOCK_BORDER_BRIGHTNESS = 1.6
+
+/** 面板文字贴花：单元宽（px，高 = 宽/4，比例 4:1）与文字/描边颜色 */
+export const TRAFFIC_LOCK_TEXT_CELL_PX = 512
+export const TRAFFIC_LOCK_TEXT_HEIGHT_M = 0.24
+export const TRAFFIC_LOCK_TEXT_COLOR = '#ffffff'
+export const TRAFFIC_LOCK_TEXT_STROKE_COLOR = 'rgba(8, 10, 14, 0.9)'
+export const TRAFFIC_LOCK_FONT_FAMILY =
+  '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
 
 /**
  * 交通锁脉冲外观（SPEC §6.5 行动 3「关闭交通锁脉冲」的可关效果本体；TASK-014）：
