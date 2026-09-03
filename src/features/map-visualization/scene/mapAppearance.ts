@@ -7,22 +7,18 @@
  * 边界：只包含数值与颜色常量，不创建任何 Three.js 对象、不含业务语义推导；
  *       车辆与标签外观属 fleet-monitoring 的 fleetAppearance。
  * 关键不变量：
- * 1. 图层高度阶梯（GRID_Y → PATH_SURFACE_Y → PATH_CENTERLINE_Y →
- *    NODE_Y → NAME_QUAD_Y）单调递增且间隔足够小（厘米级）：静态贴花靠微小
- *    高度差避免 z-fighting，在米制地图尺度下肉眼不可见；
- * 2. 颜色语言沿用原型参考：深灰路径、蓝绿 work 站点、青色 charge、紫色
- *    park、灰色未知兜底（SPEC §2.1 默认表现）；
- * 3. 尺度链保持「路 > 车 > 节点」的包含关系（视觉差距分析 P0-3）：路面宽度
- *    ≥ 2× 车宽（0.7m），节点直径 ≤ 路宽的 1/3——节点是嵌在路口里的小圆点，
- *    不随缩放变化；
- * 4. 名称距离显隐（NEAR/FAR）为平滑过渡区间：近于 NEAR 全显、远于 FAR 全隐、
+ * 1. 图层高度阶梯（GRID_Y → PATH_SURFACE_Y → PATH_EDGE_Y → NODE_Y →
+ *    NAME_QUAD_Y）单调递增且间隔足够小（厘米级）：静态贴花靠微小高度差
+ *    避免 z-fighting，在米制地图尺度下肉眼不可见；
+ * 2. 颜色语言沿用原型参考：蓝绿 work 站点、青色 charge、紫色 park、灰色
+ *    未知兜底（SPEC §2.1 默认表现）；
+ * 3. 名称距离显隐（NEAR/FAR）为平滑过渡区间：近于 NEAR 全显、远于 FAR 全隐、
  *    之间线性淡出（地标名称的可见范围口径）。
  */
 
 /**
  * 场景清屏底色（地图未就绪或失败重试期间页面保持的唯一颜色，SPEC §7.4）。
- * P1-1：提亮至 Reference 色域（Reference 实测 #161b22，取 #14181f 保持
- * 「路面 > 背景」的明度阶梯）。
+ * P1-1：提亮至 Reference 色域（Reference 实测 #161b22）。
  */
 export const MAP_CLEAR_COLOR = '#14181f'
 
@@ -36,97 +32,94 @@ export const SCENE_FOG_DENSITY_PER_DIAGONAL = 0.25
 /** 图层高度阶梯（世界 y，单位米；见关键不变量 1） */
 export const GRID_Y = 0.02
 export const PATH_SURFACE_Y = 0.04
-export const PATH_CENTERLINE_Y = 0.06
+export const PATH_EDGE_HALO_Y = 0.052
+export const PATH_EDGE_Y = 0.058
+export const PATH_ARROW_Y = 0.066
 export const NODE_Y = 0.08
-/** 名称四边形：高于节点圆台顶（NODE_Y + NODE_RING_TOP_M），文字不被节点遮挡 */
+/** 名称四边形：高于节点圆台顶（NODE_Y + NODE_TOP_M），文字不被节点遮挡 */
 export const NAME_QUAD_Y = 0.19
 
-/**
- * 物理路径路面条带宽度与颜色（深灰路面，Unlit 双面保证任意绕序可见）。
- * 宽度 ≥ 2× 车宽（0.7m，视觉差距分析 P0-3）：恢复「路 > 车 > 节点」尺度链，
- * 让路面读作「面」而不是连接节点的「线」。
+/* ==================== 物理路径（原型路网复刻） ====================
+ * 路网表达对齐路网原型图：暗色路面条带 + 路缘「发光蓝边」+ 黄色方向箭头。
+ * 蓝边由两层条带合成——亮色细芯线（颜色乘 BOOST 借 ACES 肩部过曝出「灯管」
+ * 感）与加法混合的宽晕圈（贴地微光）；路口以环形蓝边收口，断头端以半圆
+ * 弧包边。箭头方向取路径逻辑边的行进方向（优先非回边），沿弧长等距布置。
  */
+/** 路面条带宽度（米）：≥ 2× 车宽（0.7m），保持「路 > 车 > 节点」尺度链 */
 export const PATH_SURFACE_WIDTH_M = 1.8
-/** 路面中心色（P1-4：#363c45 → #3f444d，随方向光降档提亮，贴回 Reference 档位） */
-export const PATH_SURFACE_COLOR = '#3f444d'
-/** 路径中线颜色（比路面略亮的细线，引导视觉） */
-export const PATH_CENTERLINE_COLOR = '#4b525c'
+/** 路面色：比背景略亮的暗色铺装板，明度阶梯在蓝边与背景之间 */
+export const PATH_SURFACE_COLOR = '#2b303a'
 
-/* ==================== 虚线中线（P1-4） ====================
- * Reference 的道路以「路面与地面的明度对比」形成铺装板边界（路面明显比地
- * 面亮），无需额外描边——路缘暗色边线方案实机验证后放弃：路口处各路径的
- * 边线相互交叉或断头，形成杂乱的花瓣轮廓，收益不抵成本。P1-4 保留虚线中
- * 线（1m 实 0.6m 空）与路面提亮（#363c45 → #3f444d）。 */
-/** 中线虚线：实段与空段长度（米） */
-export const CENTERLINE_DASH_ON_M = 1.0
-export const CENTERLINE_DASH_OFF_M = 0.6
+/** 蓝边细芯线宽（米）与颜色；BOOST > 1 过曝提亮出霓虹灯管感 */
+export const PATH_EDGE_WIDTH_M = 0.07
+export const PATH_EDGE_COLOR = '#3fc3ff'
+export const PATH_EDGE_BOOST = 1.8
+/** 蓝边晕圈宽（米）、颜色与加法混合透明度：贴在路面上的微光溢出（路口
+ * 多边界交叠，透明度须压低防加法混合过曝） */
+export const PATH_EDGE_HALO_WIDTH_M = 0.26
+export const PATH_EDGE_HALO_COLOR = '#1e7fe0'
+export const PATH_EDGE_HALO_OPACITY = 0.18
 
-/* ==================== 道路拓扑重建（视觉对齐 P0-5.3） ====================
- * 此前每条物理路径独立成条带并在两端补圆帽：真实地图的大量相邻短路径在
- * 同一交叉口叠加多个圆片，形成花瓣、鼓包与交叉纹理。P0-5.3 从拓扑层重建：
- * 二度节点处合并连续链、只在断头端补圆帽、每个交叉节点只补一个路口圆盘。
- * 路口内部（圆盘半径范围）不绘制虚线中线。 */
-/** 路口补面半径 = 半路宽 × 该系数：略大于半路宽，读作圆角路口垫 */
-export const JUNCTION_PAD_SCALE = 1.5
-/** 路口补面圆盘离散段数（路口是近景焦点，比端帽 16 段更圆） */
+/** 路口补面半径 = 半路宽 × 该系数：蓝边在路口以同半径圆环收口 */
+export const JUNCTION_PAD_SCALE = 1.15
+/** 路口补面圆盘离散段数（圆环蓝边与补面同段数对齐） */
 export const JUNCTION_PAD_SEGMENTS = 24
+/** 断头端半圆包边弧的离散段数 */
+export const PATH_END_ARC_SEGMENTS = 10
+
+/** 黄色方向箭头外形（米）：全长、杆半宽、头半宽与头长，沿路径切线放置 */
+export const PATH_ARROW_LENGTH_M = 0.9
+export const PATH_ARROW_SHAFT_HALF_WIDTH_M = 0.1
+export const PATH_ARROW_HEAD_HALF_WIDTH_M = 0.24
+export const PATH_ARROW_HEAD_LENGTH_M = 0.38
+/** 箭头沿弧长的布置间距（米），相位取间距之半（短路径居中一枚） */
+export const PATH_ARROW_SPACING_M = 2.2
+/** 箭头与路径端部的最小退距（米）：不压路口环与断头端弧（短路径自动缩小） */
+export const PATH_ARROW_END_MARGIN_M = 0.45
+export const PATH_ARROW_COLOR = '#ffc93c'
+export const PATH_ARROW_BOOST = 1.2
 
 /**
  * 节点站点圆盘半径与离散段数（一个 InstancedMesh 渲染全部节点，SPEC §5.1）。
  * NODE_RADIUS_M 是状态色外环的外半径；暗色底座再外扩 NODE_BASE_MARGIN_M，
- * 整体外径（NODE_OUTER_RADIUS_M ≤ 0.5× 半路宽，P0-3）保持「嵌在路口里的
- * 小圆点」尺度链不被立体化破坏；段数 20 保证近景圆形轮廓可辨（12 段的
+ * 形成节点整体的暗色外轮廓；段数 20 保证近景圆形轮廓可辨（12 段的
  * 多边形边缘在近景明显）。
  */
 export const NODE_RADIUS_M = 0.25
 export const NODE_CIRCLE_SEGMENTS = 20
-/** 暗色底座超出状态色外环的边距（米）：兼作节点整体的「嵌 into 路面」暗轮廓 */
+/** 暗色底座超出状态色外环的边距（米）：兼作节点整体的暗色外轮廓 */
 export const NODE_BASE_MARGIN_M = 0.04
 /** 节点整体外半径（底座外沿，米）：屏幕尺寸淡出的投影口径 */
 export const NODE_OUTER_RADIUS_M = NODE_RADIUS_M + NODE_BASE_MARGIN_M
 
-/* ==================== 节点多层同心圆台（视觉对齐 P2-8） ====================
- * 原型（docs/prototypes/agv-3d-scene-prototype.png）的节点是标志性的同心圆
- * 立体结构：暗色底座 → 状态色发光外环 → 暗色内台面 → 亮色中心圆盘，四层
- * 圆台堆叠、边缘带倒角。以下常量逐层定义半径/高度/倒角与顶点色亮度乘数
+/* ==================== 节点实心圆台 ====================
+ * 节点是单层实心圆台：暗色底座 → 状态色实心柱身（顶外沿倒角过曝提亮），
+ * 顶面为整块状态色圆盘。以下常量定义半径/高度/倒角与顶点色亮度乘数
  * （最终色 = 实例色 × 乘数），是 nodeStackGeometry 的唯一事实源。
- * 乘数 >1 的「发光层」借助 ACES 色调映射的肩部滚降把实例色推向亮色过曝，
- * 与原型外环与中心盘的辉光观感一致。 */
+ * 乘数 >1 的「发光面」借助 ACES 色调映射的肩部滚降把实例色推向亮色过曝，
+ * 与状态色的辉光观感一致。 */
 
-/** 底座顶面高度（米）：底座自 NODE_Y 起的抬升，形成嵌入路面的台阶感 */
+/** 底座顶面高度（米）：底座自 NODE_Y 起的抬升，形成嵌入地面的台阶感 */
 export const NODE_BASE_HEIGHT_M = 0.045
 /** 底座底部倒角高度（米）：外沿自下向上的收斜边 */
 export const NODE_BASE_CHAMFER_M = 0.02
-/** 状态色外环顶面高度（米）：节点堆叠的总高 */
-export const NODE_RING_TOP_M = 0.1
-/** 外环顶部倒角高度（米）：顶外沿的斜切亮边 */
-export const NODE_RING_CHAMFER_M = 0.01
-/** 外环内半径比例（× NODE_RADIUS_M）：环带宽度与内部开口 */
-export const NODE_RING_INNER_RATIO = 0.64
-/** 暗色内台顶面高度（米）：外环与中心盘之间的暗色环形台面 */
-export const NODE_SHELF_TOP_M = 0.055
-/** 中心圆盘半径比例（× NODE_RADIUS_M）与顶面高度（米）：顶面与外环持平，
- *  低角度下中心盘不被外环内壁遮挡（原型中心高光始终可见） */
-export const NODE_CENTER_RADIUS_RATIO = 0.4
-export const NODE_CENTER_TOP_M = 0.1
+/** 实心柱身顶面高度（米）：节点堆叠的总高 */
+export const NODE_TOP_M = 0.1
+/** 柱身顶部倒角高度（米）：顶外沿的斜切亮边 */
+export const NODE_TOP_CHAMFER_M = 0.01
 
 /** 暗色层亮度乘数：底座（保持节点色相的深色，比纯黑更协调） */
 export const NODE_BASE_STRENGTH = 0.16
-/** 暗色层亮度乘数：内台面（比底座再暗半档，拉开层次） */
-export const NODE_SHELF_STRENGTH = 0.13
-/** 外环亮度乘数：侧壁与顶环 = 实例色原样，顶部倒角过曝提亮 */
-export const NODE_RING_STRENGTH = 1.0
-export const NODE_RING_CHAMFER_STRENGTH = 1.25
-/** 外环内壁亮度乘数：背光内壁压暗，形成环带的体积感 */
-export const NODE_RING_INNER_WALL_STRENGTH = 0.4
-/** 中心盘亮度乘数：侧壁略暗、顶面过曝提亮（原型中心的高光圆盘） */
-export const NODE_CENTER_SIDE_STRENGTH = 0.9
-export const NODE_CENTER_TOP_STRENGTH = 1.35
+/** 柱身亮度乘数：侧壁 = 实例色原样，顶部倒角过曝提亮 */
+export const NODE_SIDE_STRENGTH = 1.0
+export const NODE_TOP_CHAMFER_STRENGTH = 1.25
+/** 顶面亮度乘数：过曝提亮的实心圆盘面 */
+export const NODE_TOP_STRENGTH = 1.35
 
 /**
  * 节点屏幕尺寸淡出（P1-5/2.3 的 shader LOD）：投影直径 < start 逐帧变透明、
  * < end 完全消失。总览距离下单个节点盘投影 < 4px，4291 个圆盘叠加成发光
- * 点毯盖住路网骨架；淡出后总览回归路网，近景（投影 > 10px）不受影响。
+ * 点毯；淡出后总览保持点毯观感，近景（投影 > 10px）不受影响。
  * 纯 GPU 实现（顶点着色器推导投影尺寸），不触碰静态实例缓冲。
  */
 export const NODE_FADE_START_PX = 3.5
@@ -143,7 +136,7 @@ export const NODE_COLORS: Record<'work' | 'warehouse' | 'charge' | 'park' | 'unk
 }
 
 /** 方向光强度与环境贴图强度（P0-7：2.2 过曝把受光车体色洗白，降档回血；
- *  只影响受光材质，节点/标签/路面等 Unlit 层不受影响；exposure 不动） */
+ *  只影响受光材质，节点/标签等 Unlit 层不受影响；exposure 不动） */
 export const DIRECTIONAL_LIGHT_INTENSITY = 1.2
 /** 静态阴影相机按灯光空间地图四角包络后的扩展边距（车辆高度与贴图渗漏余量） */
 export const LIGHT_SHADOW_MARGIN_M = 6

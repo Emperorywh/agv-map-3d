@@ -1,36 +1,30 @@
 /**
- * 物理路径去重与静态地图几何（SPEC §2.2、§5.1；TASK-004；视觉对齐 P0-5.3
- * 道路拓扑重建、P0-5.4 节点角色烘焙）。
+ * 物理路径去重、路径几何与节点实例静态数据（SPEC §2.2、§5.1；TASK-004；
+ * 路网原型复刻：暗色路面 + 发光蓝边 + 黄色方向箭头）。
  *
  * 职责：
  * 1. dedupePhysicalPaths：把有向逻辑边按「正/反向几何归一后相同」的签名去重，
  *    生成物理路径集合（当前地图 9,265 条逻辑边 → 5,068 条物理路径），并保留
  *    逻辑边 → 物理路径的完整映射（方向、限速与拓扑语义仍留在逻辑边上）；
- * 2. buildRoadNetwork（P0-5.3）：在物理路径之上重建展示级道路网络——穿越
- *    二度节点合并连续链、识别交叉节点，见 roadTopology.ts；
- * 3. buildMapGeometry：在世界坐标下把道路网络离散化为静态合批几何——每条
- *    链一条连续路面条带、只在断头端（一度节点）补圆帽、每个交叉节点一个
- *    路口圆盘补面（P0-5.3），中线虚线在链端与路口补面范围内截除；并生成
- *    全部节点的实例矩阵、颜色与「最低可见场景等级」（P0-5.4，供场景 LOD
- *    在 GPU 侧按角色显隐）。
+ * 2. buildMapGeometry：在世界坐标烘焙四份合批静态几何——
+ *    a. pathsSurface：链式路面条带 + 断头端圆帽 + 路口补面圆盘；
+ *    b. pathEdgeCores：路缘蓝边细芯条带（路口端以同补面半径的圆环收口、
+ *       断头端以半圆弧包边），形成原型图的「发光蓝边」轮廓；
+ *    c. pathEdgeHalos：蓝边外侧的加法混合晕圈条带（同骨架、更宽、更低），
+ *       模拟灯管贴地微光；
+ *    d. pathArrows：黄色方向箭头多边形，沿每条物理路径按逻辑边行进方向
+ *       （优先非回边）等弧长布置，方向展示与数据一致；
+ *    另生成全部节点的实例矩阵、颜色与「最低可见场景等级」（P0-5.4）。
  * 边界：输入必须来自 createMapModel 的只读 MapModel（已校验、有限坐标）；
- *       本模块不创建 Mesh/材质、不进 React、不做拓扑寻路；图层高度等外观
- *       常量来自 mapAppearance。
+ *       本模块不进 React、不做拓扑寻路；图层高度等外观常量来自 mapAppearance。
  * 关键不变量：
  * 1. 归一化签名只由几何坐标决定：BEZIER 反向 = 端点与控制点整体逆序；同一
  *    节点对之间几何不同的平行路径不会被合并（不得按节点对去重，SPEC §2.2）；
  * 2. BEZIER 固定采样 BEZIER_SAMPLE_SEGMENTS=24 段（全应用唯一离散化口径，
- *    与逻辑边物理长度共用 sampleCubicBezier）；链合并只拼接采样点，不改变
- *    任何路径的离散化；
- * 3. 每条物理路径恰好进入一条链（roadTopology 不变量），路面几何不再在
- *    二度节点处出现端帽叠片；交叉节点只补一个圆盘，路口内部无重复虚线；
- * 4. 静态几何顶点全部位于世界坐标并已烘焙图层高度（见 mapAppearance 阶梯），
- *    图层组件以零位移原样上载；本模块创建的 BufferGeometry 由返回值上的
- *    dispose() 明确释放（资源所有权：创建者释放）；
- * 5. 路面条带为共享顶点 polyline strip：关节顶点 = 相邻段平均法线 + 斜接
- *    长度补偿（钳制 3× 半宽）；链的交叉端沿末段方向延伸半路宽，使平切口
- *    没入路口补面之下，任何来向的道路与补面之间不出现楔形缺口；
- * 6. 节点实例的 minLevels = ROLE_MIN_SCENE_LEVEL[visualRole]（角色缺失回退
+ *    与逻辑边物理长度共用 sampleCubicBezier）；
+ * 3. 箭头方向是业务语义：物理路径采样点可能被归一化反向（与代表逻辑边方向
+ *    相反），必须先用首点与所选逻辑边起点坐标比对定向，再烘焙顶点；
+ * 4. 节点实例的 minLevels = ROLE_MIN_SCENE_LEVEL[visualRole]（角色缺失回退
  *    landmark=全可见），矩阵与颜色仍与 nodeList 顺序一致。
  */
 import * as THREE from 'three'
@@ -44,13 +38,22 @@ import type { WorldTransform } from '@/shared/spatial'
 import { buildRoadNetwork, type RoadNetwork } from './roadTopology'
 import { ROLE_MIN_SCENE_LEVEL } from './sceneDetail'
 import {
-  CENTERLINE_DASH_OFF_M,
-  CENTERLINE_DASH_ON_M,
   JUNCTION_PAD_SCALE,
   JUNCTION_PAD_SEGMENTS,
   NODE_COLORS,
   NODE_Y,
-  PATH_CENTERLINE_Y,
+  PATH_ARROW_END_MARGIN_M,
+  PATH_ARROW_HEAD_HALF_WIDTH_M,
+  PATH_ARROW_HEAD_LENGTH_M,
+  PATH_ARROW_LENGTH_M,
+  PATH_ARROW_SHAFT_HALF_WIDTH_M,
+  PATH_ARROW_SPACING_M,
+  PATH_ARROW_Y,
+  PATH_EDGE_HALO_WIDTH_M,
+  PATH_EDGE_HALO_Y,
+  PATH_EDGE_WIDTH_M,
+  PATH_EDGE_Y,
+  PATH_END_ARC_SEGMENTS,
   PATH_SURFACE_WIDTH_M,
   PATH_SURFACE_Y,
 } from './mapAppearance'
@@ -205,17 +208,21 @@ export interface NodeInstanceData {
   readonly minLevels: Float32Array
 }
 
-/** 已构建的静态地图几何与节点实例数据（GPU 资源由本对象拥有并释放） */
+/** 已构建的静态地图几何（GPU 资源由本对象拥有并释放） */
 export interface MapGeometry {
-  /** 物理路径路面条带（三角形合批，静态） */
+  /** 路面条带（链式 + 断头端帽 + 路口补面，三角形合批，静态） */
   readonly pathsSurface: THREE.BufferGeometry
-  /** 物理路径中线虚线（LineSegments 合批，静态） */
-  readonly pathsCenterline: THREE.BufferGeometry
+  /** 路缘蓝边细芯条带（含路口圆环与断头端弧，三角形合批，静态） */
+  readonly pathEdgeCores: THREE.BufferGeometry
+  /** 蓝边晕圈条带（加法混合，三角形合批，静态） */
+  readonly pathEdgeHalos: THREE.BufferGeometry
+  /** 黄色方向箭头多边形（三角形合批，静态） */
+  readonly pathArrows: THREE.BufferGeometry
   /** 节点实例矩阵/颜色/场景等级（图层据此创建唯一 InstancedMesh） */
   readonly nodeInstances: NodeInstanceData
   /** 物理路径去重明细（供诊断与后续图层复用） */
   readonly physical: PhysicalPathIndex
-  /** 展示级道路网络（P0-5.3：链与交叉节点；诊断与测试用） */
+  /** 展示级道路网络（链与交叉节点；诊断与测试用） */
   readonly network: RoadNetwork
   /** 释放本对象创建的全部 GPU 几何；幂等，调用后对象不再可用 */
   dispose(): void
@@ -229,8 +236,8 @@ export interface MapGeometry {
  * 道路拓扑（P0-5.3）：链式条带替代逐物理路径条带——二度节点处道路连续、
  * 无端帽叠片；断头端（一度节点）补半径 = 半路宽的圆帽；交叉节点（度数 ≥3）
  * 各补一个半径 = JUNCTION_PAD_SCALE × 半路宽的圆盘补面，链端沿末段延伸
- * 半路宽没入补面，消除花瓣/鼓包/楔形缺口。虚线中线在链端向内截除（断头
- * 端截半路宽、交叉端截补面半径），路口内部不再出现重复虚线。
+ * 半路宽没入补面。蓝边与补面同轮廓：路口端以同半径圆环收口，断头端以
+ * 半圆弧包边，蓝边是路网唯一的描边语言（替代旧的虚线中线）。
  */
 export function buildMapGeometry(
   mapModel: MapModel,
@@ -238,80 +245,27 @@ export function buildMapGeometry(
 ): MapGeometry {
   const physical = dedupePhysicalPaths(mapModel)
   const network = buildRoadNetwork(mapModel, physical)
-
-  const surfacePositions: number[] = []
-  const surfaceIndices: number[] = []
-  const centerlinePositions: number[] = []
-  const halfWidth = PATH_SURFACE_WIDTH_M / 2
-  const junctionPadRadius = halfWidth * JUNCTION_PAD_SCALE
-
-  const junctionNodeIds = new Set(network.junctions.map((j) => j.nodeId))
-  const isJunctionNode = (nodeId: string): boolean => junctionNodeIds.has(nodeId)
-
-  for (const chain of network.chains) {
-    const worldPoints = chain.points.map((p) => worldTransform.toWorldXZ(p.x, p.y))
-    const junctionStart = isJunctionNode(chain.startNodeId)
-    const junctionEnd = isJunctionNode(chain.endNodeId)
-
-    // 交叉端沿末段延伸半路宽：平切口没入路口补面（P0-5.3 不变量 5）
-    const stripPoints = extendPolylineEnds(
-      worldPoints,
-      junctionStart ? halfWidth : 0,
-      junctionEnd ? halfWidth : 0,
-    )
-    appendPolylineStrip(
-      surfacePositions,
-      surfaceIndices,
-      stripPoints,
-      halfWidth,
-      PATH_SURFACE_Y,
-      { capStart: !junctionStart, capEnd: !junctionEnd },
-    )
-
-    // 虚线中线：断头端截半路宽（圆帽范围无线），交叉端截补面半径
-    appendDashedCenterline(
-      centerlinePositions,
-      worldPoints,
-      junctionStart ? junctionPadRadius : halfWidth,
-      junctionEnd ? junctionPadRadius : halfWidth,
-    )
-  }
-
-  // 路口补面：每个交叉节点一个圆盘（P0-5.3 不变量 3）
-  for (const junction of network.junctions) {
-    const world = worldTransform.toWorldXZ(junction.x, junction.y)
-    appendDisc(
-      surfacePositions,
-      surfaceIndices,
-      world.x,
-      world.z,
-      junctionPadRadius,
-      PATH_SURFACE_Y,
-      JUNCTION_PAD_SEGMENTS,
-    )
-  }
-
-  const pathsSurface = new THREE.BufferGeometry()
-  pathsSurface.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(surfacePositions, 3),
-  )
-  pathsSurface.setIndex(surfaceIndices)
-  pathsSurface.computeBoundingSphere()
-
-  const pathsCenterline = new THREE.BufferGeometry()
-  pathsCenterline.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(centerlinePositions, 3),
-  )
-  pathsCenterline.computeBoundingSphere()
-
   const nodeInstances = buildNodeInstances(mapModel, worldTransform)
+
+  const surface = new StripAccumulator()
+  const edgeCores = new StripAccumulator()
+  const edgeHalos = new StripAccumulator()
+  const arrows = new StripAccumulator()
+
+  buildRoadSurfaceAndEdges(network, worldTransform, surface, edgeCores, edgeHalos)
+  buildPathArrows(mapModel, physical, network, worldTransform, arrows)
+
+  const pathsSurface = surface.toGeometry()
+  const pathEdgeCores = edgeCores.toGeometry()
+  const pathEdgeHalos = edgeHalos.toGeometry()
+  const pathArrows = arrows.toGeometry()
 
   let disposed = false
   return {
     pathsSurface,
-    pathsCenterline,
+    pathEdgeCores,
+    pathEdgeHalos,
+    pathArrows,
     nodeInstances,
     physical,
     network,
@@ -322,8 +276,453 @@ export function buildMapGeometry(
       }
       disposed = true
       pathsSurface.dispose()
-      pathsCenterline.dispose()
+      pathEdgeCores.dispose()
+      pathEdgeHalos.dispose()
+      pathArrows.dispose()
     },
+  }
+}
+
+/** 世界坐标地面点（只含 x/z；高度由各构建器统一烘焙） */
+interface WorldXZ {
+  readonly x: number
+  readonly z: number
+}
+
+/** 三角形合批几何累加器：位置 + 索引流，收尾产出 BufferGeometry */
+class StripAccumulator {
+  readonly positions: number[] = []
+  readonly indices: number[] = []
+
+  toGeometry(): THREE.BufferGeometry {
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(this.positions, 3),
+    )
+    geometry.setIndex(this.indices)
+    geometry.computeBoundingSphere()
+    return geometry
+  }
+}
+
+/** 链级几何参数（路面/蓝边/晕圈共用一份世界坐标折线与路口判定） */
+interface ChainBuildContext {
+  readonly halfWidth: number
+  readonly junctionPadRadius: number
+}
+
+/**
+ * 路面与蓝边：逐链构建路面条带（端部延伸没入路口补面/断头端圆帽）、两侧
+ * 路缘蓝边细芯与晕圈条带（路口端截除至圆环、断头端接半圆弧），最后补路口
+ * 圆盘与圆环蓝边。
+ */
+function buildRoadSurfaceAndEdges(
+  network: RoadNetwork,
+  worldTransform: WorldTransform,
+  surface: StripAccumulator,
+  edgeCores: StripAccumulator,
+  edgeHalos: StripAccumulator,
+): void {
+  const ctx: ChainBuildContext = {
+    halfWidth: PATH_SURFACE_WIDTH_M / 2,
+    junctionPadRadius: (PATH_SURFACE_WIDTH_M / 2) * JUNCTION_PAD_SCALE,
+  }
+  const junctionNodeIds = new Set(network.junctions.map((j) => j.nodeId))
+
+  for (const chain of network.chains) {
+    const worldPoints = chain.points.map((p) => worldTransform.toWorldXZ(p.x, p.y))
+    const junctionStart = junctionNodeIds.has(chain.startNodeId)
+    const junctionEnd = junctionNodeIds.has(chain.endNodeId)
+
+    // 路面：交叉端沿末段延伸半路宽，平切口没入路口补面
+    const stripPoints = extendPolylineEnds(
+      worldPoints,
+      junctionStart ? ctx.halfWidth : 0,
+      junctionEnd ? ctx.halfWidth : 0,
+    )
+    appendPolylineStrip(
+      surface,
+      stripPoints,
+      ctx.halfWidth,
+      PATH_SURFACE_Y,
+      { capStart: !junctionStart, capEnd: !junctionEnd },
+    )
+
+    appendChainEdges(ctx, worldPoints, junctionStart, junctionEnd, edgeCores, edgeHalos)
+  }
+
+  // 路口补面圆盘 + 同半径圆环蓝边：路口以一圈完整的环收口
+  for (const junction of network.junctions) {
+    const world = worldTransform.toWorldXZ(junction.x, junction.y)
+    appendDisc(surface, world.x, world.z, ctx.junctionPadRadius, PATH_SURFACE_Y, JUNCTION_PAD_SEGMENTS)
+    appendRing(edgeCores, world.x, world.z, ctx.junctionPadRadius, PATH_EDGE_WIDTH_M / 2, PATH_EDGE_Y, JUNCTION_PAD_SEGMENTS)
+    appendRing(edgeHalos, world.x, world.z, ctx.junctionPadRadius, PATH_EDGE_HALO_WIDTH_M / 2, PATH_EDGE_HALO_Y, JUNCTION_PAD_SEGMENTS)
+  }
+}
+
+/**
+ * 一条链两侧的路缘蓝边：先按路口端截除（截距使边界终点恰好落在路口圆环
+ * 上），再用与路面同源的斜接骨架展开 ±halfWidth 得到左右边界折线，分别
+ * 按细芯/晕圈半宽生成条带；断头端以半圆弧连接左右边界端点、包住路面圆帽。
+ */
+function appendChainEdges(
+  ctx: ChainBuildContext,
+  worldPoints: readonly WorldXZ[],
+  junctionStart: boolean,
+  junctionEnd: boolean,
+  edgeCores: StripAccumulator,
+  edgeHalos: StripAccumulator,
+): void {
+  // 截距 = √(环半径² − 半路宽²)：边界端点与环上点的距离恰为环半径
+  const trimAt = (isJunction: boolean): number => {
+    if (!isJunction) {
+      return 0
+    }
+    const r = ctx.junctionPadRadius
+    return Math.sqrt(Math.max(r * r - ctx.halfWidth * ctx.halfWidth, 0))
+  }
+  const trimmed = trimPolylineByArc(worldPoints, trimAt(junctionStart), trimAt(junctionEnd))
+  if (trimmed === null || trimmed.length < 2) {
+    return
+  }
+
+  const { joints, jointOffsetX, jointOffsetZ } = stripJointFrames(trimmed, ctx.halfWidth)
+  if (joints.length < 2) {
+    return
+  }
+  const left: WorldXZ[] = []
+  const right: WorldXZ[] = []
+  for (let j = 0; j < joints.length; j += 1) {
+    left.push({ x: joints[j].x + jointOffsetX[j], z: joints[j].z + jointOffsetZ[j] })
+    right.push({ x: joints[j].x - jointOffsetX[j], z: joints[j].z - jointOffsetZ[j] })
+  }
+
+  for (const boundary of [left, right]) {
+    appendPolylineStrip(edgeCores, boundary, PATH_EDGE_WIDTH_M / 2, PATH_EDGE_Y, NO_CAPS)
+    appendPolylineStrip(edgeHalos, boundary, PATH_EDGE_HALO_WIDTH_M / 2, PATH_EDGE_HALO_Y, NO_CAPS)
+  }
+
+  // 断头端半圆弧：绕链端点从左边界转到右边界（经过向外方向），包住圆帽
+  if (!junctionStart) {
+    const outward = outwardDirection(trimmed, false)
+    if (outward !== null) {
+      const n = firstSegmentLeftNormal(trimmed)
+      appendEndArc(edgeCores, joints[0], n, outward, ctx.halfWidth, PATH_EDGE_WIDTH_M / 2, PATH_EDGE_Y)
+      appendEndArc(edgeHalos, joints[0], n, outward, ctx.halfWidth, PATH_EDGE_HALO_WIDTH_M / 2, PATH_EDGE_HALO_Y)
+    }
+  }
+  if (!junctionEnd) {
+    const outward = outwardDirection(trimmed, true)
+    if (outward !== null) {
+      const n = lastSegmentLeftNormal(trimmed)
+      const end = joints[joints.length - 1]
+      appendEndArc(edgeCores, end, n, outward, ctx.halfWidth, PATH_EDGE_WIDTH_M / 2, PATH_EDGE_Y)
+      appendEndArc(edgeHalos, end, n, outward, ctx.halfWidth, PATH_EDGE_HALO_WIDTH_M / 2, PATH_EDGE_HALO_Y)
+    }
+  }
+}
+
+const NO_CAPS: PolylineStripCaps = { capStart: false, capEnd: false }
+
+/** 首段左法线（单位）：断头端起点弧的基准方向 */
+function firstSegmentLeftNormal(points: readonly WorldXZ[]): WorldXZ {
+  const a = points[0]
+  for (let i = 1; i < points.length; i += 1) {
+    const dx = points[i].x - a.x
+    const dz = points[i].z - a.z
+    const length = Math.hypot(dx, dz)
+    if (length > 0) {
+      return { x: -dz / length, z: dx / length }
+    }
+  }
+  return { x: 0, z: 0 }
+}
+
+/** 末段左法线（单位）：断头端终点弧的基准方向 */
+function lastSegmentLeftNormal(points: readonly WorldXZ[]): WorldXZ {
+  const b = points[points.length - 1]
+  for (let i = points.length - 2; i >= 0; i -= 1) {
+    const dx = b.x - points[i].x
+    const dz = b.z - points[i].z
+    const length = Math.hypot(dx, dz)
+    if (length > 0) {
+      return { x: -dz / length, z: dx / length }
+    }
+  }
+  return { x: 0, z: 0 }
+}
+
+/**
+ * 半圆弧条带：圆心在链端点，方向 v(θ) = n·cosθ + u·sinθ（θ: 0→π），从
+ * 「端点 + n·radius」（左边界端点）经向外方向转到「端点 − n·radius」（右
+ * 边界端点）。条带内外两圈取 radius ∓ halfWidth，索引连续成带。
+ */
+function appendEndArc(
+  sink: StripAccumulator,
+  center: WorldXZ,
+  normal: WorldXZ,
+  outward: WorldXZ,
+  radius: number,
+  halfWidth: number,
+  y: number,
+): void {
+  const segments = PATH_END_ARC_SEGMENTS
+  const base = sink.positions.length / 3
+  for (let ring = 0; ring < 2; ring += 1) {
+    const r = ring === 0 ? radius - halfWidth : radius + halfWidth
+    for (let k = 0; k <= segments; k += 1) {
+      const theta = (k / segments) * Math.PI
+      const cos = Math.cos(theta)
+      const sin = Math.sin(theta)
+      const vx = normal.x * cos + outward.x * sin
+      const vz = normal.z * cos + outward.z * sin
+      sink.positions.push(center.x + vx * r, y, center.z + vz * r)
+    }
+  }
+  appendBandIndices(sink, base, segments)
+}
+
+/** 双圈环带（k: 0..segments 两圈顶点）的矩形条带索引 */
+function appendBandIndices(sink: StripAccumulator, base: number, segments: number): void {
+  const stride = segments + 1
+  for (let k = 0; k < segments; k += 1) {
+    const a = base + k
+    const b = a + stride
+    sink.indices.push(a, b, b + 1, a, b + 1, a + 1)
+  }
+}
+
+/** 同心圆环条带（路口蓝边）：半径 ∓ halfWidth 两圈，整圆闭合 */
+function appendRing(
+  sink: StripAccumulator,
+  centerX: number,
+  centerZ: number,
+  radius: number,
+  halfWidth: number,
+  y: number,
+  segments: number,
+): void {
+  const base = sink.positions.length / 3
+  for (let ring = 0; ring < 2; ring += 1) {
+    const r = ring === 0 ? radius - halfWidth : radius + halfWidth
+    for (let k = 0; k <= segments; k += 1) {
+      const angle = (k / segments) * Math.PI * 2
+      sink.positions.push(
+        centerX + Math.cos(angle) * r,
+        y,
+        centerZ + Math.sin(angle) * r,
+      )
+    }
+  }
+  appendBandIndices(sink, base, segments)
+}
+
+/**
+ * 黄色方向箭头：逐物理路径放置。方向源优先「非回边」（isBackEdge=false，
+ * 双向对里的正向边 / 单向正边），全部为回边时回退代表边；物理路径采样点
+ * 可能被归一化反向，用首点与所选逻辑边起点比对定向。箭头沿切线方向、按
+ * 弧长等距布置，短路径整体缩小，端部留出路口环与断头端弧的退距；路口补
+ * 面范围内不放箭头（路口只保留圆环蓝边，避免多路径箭头在路口叠成团）。
+ */
+function buildPathArrows(
+  mapModel: MapModel,
+  physical: PhysicalPathIndex,
+  network: RoadNetwork,
+  worldTransform: WorldTransform,
+  arrows: StripAccumulator,
+): void {
+  const junctionPadRadius = (PATH_SURFACE_WIDTH_M / 2) * JUNCTION_PAD_SCALE
+  const padLookup = createJunctionPadLookup(network, worldTransform, junctionPadRadius)
+  for (const path of physical.physicalPaths) {
+    const edge = resolveArrowSourceEdge(mapModel, path)
+    if (edge === null) {
+      continue
+    }
+    const first = path.points[0]
+    const planeOrderMatchesEdge =
+      Math.abs(first.x - edge.sx) < 1e-6 && Math.abs(first.y - edge.sy) < 1e-6
+    const plane = planeOrderMatchesEdge ? path.points : [...path.points].reverse()
+    const world = plane.map((p) => worldTransform.toWorldXZ(p.x, p.y))
+    emitArrowsAlongPolyline(arrows, world, (x, z) => padLookup.isInside(x, z))
+  }
+}
+
+/**
+ * 路口补面范围的网格哈希：格子边长 = 补面半径，命中查询只查所在格与
+ * 8 邻格（任意点至多落入 4 个半径圆的邻格并集），避免逐对比较全量路口。
+ */
+function createJunctionPadLookup(
+  network: RoadNetwork,
+  worldTransform: WorldTransform,
+  radius: number,
+): { isInside(x: number, z: number): boolean } {
+  const cell = radius
+  const buckets = new Map<string, WorldXZ[]>()
+  for (const junction of network.junctions) {
+    const world = worldTransform.toWorldXZ(junction.x, junction.y)
+    const key = `${Math.floor(world.x / cell)},${Math.floor(world.z / cell)}`
+    const bucket = buckets.get(key)
+    if (bucket === undefined) {
+      buckets.set(key, [world])
+    } else {
+      bucket.push(world)
+    }
+  }
+  const radiusSq = radius * radius
+  return {
+    isInside(x: number, z: number): boolean {
+      const cx = Math.floor(x / cell)
+      const cz = Math.floor(z / cell)
+      for (let gx = cx - 1; gx <= cx + 1; gx += 1) {
+        for (let gz = cz - 1; gz <= cz + 1; gz += 1) {
+          const bucket = buckets.get(`${gx},${gz}`)
+          if (bucket === undefined) {
+            continue
+          }
+          for (const j of bucket) {
+            const dx = x - j.x
+            const dz = z - j.z
+            if (dx * dx + dz * dz <= radiusSq) {
+              return true
+            }
+          }
+        }
+      }
+      return false
+    },
+  }
+}
+
+/**
+ * 箭头方向源逻辑边：优先任一非回边（数据规律：双向对恰好一正一反，单向
+ * 路多为正边），否则回退首个可解析的逻辑边；全部缺失时返回 null（跳过）。
+ */
+function resolveArrowSourceEdge(
+  mapModel: MapModel,
+  path: PhysicalPath,
+): MapEdge | null {
+  let fallback: MapEdge | null = null
+  for (const id of path.logicalEdgeIds) {
+    const edge = mapModel.edges.get(id)
+    if (edge === undefined) {
+      continue
+    }
+    if (fallback === null) {
+      fallback = edge
+    }
+    if (!edge.isBackEdge) {
+      return edge
+    }
+  }
+  return fallback
+}
+
+/** 把箭头按弧长布置到折线上：端部退距内不放，可用长度不足时整体缩小 */
+function emitArrowsAlongPolyline(
+  sink: StripAccumulator,
+  points: readonly WorldXZ[],
+  isExcluded: (x: number, z: number) => boolean,
+): void {
+  const cumulative: number[] = [0]
+  for (let i = 1; i < points.length; i += 1) {
+    cumulative.push(
+      cumulative[i - 1] +
+        Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z),
+    )
+  }
+  const total = cumulative[cumulative.length - 1]
+  const usable = total - 2 * PATH_ARROW_END_MARGIN_M
+  const minUsable = 0.25
+  if (usable < minUsable) {
+    return
+  }
+  const scale = Math.min(1, usable / PATH_ARROW_LENGTH_M)
+  const halfLength = (PATH_ARROW_LENGTH_M * scale) / 2
+  const lo = PATH_ARROW_END_MARGIN_M + halfLength
+  const hi = total - lo
+  if (hi < lo) {
+    return
+  }
+  // 单枚时居中，多枚时从区间中点起步按间距推进（两侧留白对称）
+  const phase = Math.min(PATH_ARROW_SPACING_M / 2, (hi - lo) / 2)
+  for (let p = lo + phase; p <= hi + 1e-6; p += PATH_ARROW_SPACING_M) {
+    const seg = segmentAtArc(cumulative, p)
+    if (seg === null) {
+      return
+    }
+    const a = points[seg]
+    const b = points[seg + 1]
+    const segLength = cumulative[seg + 1] - cumulative[seg]
+    if (segLength <= 0) {
+      continue
+    }
+    const t = (p - cumulative[seg]) / segLength
+    const cx = a.x + (b.x - a.x) * t
+    const cz = a.z + (b.z - a.z) * t
+    if (isExcluded(cx, cz)) {
+      continue
+    }
+    emitArrow(
+      sink,
+      cx,
+      cz,
+      (b.x - a.x) / segLength,
+      (b.z - a.z) / segLength,
+      scale,
+    )
+  }
+}
+
+/** 弧长所在段索引（points 与 cumulative 同长；越界返回 null） */
+function segmentAtArc(cumulative: readonly number[], arc: number): number | null {
+  for (let i = 0; i < cumulative.length - 1; i += 1) {
+    if (arc <= cumulative[i + 1] || i === cumulative.length - 2) {
+      return i
+    }
+  }
+  return null
+}
+
+/**
+ * 一枚黄色方向箭头：局部轮廓（指向 +y，杆 + 三角头，7 个凸多边形顶点）
+ * 经「中心平移 + 切线朝向 + 整体缩放」烘焙进世界坐标，扇形三角化。
+ */
+function emitArrow(
+  sink: StripAccumulator,
+  centerX: number,
+  centerZ: number,
+  forwardX: number,
+  forwardZ: number,
+  scale: number,
+): void {
+  const length = PATH_ARROW_LENGTH_M
+  const shaft = PATH_ARROW_SHAFT_HALF_WIDTH_M
+  const head = PATH_ARROW_HEAD_HALF_WIDTH_M
+  const headLen = PATH_ARROW_HEAD_LENGTH_M
+  const half = length / 2
+  const outline: readonly (readonly [number, number])[] = [
+    [-shaft, -half],
+    [shaft, -half],
+    [shaft, half - headLen],
+    [head, half - headLen],
+    [0, half],
+    [-head, half - headLen],
+    [-shaft, half - headLen],
+  ]
+  // 局部 (横向 x, 前向 y) → 世界：横向取前向的垂直向量
+  const lateralX = forwardZ
+  const lateralZ = -forwardX
+  const base = sink.positions.length / 3
+  for (const [lx, ly] of outline) {
+    sink.positions.push(
+      centerX + lateralX * lx * scale + forwardX * ly * scale,
+      PATH_ARROW_Y,
+      centerZ + lateralZ * lx * scale + forwardZ * ly * scale,
+    )
+  }
+  for (let k = 1; k < outline.length - 1; k += 1) {
+    sink.indices.push(base, base + k, base + k + 1)
   }
 }
 
@@ -332,10 +731,10 @@ export function buildMapGeometry(
  * 延伸点与相邻段共线，条带在该端只是变长；首末段退化（零长度）时不延伸。
  */
 function extendPolylineEnds(
-  worldPoints: readonly { readonly x: number; readonly z: number }[],
+  worldPoints: readonly WorldXZ[],
   extendStartM: number,
   extendEndM: number,
-): readonly { readonly x: number; readonly z: number }[] {
+): readonly WorldXZ[] {
   if (extendStartM === 0 && extendEndM === 0) {
     return worldPoints
   }
@@ -362,13 +761,13 @@ function extendPolylineEnds(
 }
 
 /**
- * 折线端部的向外延伸方向：fromStart=false 取首个与端点不重合的点指向链内
- * 的方向；fromStart=true 取末端的对应方向。全部点与端点重合时返回 null。
+ * 折线端部的向外延伸方向：fromEnd=false 取首个与端点不重合的点指向链内
+ * 的方向；fromEnd=true 取末端的对应方向。全部点与端点重合时返回 null。
  */
 function outwardDirection(
-  points: readonly { readonly x: number; readonly z: number }[],
+  points: readonly WorldXZ[],
   fromEnd: boolean,
-): { readonly x: number; readonly z: number } | null {
+): WorldXZ | null {
   const n = points.length
   if (n < 2) {
     return null
@@ -397,40 +796,90 @@ function outwardDirection(
   return null
 }
 
+/**
+ * 按弧长截除折线两端：返回 [from, total − end] 弧长窗口内的顶点序列
+ * （窗口端点为插值点）；窗口退化（长度 < 1e-4）时返回 null。
+ */
+function trimPolylineByArc(
+  points: readonly WorldXZ[],
+  trimStartM: number,
+  trimEndM: number,
+): WorldXZ[] | null {
+  const cumulative: number[] = [0]
+  for (let i = 1; i < points.length; i += 1) {
+    cumulative.push(
+      cumulative[i - 1] +
+        Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z),
+    )
+  }
+  const total = cumulative[cumulative.length - 1]
+  const from = Math.min(Math.max(trimStartM, 0), total)
+  const to = Math.min(Math.max(total - trimEndM, from), total)
+  if (to - from < 1e-4) {
+    return null
+  }
+  const result: WorldXZ[] = [pointAtArc(points, cumulative, from)]
+  for (let i = 1; i < points.length - 1; i += 1) {
+    if (cumulative[i] > from && cumulative[i] < to) {
+      result.push(points[i])
+    }
+  }
+  result.push(pointAtArc(points, cumulative, to))
+  return result
+}
+
+/** 弧长处的插值点（cumulative 与 points 同长；超出总长时取末点） */
+function pointAtArc(
+  points: readonly WorldXZ[],
+  cumulative: readonly number[],
+  arc: number,
+): WorldXZ {
+  for (let i = 0; i < cumulative.length - 1; i += 1) {
+    const segLength = cumulative[i + 1] - cumulative[i]
+    if (arc <= cumulative[i + 1] && segLength > 0) {
+      const t = (arc - cumulative[i]) / segLength
+      return {
+        x: points[i].x + (points[i + 1].x - points[i].x) * t,
+        z: points[i].z + (points[i + 1].z - points[i].z) * t,
+      }
+    }
+  }
+  return points[points.length - 1]
+}
+
 /** 追加一个贴地圆盘（三角扇）：路口补面使用 */
 function appendDisc(
-  positions: number[],
-  indices: number[],
+  sink: StripAccumulator,
   centerX: number,
   centerZ: number,
   radius: number,
   y: number,
   segments: number,
 ): void {
-  const center = positions.length / 3
-  positions.push(centerX, y, centerZ)
+  const center = sink.positions.length / 3
+  sink.positions.push(centerX, y, centerZ)
   for (let k = 0; k < segments; k += 1) {
     const angle = (k / segments) * Math.PI * 2
-    positions.push(
+    sink.positions.push(
       centerX + Math.cos(angle) * radius,
       y,
       centerZ + Math.sin(angle) * radius,
     )
   }
   for (let k = 0; k < segments; k += 1) {
-    indices.push(center, center + 1 + k, center + 1 + ((k + 1) % segments))
+    sink.indices.push(center, center + 1 + k, center + 1 + ((k + 1) % segments))
   }
 }
 
 /** 条带端帽选项：起点/终点是否补半径 = 半路宽的圆片（盖住断头端） */
-export interface PolylineStripCaps {
+interface PolylineStripCaps {
   readonly capStart: boolean
   readonly capEnd: boolean
 }
 
 /** 折线的斜接骨架：关节点与每个关节的展开偏移（斜接长度补偿后） */
 interface StripJointFrames {
-  readonly joints: readonly { readonly x: number; readonly z: number }[]
+  readonly joints: readonly WorldXZ[]
   readonly jointOffsetX: readonly number[]
   readonly jointOffsetZ: readonly number[]
 }
@@ -438,16 +887,16 @@ interface StripJointFrames {
 /**
  * 计算折线条带的斜接骨架：关节展开方向取相邻段法线平均，并按 1/cos(半角)
  * 补偿斜接长度（钳制 3×halfWidth 防止近回折处的退化放大）。路面条带与
- * 路缘边线条带（P1-4）共用同一骨架，保证边线精确贴合路面边缘。
+ * 路缘蓝边条带共用同一骨架，保证蓝边精确贴合路面边缘。
  */
 function stripJointFrames(
-  worldPoints: readonly { readonly x: number; readonly z: number }[],
+  worldPoints: readonly WorldXZ[],
   halfWidth: number,
 ): StripJointFrames {
   // 有效段方向（跳过零长度段）：dir = normalize(b - a)，左法线 = (-dz, dx)
   const dirX: number[] = []
   const dirZ: number[] = []
-  const joints: { x: number; z: number }[] = []
+  const joints: WorldXZ[] = []
   for (let i = 1; i < worldPoints.length; i += 1) {
     const a = worldPoints[i - 1]
     const b = worldPoints[i]
@@ -506,16 +955,15 @@ function stripJointFrames(
 }
 
 /**
- * 把世界坐标折线按 halfWidth 展开为共享顶点条带并追加进位置/索引累积数组。
+ * 把世界坐标折线按 halfWidth 展开为共享顶点条带并追加进累加器。
  * 关节顶点取相邻段法线的平均方向，并按 1/cos(半角) 补偿斜接长度（钳制到
  * 3×halfWidth 防止近回折处的退化放大）——同一路径的弯道无逐段接缝毛边。
- * capStart/capEnd 为真时在首末端点补圆片端帽（三角扇）。零长度段被跳过；
+ * capStart/capEnd 为真时在首末端点补圆片端帽。零长度段被跳过；
  * 全部顶点烘焙同一高度 y。
  */
-export function appendPolylineStrip(
-  positions: number[],
-  indices: number[],
-  worldPoints: readonly { readonly x: number; readonly z: number }[],
+function appendPolylineStrip(
+  sink: StripAccumulator,
+  worldPoints: readonly WorldXZ[],
   halfWidth: number,
   y: number,
   caps: PolylineStripCaps,
@@ -527,9 +975,9 @@ export function appendPolylineStrip(
   const segmentCount = joints.length - 1
 
   // 关节顶点对：偶数位 = 中心 + 偏移，奇数位 = 中心 − 偏移；段四边形共享关节对
-  const base = positions.length / 3
+  const base = sink.positions.length / 3
   for (let j = 0; j < joints.length; j += 1) {
-    positions.push(
+    sink.positions.push(
       joints[j].x + jointOffsetX[j], y, joints[j].z + jointOffsetZ[j],
       joints[j].x - jointOffsetX[j], y, joints[j].z - jointOffsetZ[j],
     )
@@ -537,25 +985,25 @@ export function appendPolylineStrip(
   for (let s = 0; s < segmentCount; s += 1) {
     const a = base + s * 2
     const b = base + s * 2 + 2
-    indices.push(a, a + 1, b + 1, a, b + 1, b)
+    sink.indices.push(a, a + 1, b + 1, a, b + 1, b)
   }
 
   const appendCap = (centerIndex: number): void => {
     // 端帽圆盘中心 = 路径端点本身（关节边缘顶点偏在 ±halfWidth 一侧，不可复用）
-    const capCenter = positions.length / 3
-    positions.push(joints[centerIndex].x, y, joints[centerIndex].z)
+    const capCenter = sink.positions.length / 3
+    sink.positions.push(joints[centerIndex].x, y, joints[centerIndex].z)
     const ringStart = capCenter + 1
     const SEGMENTS = 16
     for (let k = 0; k < SEGMENTS; k += 1) {
       const angle = (k / SEGMENTS) * Math.PI * 2
-      positions.push(
+      sink.positions.push(
         joints[centerIndex].x + Math.cos(angle) * halfWidth,
         y,
         joints[centerIndex].z + Math.sin(angle) * halfWidth,
       )
     }
     for (let k = 0; k < SEGMENTS; k += 1) {
-      indices.push(capCenter, ringStart + k, ringStart + (k + 1) % SEGMENTS)
+      sink.indices.push(capCenter, ringStart + k, ringStart + (k + 1) % SEGMENTS)
     }
   }
   if (caps.capStart) {
@@ -563,67 +1011,6 @@ export function appendPolylineStrip(
   }
   if (caps.capEnd) {
     appendCap(joints.length - 1)
-  }
-}
-
-/**
- * 虚线中线（P1-4；P0-5.3 增加端部截除）：按弧长把折线切成「DASH_ON 实段 +
- * DASH_OFF 空段」，相位跨关节连续（弯道处虚线不断裂重启）；[trimStartM,
- * 总长 − trimEndM] 弧长范围之外的相位照常推进但不产生顶点——断头端圆帽与
- * 路口补面范围内不出现虚线。零长度段跳过；全部顶点烘焙同一高度 y，输出为
- * LineSegments 的成对端点序列。
- */
-function appendDashedCenterline(
-  positions: number[],
-  worldPoints: readonly { readonly x: number; readonly z: number }[],
-  trimStartM: number,
-  trimEndM: number,
-): void {
-  const period = CENTERLINE_DASH_ON_M + CENTERLINE_DASH_OFF_M
-  let totalLength = 0
-  for (let i = 1; i < worldPoints.length; i += 1) {
-    totalLength += Math.hypot(
-      worldPoints[i].x - worldPoints[i - 1].x,
-      worldPoints[i].z - worldPoints[i - 1].z,
-    )
-  }
-  const keepFrom = Math.min(trimStartM, totalLength)
-  const keepTo = Math.max(totalLength - trimEndM, keepFrom)
-
-  let arcLength = 0
-  let phase = 0
-  for (let i = 1; i < worldPoints.length; i += 1) {
-    const a = worldPoints[i - 1]
-    const b = worldPoints[i]
-    const dx = b.x - a.x
-    const dz = b.z - a.z
-    const length = Math.hypot(dx, dz)
-    // 零长度段不产生几何（校验层保证长度为正，此处兜底防退化）
-    if (length === 0) {
-      continue
-    }
-    const ux = dx / length
-    const uz = dz / length
-    let t = 0
-    while (t < length) {
-      const inDash = phase < CENTERLINE_DASH_ON_M
-      const remainingPhase = inDash ? CENTERLINE_DASH_ON_M - phase : period - phase
-      const step = Math.min(remainingPhase, length - t)
-      if (inDash) {
-        // 端部截除：实段与可见弧长窗口求交，交叠部分才产生顶点
-        const from = Math.max(arcLength + t, keepFrom)
-        const to = Math.min(arcLength + t + step, keepTo)
-        if (to > from) {
-          positions.push(
-            a.x + ux * (from - arcLength), PATH_CENTERLINE_Y, a.z + uz * (from - arcLength),
-            a.x + ux * (to - arcLength), PATH_CENTERLINE_Y, a.z + uz * (to - arcLength),
-          )
-        }
-      }
-      t += step
-      phase = (phase + step) % period
-    }
-    arcLength += length
   }
 }
 

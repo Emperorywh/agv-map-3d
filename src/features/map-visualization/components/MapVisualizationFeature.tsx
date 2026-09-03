@@ -3,7 +3,7 @@
  *
  * 职责：协调地图场景的全部静态表达——背景渐变/暗角（P2-6，Canvas 不可用
  *       降级纯色清屏）、环境与灯光（方向光 + 渐变环境 PMREM（P2-5）+
- *       静态阴影相机）、去重物理路径、节点实例层，以及 TASK-005 的业务语义
+ *       静态阴影相机）、节点实例层，以及 TASK-005 的业务语义
  *       层（充电桩/呼吸灯、停车地面标识与名称合批）；地图生命周期由
  *       useMapVisualization 驱动，名称图集由本组件经 useMapNameAtlas 单一持有。
  *       TASK-016 接入上下文恢复重建：contextGeneration 资源代递增时，三个
@@ -22,8 +22,8 @@
  *    （SPEC §6.5：质量降级不隐藏核心语义）；
  * 5. 本组件不移动相机：初始取景、轨道、跟随与俯瞰全部归 camera-navigation
  *    （TASK-013，SPEC §5.5/§8），相机位姿只由该 Feature 写入；
- * 6. 恢复重建顺序（TASK-016，SPEC §11.9）：同一恢复提交内按「地图三图层
- *    （路径→节点→地标）→ 环境」落地——图层 Fragment 在
+ * 6. 恢复重建顺序（TASK-016，SPEC §11.9）：同一恢复提交内按「地图图层
+ *    （节点→地标）→ 环境」落地——图层 Fragment 在
  *    SceneLighting 之前，React 兄弟按 JSX 顺序执行 effect，因此环境重建
  *    恒在地图资源之后；MapGeometry 纯数据与名称图集（Canvas 源纹理）不换
  *    代，其 GPU 缓冲由 three.js 上下文恢复后的新鲜缓存自动重传；
@@ -57,8 +57,8 @@ import {
   MAP_CLEAR_COLOR,
   SCENE_FOG_DENSITY_PER_DIAGONAL,
 } from '../scene/mapAppearance'
-import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { NodesLayer } from './NodesLayer'
+import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { LandmarksLayer } from './LandmarksLayer'
 import {
   computeCameraFocusDistance,
@@ -86,7 +86,7 @@ export interface MapVisualizationFeatureProps {
   decorationsEnabled?: boolean
   /**
    * GPU 资源代（TASK-016 上下文恢复）：0 为初始挂载；恢复时由 app 状态机
-   * 递增，驱动五个图层经 keyed Fragment 整体重挂与环境重建。
+   * 递增，驱动四个图层经 keyed Fragment 整体重挂与环境重建。
    */
   contextGeneration?: number
   /**
@@ -161,13 +161,16 @@ export function MapVisualizationFeature({
         <color attach="background" args={[MAP_CLEAR_COLOR]} />
       )}
       {view !== null ? (
-        // key 绑定资源代（TASK-016）：上下文恢复时代号变化强制五个图层整体
+        // key 绑定资源代（TASK-016）：上下文恢复时代号变化强制四个图层整体
         // 卸载/挂载——旧 GPU 对象由各图层所有权 effect 释放，新对象在同一
         // 提交内重建（渲染阶段创建、清理阶段释放旧对象），规避 R3F 对已挂
         // 载 primitive 换 object 的重建丢弃问题；图层自身 key 仍携带视图版
         // 本，视图原子替换语义不变。
         <Fragment key={`map-resources-${contextGeneration}`}>
-          <PhysicalPathsLayer key={`paths-${view.version}`} geometry={view.geometry} />
+          <PhysicalPathsLayer
+            key={`paths-${view.version}`}
+            geometry={view.geometry}
+          />
           <NodesLayer
             key={`nodes-${view.version}`}
             data={view.geometry.nodeInstances}

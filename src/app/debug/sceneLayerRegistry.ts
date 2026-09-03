@@ -39,7 +39,12 @@ export interface DebugLayerSpec {
 /** 调试图层清单：与 map-visualization / fleet-monitoring 图层命名同步 */
 export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
   { key: 'roadSurface', label: '路面', objectNames: ['map-path-surface'] },
-  { key: 'roadCenterline', label: '道路中线', objectNames: ['map-path-centerline'] },
+  {
+    key: 'roadEdges',
+    label: '道路蓝边',
+    objectNames: ['map-path-edge-core', 'map-path-edge-halo'],
+  },
+  { key: 'roadArrows', label: '方向箭头', objectNames: ['map-path-arrows'] },
   { key: 'nodes', label: '节点盘', objectNames: ['map-nodes'] },
   {
     key: 'park',
