@@ -1,14 +1,18 @@
 /**
- * 相机导航生命周期 Hook（SPEC §5.5、§8、§12.3；TASK-013）。
+ * 相机导航生命周期 Hook（SPEC §5.5、§8、§12.3；TASK-013；视觉对齐 P0-5.2
+ * 默认作业区聚焦）。
  *
  * 职责：在唯一 Canvas 内自持 OrbitControls 实例（旋转/平移/滚轮缩放 + 阻尼、
  *       最小 2m / 最大地图对角线 3 倍）、按地图包围盒 45° 自动取景（初始取景
  *       与空格俯瞰共用同一数学）、双击跟随状态机（进入时捕获相对偏移、每帧
- *       读取只读目标、手动拖拽或目标删除立即退出）以及监听器对称清理；并把
+ *       读取只读目标、手动拖拽或目标删除立即退出）、监听器对称清理；并把
  *       { follow, exitFollow, overview } 命令经 commandsRef 交给 app 组合层
  *       ——双击跟随请求由组合层转交，跨 Feature 协作不经过任何共享 Store。
+ *       P0-5.2：initialFocusBounds 就绪且用户尚未交互时，把机位一次性移动
+ *       到活跃作业区（距离限制仍按全图包围盒），空格键保留完整全厂总览。
  * 边界：本 Hook 只操作相机与输入事件，不读取车辆数据（目标位置经注入的
- *       FollowTargetReader 获取）、不修改场景内容、不渲染任何 DOM；Esc/空白
+ *       FollowTargetReader 获取；聚焦包围盒由 app 组合层从地图模型与车队
+ *       运行时派生后注入）、不修改场景内容、不渲染任何 DOM；Esc/空白
  *       的取消选中语义归 fleet-monitoring（§8），本 Hook 不处理 Escape。
  * 关键不变量：
  * 1. OrbitControls 单实例：随 (camera, gl) 创建一次，卸载 dispose 并清空
@@ -22,13 +26,15 @@
  * 4. 拖拽判定与车辆选择的拖拽抑制同阈值（6px）：单击（含双击的第一次单击）
  *    不退出跟随、不移动相机；
  * 5. 距离限制恒等式：minDistance=2，maxDistance=max(对角线×3, 2+间隔)，
- *    bounds 变化时与取景同时重设，任何时刻都满足 max > min。
+ *    bounds 变化时与取景同时重设，任何时刻都满足 max > min；
+ * 6. 默认聚焦一次性且不抢镜：只移动 position/target，不缩拢 near/far 与
+ *    距离限制；用户已交互（按下/滚轮/空格）后到达的聚焦请求被静默丢弃。
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { SceneBounds } from '@/features/map-visualization'
+import type { FocusBounds, SceneBounds } from '@/features/map-visualization'
 import type { FollowTargetReader } from '@/features/fleet-monitoring'
 import { useCameraNavigationStore } from '../model/cameraNavigationStore'
 import { computeOverviewPose } from '../model/overviewFraming'
@@ -50,6 +56,12 @@ export interface CameraNavigationCommands {
 export interface UseCameraNavigationOptions {
   /** 地图场景包围盒；null 表示地图未就绪（不取景、不设距离上限） */
   bounds: SceneBounds | null
+  /**
+   * 默认聚焦作业区包围盒（视觉对齐 P0-5.2）：首次就绪且用户尚未交互时把
+   * 机位一次性移动到该区域（取景数学与全厂俯瞰共用，距离限制不缩拢）；
+   * null 表示保持全厂总览。
+   */
+  initialFocusBounds?: FocusBounds | null
   /** 只读跟随目标读取器：实体键 → 世界坐标；null 时跟随命令无法成立 */
   readFollowTarget: FollowTargetReader | null
   /** 相机命令输出引用；由 app 组合层传入并在卸载时被清空 */
@@ -81,7 +93,7 @@ const WHEEL_DOLLY_BASE = 0.95
 const WHEEL_DOLLY_NOTCH = 100
 
 export function useCameraNavigation(options: UseCameraNavigationOptions): void {
-  const { bounds, readFollowTarget, commandsRef, controlsRef } = options
+  const { bounds, initialFocusBounds, readFollowTarget, commandsRef, controlsRef } = options
   const camera = useThree((state) => state.camera)
   const gl = useThree((state) => state.gl)
 
@@ -98,6 +110,8 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const followRef = useRef<FollowState | null>(null)
   // 指针拖拽判定基准：本指针会话的按下落点；null 表示无按下记录
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null)
+  // 用户已交互旗标（P0-5.2）：按下/滚轮/空格后不再接受默认聚焦请求
+  const userInteractedRef = useRef(false)
 
   /** 进入/切换跟随：首次进入捕获当前相机相对偏移，切换目标保留原偏移 */
   const enterFollow = useCallback((entityKey: string): void => {
@@ -153,6 +167,27 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     controlsNow.update()
   }, [camera, gl, exitFollow])
 
+  /**
+   * 聚焦作业区取景（视觉对齐 P0-5.2）：取景数学与全厂俯瞰完全共用，但只
+   * 移动 position/target——near/far 与距离限制保持全图包围盒的取景结果，
+   * 用户随时可以缩放回全厂；地图未就绪时不动作。
+   */
+  const frameFocusArea = useCallback((focusBounds: FocusBounds): void => {
+    const controlsNow = internalControlsRef.current
+    if (controlsNow === null || boundsRef.current === null) {
+      return
+    }
+    exitFollow()
+    const perspective = camera as THREE.PerspectiveCamera
+    const width = gl.domElement.clientWidth
+    const height = gl.domElement.clientHeight
+    const aspect = width > 0 && height > 0 ? width / height : 1
+    const pose = computeOverviewPose(focusBounds, perspective.fov, aspect)
+    controlsNow.target.set(pose.target.x, 0, pose.target.z)
+    camera.position.set(pose.position.x, pose.position.y, pose.position.z)
+    controlsNow.update()
+  }, [camera, gl, exitFollow])
+
   // OrbitControls 生命周期：随 (camera, gl) 创建，卸载对称释放（不变量 1）。
   // 本 effect 必须先于取景/命令 effect 声明，保证同一次提交内先创建实例。
   useEffect(() => {
@@ -178,6 +213,18 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       frameOverview()
     }
   }, [bounds, frameOverview])
+
+  // 默认作业区聚焦（视觉对齐 P0-5.2）：聚焦包围盒首次就绪且用户尚未交互
+  // 时执行一次；用户已交互（按下/滚轮/空格）则静默丢弃，绝不抢镜头。
+  useEffect(() => {
+    if (initialFocusBounds === null || initialFocusBounds === undefined) {
+      return
+    }
+    if (userInteractedRef.current) {
+      return
+    }
+    frameFocusArea(initialFocusBounds)
+  }, [initialFocusBounds, frameFocusArea])
 
   // 相机命令：注册进组合层传入的 ref，卸载时清空（防止悬挂命令入口）
   useEffect(() => {
@@ -211,11 +258,13 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   }, [])
 
   // 空格俯瞰（SPEC §8）：window 级键盘监听，effect 对称清理；preventDefault
-  // 抑制浏览器默认滚动语义（页面本身不可滚动，防御性保留）
+  // 抑制浏览器默认滚动语义（页面本身不可滚动，防御性保留）。空格是用户
+  // 明确选择全厂总览，同时标记已交互（此后默认聚焦不再抢占，P0-5.2）。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault()
+        userInteractedRef.current = true
         frameOverview()
       }
     }
@@ -246,6 +295,7 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       if (!isMainMouse(event)) {
         return
       }
+      userInteractedRef.current = true
       pointerDownRef.current = { x: event.clientX, y: event.clientY }
     }
     const onPointerMove = (event: PointerEvent): void => {
@@ -262,6 +312,7 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       pointerDownRef.current = null
     }
     const onWheel = (event: WheelEvent): void => {
+      userInteractedRef.current = true
       if (followRef.current === null || !isMainMouse(event)) {
         return
       }

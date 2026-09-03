@@ -49,9 +49,11 @@ import {
   createChargeFadePulseMaterial,
   createNameFadeMaterial,
   createPulseMaterial,
+  createSceneGatedMaterial,
   type PulseUniforms,
   type ScreenSizeFadeUniforms,
 } from '../scene/semanticMaterials'
+import type { SceneDetailController } from '../scene/sceneDetailController'
 import {
   CHARGE_FADE_END_PX,
   CHARGE_FADE_START_PX,
@@ -87,6 +89,8 @@ export interface LandmarksLayerProps {
   readonly nameAtlas: MapNameAtlas | null
   /** 装饰动画能力开关：false 时呼吸灯恒定全亮（SPEC §6.5 预留） */
   readonly decorationsEnabled: boolean
+  /** 场景细节控制器（P0-5.1）；null 时仓储方垫门控使用自建等级 uniform */
+  readonly sceneDetail?: SceneDetailController | null
 }
 
 /** 组件自建 GPU 资源集合：合批对象 + 帧 uniforms + 释放清单 */
@@ -119,14 +123,21 @@ export function LandmarksLayer({
   worldTransform,
   nameAtlas,
   decorationsEnabled,
+  sceneDetail = null,
 }: LandmarksLayerProps) {
   const data = useMemo(
     () => buildLandmarkData(mapModel, worldTransform),
     [mapModel, worldTransform],
   )
   const resources = useMemo(
-    () => createLandmarkResources(data, nameAtlas, decorationsEnabled),
-    [data, nameAtlas, decorationsEnabled],
+    () =>
+      createLandmarkResources(
+        data,
+        nameAtlas,
+        decorationsEnabled,
+        sceneDetail?.uniforms.uSceneLevel,
+      ),
+    [data, nameAtlas, decorationsEnabled, sceneDetail],
   )
   useEffect(() => () => disposeLandmarkResources(resources), [resources])
 
@@ -171,21 +182,26 @@ function createLandmarkResources(
   data: LandmarkData,
   atlas: MapNameAtlas | null,
   decorationsEnabled: boolean,
+  sceneLevelUniform?: { value: number },
 ): LandmarkResources {
   const owned: { dispose(): void }[] = []
   const fadeUniforms: ScreenSizeFadeUniforms[] = []
   const pulseUniforms: PulseUniforms[] = []
   const id = ++landmarkResourcesSeq
 
-  // —— 仓库贴地方垫：一个 InstancedMesh，实例颜色 = 仓库浅黄 ——
+  // —— 仓库贴地方垫（P0-5.5/5.1）：实例颜色 = 仓库浅黄；材质带场景等级
+  //    门控（minLevel=2）：总览与作业区由仓储区域色块/货架行接管，单个
+  //    库位标识只在车辆近景显示 ——
   const padGeometry = new THREE.PlaneGeometry(1, 1)
   padGeometry.rotateX(-Math.PI / 2)
   owned.push(padGeometry)
-  const padMaterial = new THREE.MeshBasicMaterial({
-    transparent: true,
+  const padMaterial = createSceneGatedMaterial({
+    color: '#ffffff',
     opacity: LANDMARK_PAD_OPACITY,
-    depthWrite: false,
-  })
+    minLevel: 2,
+    sceneLevelUniform: sceneLevelUniform ?? { value: 0 },
+  }).material
+  padMaterial.name = 'map-warehouse-pad'
   owned.push(padMaterial)
   const pads = new THREE.InstancedMesh(
     padGeometry,

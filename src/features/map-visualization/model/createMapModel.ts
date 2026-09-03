@@ -26,9 +26,11 @@ import type {
   MapComponent,
   MapModel,
   MapNode,
+  NodeVisualRole,
   SceneBounds,
   ValidatedMapData,
 } from './types'
+import { deriveNodeVisualRole } from './visualRoles'
 
 export interface CreateMapModelOptions {
   /** 运行时二维仿射参数；缺省为恒等变换（当前输入即恒等） */
@@ -199,6 +201,45 @@ function buildComponents(
 }
 
 /**
+ * 建立节点展示语义角色索引（视觉对齐 P0-5.4）：业务类别优先，unknown 类别
+ * 按去重后的邻居节点数二分为 junction / route-control。邻居数以无序节点对
+ * 去重——同一路段的正反向边只计一次邻居，平行不同几何路径也只计一次。
+ */
+function buildNodeVisualRoles(
+  nodeList: readonly MapNode[],
+  nodeIndexOfId: ReadonlyMap<string, number>,
+  edges: readonly { snodeId: string; enodeId: string }[],
+): Map<string, NodeVisualRole> {
+  // 邻居度数：nodeIndex → 不同邻居节点 index 集合（构建期可变，随后即弃）
+  const neighborSets = new Map<number, Set<number>>()
+  for (const edge of edges) {
+    const a = nodeIndexOfId.get(edge.snodeId)
+    const b = nodeIndexOfId.get(edge.enodeId)
+    if (a === undefined || b === undefined || a === b) {
+      continue
+    }
+    if (!neighborSets.has(a)) {
+      neighborSets.set(a, new Set())
+    }
+    if (!neighborSets.has(b)) {
+      neighborSets.set(b, new Set())
+    }
+    neighborSets.get(a)!.add(b)
+    neighborSets.get(b)!.add(a)
+  }
+
+  const roles = new Map<string, NodeVisualRole>()
+  for (let index = 0; index < nodeList.length; index += 1) {
+    const node = nodeList[index]
+    roles.set(
+      node.id,
+      deriveNodeVisualRole(node.category, neighborSets.get(index)?.size ?? 0),
+    )
+  }
+  return roles
+}
+
+/**
  * 由校验后的地图数据构建只读 MapModel 与世界变换。
  * 世界原点取「节点平面包围盒中心经仿射后的点」；由于仿射保持包围盒中心，
  * 该点等价于变换后包围盒的中心（SPEC §2.5 的 originX/originY）。
@@ -257,6 +298,8 @@ export function createMapModel(
     data.edges,
   )
 
+  const nodeVisualRoles = buildNodeVisualRoles(nodes, nodeIndexOfId, data.edges)
+
   const mapModel: MapModel = Object.freeze({
     mapId: data.mapId,
     nodeList: data.nodes,
@@ -266,6 +309,7 @@ export function createMapModel(
     edges: edgeMap,
     groups: groupMap,
     outEdgeIds: frozenOutEdgeIds,
+    nodeVisualRoles,
     components,
     componentIndexOfNode,
     sceneBounds,

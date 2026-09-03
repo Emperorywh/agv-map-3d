@@ -36,12 +36,15 @@ import {
 import {
   CENTERLINE_DASH_OFF_M,
   CENTERLINE_DASH_ON_M,
+  JUNCTION_PAD_SCALE,
+  JUNCTION_PAD_SEGMENTS,
   MAP_NAME_CANVAS_MAX_HEIGHT,
   MAP_NAME_CANVAS_WIDTH,
   MAP_NAME_FONT_PX,
   MAP_NAME_PADDING_PX,
   NODE_COLORS,
   PARK_SLAB_HEIGHT_M,
+  PATH_SURFACE_WIDTH_M,
 } from '@/features/map-visualization/scene/mapAppearance'
 import * as THREE from 'three'
 
@@ -228,43 +231,67 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
   })
 
   it('静态几何规模与节点实例数据正确（一个 InstancedMesh 渲染全部节点）', () => {
-    // P1-4 中线虚线化：顶点数 = 按弧长相位切分的实段数 × 2（虚线口径，
-    // 与实现同一周期常量独立走一遍相位模拟作为合同锁定）
+    // P1-4 中线虚线化 + P0-5.3 端部截除：顶点数 = 按弧长相位切分的可见实段
+    // 数 × 2（与实现同一周期/截除常量独立走一遍相位模拟作为合同锁定；模拟
+    // 以链为单位，交叉端截除补面半径、断头端截除半路宽）
     const DASH_ON = CENTERLINE_DASH_ON_M
     const PERIOD = CENTERLINE_DASH_ON_M + CENTERLINE_DASH_OFF_M
+    const halfWidth = PATH_SURFACE_WIDTH_M / 2
+    const padRadius = halfWidth * JUNCTION_PAD_SCALE
+    const trimOf = (nodeId: string): number =>
+      (geometry.network.nodeDegree.get(nodeId) ?? 0) >= 3 ? padRadius : halfWidth
+
     let expectedDashPairs = 0
-    for (const path of geometry.physical.physicalPaths) {
+    for (const chain of geometry.network.chains) {
+      const lengths: number[] = []
+      let total = 0
+      for (let i = 1; i < chain.points.length; i += 1) {
+        const len = Math.hypot(
+          chain.points[i].x - chain.points[i - 1].x,
+          chain.points[i].y - chain.points[i - 1].y,
+        )
+        lengths.push(len)
+        total += len
+      }
+      const keepFrom = Math.min(trimOf(chain.startNodeId), total)
+      const keepTo = Math.max(total - trimOf(chain.endNodeId), keepFrom)
       let phase = 0
-      for (let i = 1; i < path.points.length; i += 1) {
-        const a = path.points[i - 1]
-        const b = path.points[i]
-        const len = Math.hypot(b.x - a.x, b.y - a.y)
-        if (len === 0) {
-          continue
-        }
+      let arc = 0
+      for (const len of lengths) {
         let t = 0
         while (t < len) {
           const inDash = phase < DASH_ON
           const step = Math.min(inDash ? DASH_ON - phase : PERIOD - phase, len - t)
           if (inDash) {
-            expectedDashPairs += 1
+            const from = Math.max(arc + t, keepFrom)
+            const to = Math.min(arc + t + step, keepTo)
+            if (to > from) {
+              expectedDashPairs += 1
+            }
           }
           t += step
           phase = (phase + step) % PERIOD
         }
+        arc += len
       }
     }
     const centerline = geometry.pathsCenterline.getAttribute('position')
     expect(centerline.count).toBe(expectedDashPairs * 2)
-    // P0-4 共享顶点条带：每条物理路径 = 2(S+1) 个关节顶点 + 双端圆帽 2×17
-    const stripVertices = (path: { points: readonly unknown[] }): number =>
-      2 * (path.points.length - 1 + 1) + 2 * 17
+
+    // P0-4 共享顶点条带 + P0-5.3 拓扑重建：每条链 = 2(S) 个关节顶点 + 断头
+    // 端（度数 1）各 17 顶点圆帽；每个交叉节点（度数 ≥3）恰一个圆盘补面
     let expectedSurfaceVertices = 0
     let expectedSurfaceIndices = 0
-    for (const path of geometry.physical.physicalPaths) {
-      expectedSurfaceVertices += stripVertices(path)
-      expectedSurfaceIndices += (path.points.length - 1) * 6 + 2 * 16 * 3
+    for (const chain of geometry.network.chains) {
+      const capStart = (geometry.network.nodeDegree.get(chain.startNodeId) ?? 0) === 1
+      const capEnd = (geometry.network.nodeDegree.get(chain.endNodeId) ?? 0) === 1
+      expectedSurfaceVertices += 2 * chain.points.length
+      expectedSurfaceVertices += (capStart ? 17 : 0) + (capEnd ? 17 : 0)
+      expectedSurfaceIndices += (chain.points.length - 1) * 6
+      expectedSurfaceIndices += (capStart ? 16 * 3 : 0) + (capEnd ? 16 * 3 : 0)
     }
+    expectedSurfaceVertices += geometry.network.junctions.length * (1 + JUNCTION_PAD_SEGMENTS)
+    expectedSurfaceIndices += geometry.network.junctions.length * JUNCTION_PAD_SEGMENTS * 3
     const surface = geometry.pathsSurface.getAttribute('position')
     expect(surface.count).toBe(expectedSurfaceVertices)
     expect(geometry.pathsSurface.getIndex()?.count).toBe(expectedSurfaceIndices)
@@ -272,7 +299,8 @@ describe('当前地图（json/map.json）物理路径与静态几何（TASK-004 
     expect(geometry.nodeInstances.count).toBe(EXPECTED.nodeCount)
     expect(geometry.nodeInstances.matrices).toHaveLength(EXPECTED.nodeCount * 16)
     expect(geometry.nodeInstances.colors).toHaveLength(EXPECTED.nodeCount * 3)
-  })
+    expect(geometry.nodeInstances.minLevels).toHaveLength(EXPECTED.nodeCount)
+  }, 30_000)
 
   it('节点「1644」实例矩阵与世界坐标一致（A4 基准点的渲染侧对齐）', () => {
     const node = mapModel.nodes.get(EXPECTED.node1644.id)!

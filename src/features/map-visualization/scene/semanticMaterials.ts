@@ -101,6 +101,8 @@ export interface NodeLodUniforms {
   /** 淡出区间（投影直径像素）：≥ start 全显、≤ end 全隐 */
   readonly uFadeStartPx: { value: number }
   readonly uFadeEndPx: { value: number }
+  /** 场景细节等级（P0-5.1）：由场景控制器共享写入，与角色最低等级比较 */
+  readonly uSceneLevel: { value: number }
 }
 
 /** 呼吸灯材质：恒定色相、正弦亮度脉动；返回材质与可写 uniforms */
@@ -155,8 +157,14 @@ export function createPulseMaterial(color: string): {
  * 纯 GPU 实现：不写实例缓冲，不破坏 NodesLayer 的静态上载不变量。
  * vertexColors（P2-3）：最终色 = 顶点色（盘 1 / 描边 0.22）× 实例色，
  * 暗描边内环由此随节点色相表达，无需额外 Draw Call。
+ * 场景等级门控（P0-5.4/5.1）：实例属性 aMinLevel（角色 → 最低可见场景等
+ * 级）与共享 uniform uSceneLevel 比较，step 结果乘入淡出系数——总览隐藏
+ * 普通节点、近景才显示纯导航控制点与单个库位，全程 GPU 侧完成。
  */
-export function createNodeLodMaterial(): {
+export function createNodeLodMaterial(options: {
+  /** 共享的场景等级 uniform；缺省时自建（值为 0，等同总览） */
+  sceneLevelUniform?: { value: number }
+} = {}): {
   material: THREE.MeshBasicMaterial
   uniforms: NodeLodUniforms
 } {
@@ -165,6 +173,7 @@ export function createNodeLodMaterial(): {
     uViewportHeightPx: { value: 0 },
     uFadeStartPx: { value: 3.5 },
     uFadeEndPx: { value: 1.5 },
+    uSceneLevel: options.sceneLevelUniform ?? { value: 0 },
   }
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
@@ -177,6 +186,7 @@ export function createNodeLodMaterial(): {
     shader.uniforms.uViewportHeightPx = uniforms.uViewportHeightPx
     shader.uniforms.uFadeStartPx = uniforms.uFadeStartPx
     shader.uniforms.uFadeEndPx = uniforms.uFadeEndPx
+    shader.uniforms.uSceneLevel = uniforms.uSceneLevel
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -184,7 +194,10 @@ export function createNodeLodMaterial(): {
           '#include <common>',
           'uniform float uNodeRadiusM;',
           'uniform float uViewportHeightPx;',
+          'uniform float uSceneLevel;',
+          'attribute float aMinLevel;',
           'varying float vNodeFadePx;',
+          'varying float vRoleVisible;',
         ].join('\n'),
       )
       .replace(
@@ -194,6 +207,8 @@ export function createNodeLodMaterial(): {
           '// 投影直径(px) = 2r · f · H/2 / (−z_view)，f = projectionMatrix[1].y = 1/tan(fov/2)',
           'float nodeDepth = max( -mvPosition.z, 0.0001 );',
           'vNodeFadePx = 2.0 * uNodeRadiusM * projectionMatrix[1].y * uViewportHeightPx * 0.5 / nodeDepth;',
+          '// 场景等级门控：实例最低可见等级 ≤ 当前等级才可见（P0-5.4/5.1）',
+          'vRoleVisible = step( aMinLevel, uSceneLevel );',
         ].join('\n'),
       )
     shader.fragmentShader = shader.fragmentShader
@@ -204,19 +219,99 @@ export function createNodeLodMaterial(): {
           'uniform float uFadeStartPx;',
           'uniform float uFadeEndPx;',
           'varying float vNodeFadePx;',
+          'varying float vRoleVisible;',
         ].join('\n'),
       )
       .replace(
         '#include <opaque_fragment>',
         [
           '#include <opaque_fragment>',
-          'float nodeFade = smoothstep( uFadeEndPx, uFadeStartPx, vNodeFadePx );',
+          'float nodeFade = smoothstep( uFadeEndPx, uFadeStartPx, vNodeFadePx ) * vRoleVisible;',
           'if ( nodeFade <= 0.003 ) discard;',
           'gl_FragColor.a *= nodeFade;',
         ].join('\n'),
       )
   }
   material.customProgramCacheKey = () => 'map-node-lod'
+  material.userData.uniforms = uniforms
+  return { material, uniforms }
+}
+
+/** 场景等级门控基础材质注入的 uniforms（userData.uniforms 中可读写） */
+export interface SceneGateUniforms {
+  /** 场景细节等级（共享 uniform，场景控制器逐帧写入） */
+  readonly uSceneLevel: { value: number }
+  /** 本材质要求的最低可见等级 */
+  readonly uMinLevel: { value: number }
+}
+
+export interface SceneGatedMaterialOptions {
+  /** 基础色；缺省白 */
+  readonly color?: string
+  /** 基础透明度；缺省 1 */
+  readonly opacity?: number
+  /** 最低可见场景等级 */
+  readonly minLevel: number
+  /** 共享的场景等级 uniform（场景控制器持有） */
+  readonly sceneLevelUniform: { value: number }
+}
+
+/**
+ * 场景等级门控的 Unlit 贴面材质（P0-5.1/5.5）：透明 Unlit 材质 + 最小注入
+ * ——alpha 乘 step(uMinLevel, uSceneLevel)，仓储方垫（近景）与货架行轮廓
+ * （作业区起）等按三级场景细节层级显隐，全程 GPU 侧完成、无逐帧 CPU 写入。
+ */
+export function createSceneGatedMaterial(
+  options: SceneGatedMaterialOptions,
+): {
+  material: THREE.MeshBasicMaterial
+  uniforms: SceneGateUniforms
+} {
+  const uniforms: SceneGateUniforms = {
+    uSceneLevel: options.sceneLevelUniform,
+    uMinLevel: { value: options.minLevel },
+  }
+  const material = new THREE.MeshBasicMaterial({
+    color: options.color ?? '#ffffff',
+    transparent: true,
+    opacity: options.opacity ?? 1,
+    depthWrite: false,
+  })
+  material.name = 'map-scene-gate'
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uSceneLevel = uniforms.uSceneLevel
+    shader.uniforms.uMinLevel = uniforms.uMinLevel
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        [
+          '#include <common>',
+          'uniform float uSceneLevel;',
+          'uniform float uMinLevel;',
+          'varying float vGateVisible;',
+        ].join('\n'),
+      )
+      .replace(
+        '#include <project_vertex>',
+        [
+          '#include <project_vertex>',
+          'vGateVisible = step( uMinLevel, uSceneLevel );',
+        ].join('\n'),
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying float vGateVisible;',
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        [
+          '#include <opaque_fragment>',
+          'if ( vGateVisible <= 0.5 ) discard;',
+        ].join('\n'),
+      )
+  }
+  material.customProgramCacheKey = () => 'map-scene-gate'
   material.userData.uniforms = uniforms
   return { material, uniforms }
 }

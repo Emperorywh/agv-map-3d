@@ -260,3 +260,114 @@ describe('createMapModel：不可变模型', () => {
     expect(mapModel.mapId).toBe('m1')
   })
 })
+
+/* ==== 节点展示语义角色（视觉对齐 P0-5.4） ==== */
+
+describe('createMapModel：nodeVisualRoles', () => {
+  it('work 类别按度数细分：主干走廊交汇（≥5 邻居）为工位，其余为库位取放点', () => {
+    // hub 为六岔 work 主干交汇；t（3 邻居）与 a（1 邻居）为普通取放点
+    const { mapModel } = createMapModel(
+      validateMap(
+        rawMap(
+          [
+            makeNode({ id: 'hub', type: 'work', x: 0, y: 0 }),
+            makeNode({ id: 'n1', type: 'work', x: 5, y: 0 }),
+            makeNode({ id: 'n2', type: 'work', x: -5, y: 0 }),
+            makeNode({ id: 'n3', type: 'work', x: 0, y: 5 }),
+            makeNode({ id: 'n4', type: 'work', x: 0, y: -5 }),
+            makeNode({ id: 'n5', type: 'work', x: 3, y: 3 }),
+            makeNode({ id: 'n6', type: 'work', x: -3, y: -3 }),
+            makeNode({ id: 't', type: 'work', x: 50, y: 0 }),
+            makeNode({ id: 't1', type: 'work', x: 55, y: 0 }),
+            makeNode({ id: 't2', type: 'work', x: 50, y: 5 }),
+            makeNode({ id: 'a', name: 'A', x: 100, y: 0 }),
+            makeNode({ id: 'b', name: 'B', x: 103, y: 4 }),
+            makeNode({ id: 'c', name: 'C', type: 'charge', x: 106, y: 0 }),
+          ],
+          [
+            makeLineEdge({ id: 'eh1', snodeId: 'hub', enodeId: 'n1', sx: 0, sy: 0, ex: 5, ey: 0 }),
+            makeLineEdge({ id: 'eh2', snodeId: 'hub', enodeId: 'n2', sx: 0, sy: 0, ex: -5, ey: 0 }),
+            makeLineEdge({ id: 'eh3', snodeId: 'hub', enodeId: 'n3', sx: 0, sy: 0, ex: 0, ey: 5 }),
+            makeLineEdge({ id: 'eh4', snodeId: 'hub', enodeId: 'n4', sx: 0, sy: 0, ex: 0, ey: -5 }),
+            makeLineEdge({ id: 'eh5', snodeId: 'hub', enodeId: 'n5', sx: 0, sy: 0, ex: 3, ey: 3 }),
+            makeLineEdge({ id: 'eh6', snodeId: 'hub', enodeId: 'n6', sx: 0, sy: 0, ex: -3, ey: -3 }),
+            makeLineEdge({ id: 'et1', snodeId: 't', enodeId: 't1', sx: 50, sy: 0, ex: 55, ey: 0 }),
+            makeLineEdge({ id: 'et2', snodeId: 't', enodeId: 't2', sx: 50, sy: 0, ex: 50, ey: 5 }),
+            makeLineEdge({ id: 'e-ab', snodeId: 'a', enodeId: 'b' }),
+            makeLineEdge({ id: 'e-bc', snodeId: 'b', enodeId: 'c' }),
+          ],
+          [],
+        ),
+      ),
+    )
+    expect(mapModel.nodeVisualRoles.get('hub')).toBe('work-station')
+    expect(mapModel.nodeVisualRoles.get('t')).toBe('storage-slot')
+    expect(mapModel.nodeVisualRoles.get('n1')).toBe('storage-slot')
+    expect(mapModel.nodeVisualRoles.get('a')).toBe('storage-slot')
+    expect(mapModel.nodeVisualRoles.get('b')).toBe('storage-slot')
+    expect(mapModel.nodeVisualRoles.get('c')).toBe('charge')
+  })
+
+  it('charge/park 恒为对应业务角色', () => {
+    const { mapModel } = createMapModel(validateMap(multiComponentMap()))
+    expect(mapModel.nodeVisualRoles.get('c')).toBe('charge')
+    expect(mapModel.nodeVisualRoles.get('s')).toBe('park')
+  })
+
+  it('unknown 类别按去重邻居度数二分：≥3 为 junction，≤2 为 route-control', () => {
+    // x 为四岔 unknown 节点；tip 为一度 unknown 节点；pair 为二度 unknown 节点
+    const { mapModel } = createMapModel(
+      validateMap(
+        rawMap(
+          [
+            makeNode({ id: 'x', type: 'robot', x: 0, y: 0 }),
+            makeNode({ id: 'n1', type: 'robot', x: 5, y: 0 }),
+            makeNode({ id: 'n2', type: 'robot', x: -5, y: 0 }),
+            makeNode({ id: 'n3', type: 'robot', x: 0, y: 5 }),
+            makeNode({ id: 'n4', type: 'robot', x: 0, y: -5 }),
+            makeNode({ id: 'pair-a', type: 'robot', x: 50, y: 0 }),
+            makeNode({ id: 'pair-b', type: 'robot', x: 55, y: 0 }),
+          ],
+          [
+            makeLineEdge({ id: 'ex1', snodeId: 'x', enodeId: 'n1', sx: 0, sy: 0, ex: 5, ey: 0 }),
+            makeLineEdge({ id: 'ex2', snodeId: 'x', enodeId: 'n2', sx: 0, sy: 0, ex: -5, ey: 0 }),
+            makeLineEdge({ id: 'ex3', snodeId: 'x', enodeId: 'n3', sx: 0, sy: 0, ex: 0, ey: 5 }),
+            makeLineEdge({ id: 'ex4', snodeId: 'x', enodeId: 'n4', sx: 0, sy: 0, ex: 0, ey: -5 }),
+            makeLineEdge({ id: 'ep', snodeId: 'pair-a', enodeId: 'pair-b', sx: 50, sy: 0, ex: 55, ey: 0 }),
+          ],
+          [],
+        ),
+      ),
+    )
+    expect(mapModel.nodeVisualRoles.get('x')).toBe('junction')
+    expect(mapModel.nodeVisualRoles.get('pair-a')).toBe('route-control')
+    expect(mapModel.nodeVisualRoles.get('pair-b')).toBe('route-control')
+  })
+
+  it('度数按无序邻居对去重：正反向边不重复计数', () => {
+    // a—b 之间正反向两条逻辑边 = 1 个邻居 → a/b 都是 route-control
+    const { mapModel } = createMapModel(
+      validateMap(
+        rawMap(
+          [
+            makeNode({ id: 'u1', type: 'robot', x: 0, y: 0 }),
+            makeNode({ id: 'u2', type: 'robot', x: 4, y: 0 }),
+          ],
+          [
+            makeLineEdge({ id: 'f1', snodeId: 'u1', enodeId: 'u2', sx: 0, sy: 0, ex: 4, ey: 0 }),
+            makeLineEdge({ id: 'f2', snodeId: 'u2', enodeId: 'u1', sx: 4, sy: 0, ex: 0, ey: 0, isBackEdge: true }),
+          ],
+          [],
+        ),
+      ),
+    )
+    expect(mapModel.nodeVisualRoles.get('u1')).toBe('route-control')
+    expect(mapModel.nodeVisualRoles.get('u2')).toBe('route-control')
+  })
+
+  it('角色索引覆盖全部节点且冻结', () => {
+    const { mapModel } = createMapModel(validateMap(multiComponentMap()))
+    expect(mapModel.nodeVisualRoles.size).toBe(mapModel.nodeList.length)
+    expect(Object.isFrozen(mapModel)).toBe(true)
+  })
+})

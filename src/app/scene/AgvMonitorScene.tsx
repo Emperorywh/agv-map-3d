@@ -48,7 +48,9 @@ import {
 } from '@/features/fleet-monitoring'
 import {
   DEFAULT_SHADOW_MAP_SIZE,
+  pickFocusBounds,
   MapVisualizationFeature,
+  type FocusBounds,
   type MapViewDescriptor,
 } from '@/features/map-visualization'
 import {
@@ -61,8 +63,7 @@ import type { WorldTransform } from '@/shared/spatial'
 
 export interface AgvMonitorSceneProps {
   /** 地图视图描述符；null 表示启动尚未就绪或配置失败（保持清屏色） */
-  mapDescriptor?: MapViewDescriptor | null
-  /** 车辆数据源；null 表示当前配置下无车队数据（静态地图照常渲染） */
+  mapDescriptor?: MapViewDescriptor | null  /** 车辆数据源；null 表示当前配置下无车队数据（静态地图照常渲染） */
   vehicleSource?: VehicleDataSource | null
   /** 单车过期阈值（毫秒）；未就绪时缺省用运行时默认 10s */
   staleAfterMs?: number
@@ -96,6 +97,12 @@ export interface AgvMonitorSceneProps {
    */
   startedAt?: number
 }
+
+/** 默认聚焦决策的重试参数：首批车辆事件到达前的等待节奏与预算上限 */
+const FOCUS_RETRY_INTERVAL_MS = 500
+const FOCUS_RETRY_LIMIT = 20
+/** 位置归属分量包围盒的扩展边距（米）：贴边车辆仍计入所属区域 */
+const FOCUS_MARGIN_M = 2
 
 export function AgvMonitorScene({
   mapDescriptor = null,
@@ -146,6 +153,45 @@ export function AgvMonitorScene({
 
   // 相机取景与缩放上限的唯一包围盒来源：bootstrap 种子中的地图模型
   const sceneBounds = mapDescriptor?.initial?.mapModel.sceneBounds ?? null
+  const mapModel = mapDescriptor?.initial?.mapModel ?? null
+
+  // 默认作业区聚焦（视觉对齐 P0-5.2，跨 Feature 协作只发生在本组合层）：
+  // 车队运行时就绪后统计各连通分量内的车辆位置数，把「活跃车辆最多的分量」
+  // 包围盒下发给 camera-navigation 作为初始聚焦；无车辆落入任何分量则保持
+  // 全厂总览（pickFocusBounds 返回 null）。首批车辆事件可能晚于运行时创建，
+  // 以短周期重试直至拿到车辆或重试预算耗尽（耗尽后保持全厂总览，不再打扰）。
+  const [initialFocusBounds, setInitialFocusBounds] = useState<FocusBounds | null>(null)
+  const focusSettledRef = useRef(false)
+  const focusRetriesRef = useRef(0)
+  const [focusRetryTick, setFocusRetryTick] = useState(0)
+  useEffect(() => {
+    if (focusSettledRef.current) {
+      return
+    }
+    if (fleetRuntime === null || worldTransform === null || mapModel === null) {
+      return
+    }
+    if (fleetRuntime.count === 0) {
+      focusRetriesRef.current += 1
+      if (focusRetriesRef.current > FOCUS_RETRY_LIMIT) {
+        // 车辆迟迟未到：放弃聚焦决策，保持全厂总览（不无限重试）
+        focusSettledRef.current = true
+        return
+      }
+      const timer = setTimeout(() => setFocusRetryTick((tick) => tick + 1), FOCUS_RETRY_INTERVAL_MS)
+      return () => {
+        clearTimeout(timer)
+      }
+    }
+    focusSettledRef.current = true
+    const positions = fleetRuntime
+      .entities()
+      .filter((entity) => entity.snapshot.positionValid)
+      .map((entity) =>
+        worldTransform.toWorldXZ(entity.snapshot.position.x, entity.snapshot.position.y),
+      )
+    setInitialFocusBounds(pickFocusBounds(mapModel, worldTransform, positions, FOCUS_MARGIN_M))
+  }, [fleetRuntime, worldTransform, mapModel, focusRetryTick])
 
   // 恢复期重建失败旗标（TASK-016）：仅 MapVisualizationFeature 的环境工厂
   // 失败会置位（其余所有者的创建为纯 CPU 构造，无真实失败源；标签图集失败
@@ -216,6 +262,7 @@ export function AgvMonitorScene({
       />
       <CameraNavigationFeature
         bounds={sceneBounds}
+        initialFocusBounds={initialFocusBounds}
         readFollowTarget={readFollowTarget}
         commandsRef={cameraCommandsRef}
         onReady={markCameraReady}

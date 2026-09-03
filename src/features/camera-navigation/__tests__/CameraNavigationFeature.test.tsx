@@ -16,7 +16,7 @@ import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { SceneBounds } from '@/features/map-visualization'
+import type { FocusBounds, SceneBounds } from '@/features/map-visualization'
 import type { FollowTargetReader } from '@/features/fleet-monitoring'
 import { CameraNavigationFeature } from '../components/CameraNavigationFeature'
 import type { CameraNavigationCommands } from '../hooks/useCameraNavigation'
@@ -59,6 +59,7 @@ function makeProbe(capture: { current: Captured | null }) {
 
 interface MountOptions {
   bounds: SceneBounds | null
+  initialFocusBounds?: FocusBounds | null
   readFollowTarget: FollowTargetReader | null
   commands: CommandsRef
   controls: ControlsRef
@@ -73,6 +74,7 @@ async function mount(
     <>
       <CameraNavigationFeature
         bounds={options.bounds ?? BOUNDS_A}
+        initialFocusBounds={options.initialFocusBounds ?? null}
         readFollowTarget={options.readFollowTarget ?? null}
         commandsRef={options.commands ?? { current: null }}
         controlsRef={options.controls ?? { current: null }}
@@ -355,6 +357,78 @@ describe('CameraNavigationFeature 相机导航', () => {
     )
     expect(controls.current!.maxDistance).toBeCloseTo(boundsB.diagonal * 3, 4)
     const pose = computeOverviewPose(boundsB, capture.current!.camera.fov, 1)
+    expect(capture.current!.camera.position.y).toBeCloseTo(pose.position.y, 4)
+    renderer.unmount()
+  })
+})
+
+
+/* ==== 默认作业区聚焦（视觉对齐 P0-5.2） ==== */
+
+const FOCUS_AREA: FocusBounds = {
+  minWorldX: 10,
+  maxWorldX: 40,
+  minWorldZ: 10,
+  maxWorldZ: 30,
+  centerWorldX: 25,
+  centerWorldZ: 20,
+  diagonal: Math.hypot(30, 20),
+}
+
+describe('CameraNavigationFeature 默认作业区聚焦（P0-5.2）', () => {
+  it('initialFocusBounds 就绪时机位移动到聚焦区域；全图距离限制不缩拢', async () => {
+    const commands: CommandsRef = { current: null }
+    const controls: ControlsRef = { current: null }
+    const { capture } = await mount({ commands, controls, initialFocusBounds: FOCUS_AREA })
+
+    const camera = capture.current!.camera
+    const pose = computeOverviewPose(FOCUS_AREA, camera.fov, 1)
+    expect(camera.position.x).toBeCloseTo(pose.position.x, 4)
+    expect(camera.position.y).toBeCloseTo(pose.position.y, 4)
+    expect(camera.position.z).toBeCloseTo(pose.position.z, 4)
+    // 距离限制仍来自全图包围盒取景，用户可自由缩放回全厂
+    expect(controls.current!.maxDistance).toBeCloseTo(BOUNDS_A.diagonal * 3, 4)
+  })
+
+  it('用户已交互（按下/滚轮/空格）后到达的聚焦请求被静默丢弃', async () => {
+    const commands: CommandsRef = { current: null }
+    const controls: ControlsRef = { current: null }
+    const { renderer, capture } = await mount({ commands, controls })
+    const overviewX = capture.current!.camera.position.x
+
+    // 用户在聚焦请求到达前按下指针
+    await act(async () => {
+      capture.current!.dom.dispatchEvent(pointer('pointerdown', 50, 50))
+    })
+
+    await renderer.update(
+      <CameraNavigationFeature
+        bounds={BOUNDS_A}
+        initialFocusBounds={FOCUS_AREA}
+        readFollowTarget={null}
+        commandsRef={commands}
+        controlsRef={controls}
+      />,
+    )
+    await advance(renderer, 1)
+
+    expect(capture.current!.camera.position.x).toBeCloseTo(overviewX, 4)
+  })
+
+  it('空格键仍回到完整全厂总览（聚焦区域不影响俯瞰语义）', async () => {
+    const commands: CommandsRef = { current: null }
+    const { renderer, capture } = await mount({ commands, controls: { current: null }, initialFocusBounds: FOCUS_AREA })
+    const focusedX = capture.current!.camera.position.x
+    expect(focusedX).not.toBeCloseTo(
+      computeOverviewPose(BOUNDS_A, capture.current!.camera.fov, 1).position.x,
+      3,
+    )
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space' }))
+    })
+    const pose = computeOverviewPose(BOUNDS_A, capture.current!.camera.fov, 1)
+    expect(capture.current!.camera.position.x).toBeCloseTo(pose.position.x, 4)
     expect(capture.current!.camera.position.y).toBeCloseTo(pose.position.y, 4)
     renderer.unmount()
   })

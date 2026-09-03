@@ -23,6 +23,12 @@ export type {
   CreateMapModelOptions,
   CreateMapModelResult,
 } from './model/createMapModel'
+export { deriveNodeVisualRole } from './model/visualRoles'
+export {
+  computeComponentBounds,
+  pickFocusBounds,
+} from './model/componentBounds'
+export type { FocusBounds } from './model/componentBounds'
 export { validateMap } from './model/validateMap'
 export {
   BEZIER_SAMPLE_SEGMENTS,
@@ -39,6 +45,7 @@ export type {
   MapModel,
   MapNode,
   NodeCategory,
+  NodeVisualRole,
   RawMapElement,
   RawMapJson,
   SceneBounds,

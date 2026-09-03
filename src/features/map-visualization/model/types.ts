@@ -44,6 +44,26 @@ export const KNOWN_NODE_TYPES: ReadonlySet<string> = new Set([
   'park',
 ])
 
+/**
+ * 节点展示语义角色（视觉对齐改造 P0-5.4 的派生字段）。
+ * 原始 type/category 只描述业务数据，不直接决定视觉权重；本角色在不修改
+ * 调度数据的前提下为监控场景提供显隐与权重依据：
+ * - route-control：纯导航控制点，监控场景默认只在车辆近景显示；
+ * - junction：道路交叉节点（按邻居度数 ≥3 派生）；
+ * - work-station：真实作业工位；
+ * - storage-slot：仓储库位，近景按需显示（中景由仓储聚合轮廓接管）；
+ * - charge / park：充电设施 / 停车点；
+ * - landmark：独立视觉地标（当前数据无此形态，预留）。
+ */
+export type NodeVisualRole =
+  | 'route-control'
+  | 'junction'
+  | 'work-station'
+  | 'storage-slot'
+  | 'charge'
+  | 'park'
+  | 'landmark'
+
 /** 校验后的地图节点（坐标与 ID 已保证有效；angle 允许为 null） */
 export interface MapNode {
   readonly id: string
@@ -138,6 +158,8 @@ export interface MapModel {
   readonly groups: ReadonlyMap<string, MapGroup>
   /** 有向出边索引：nodeId → 以该节点为起点的逻辑边 ID（无出边为空数组） */
   readonly outEdgeIds: ReadonlyMap<string, readonly string[]>
+  /** nodeId → 展示语义角色（全节点覆盖；派生只读，见 NodeVisualRole 注释） */
+  readonly nodeVisualRoles: ReadonlyMap<string, NodeVisualRole>
   /** 弱连通分量（节点数降序；孤立节点构成单节点分量） */
   readonly components: readonly MapComponent[]
   /** nodeId → 所属分量 index（全节点覆盖） */

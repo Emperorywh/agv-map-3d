@@ -103,6 +103,39 @@ export const PATH_CENTERLINE_COLOR = '#4b525c'
 export const CENTERLINE_DASH_ON_M = 1.0
 export const CENTERLINE_DASH_OFF_M = 0.6
 
+/* ==================== 道路拓扑重建（视觉对齐 P0-5.3） ====================
+ * 此前每条物理路径独立成条带并在两端补圆帽：真实地图的大量相邻短路径在
+ * 同一交叉口叠加多个圆片，形成花瓣、鼓包与交叉纹理。P0-5.3 从拓扑层重建：
+ * 二度节点处合并连续链、只在断头端补圆帽、每个交叉节点只补一个路口圆盘。
+ * 路口内部（圆盘半径范围）不绘制虚线中线。 */
+/** 路口补面半径 = 半路宽 × 该系数：略大于半路宽，读作圆角路口垫 */
+export const JUNCTION_PAD_SCALE = 1.5
+/** 路口补面圆盘离散段数（路口是近景焦点，比端帽 16 段更圆） */
+export const JUNCTION_PAD_SEGMENTS = 24
+
+/* ==================== 仓储聚合（视觉对齐 P0-5.5） ====================
+ * 1,185 个 warehouse 节点逐点方垫在总览形成黄色点阵地毯。按节点间距聚类
+ * 为仓储区域（zone），区域内按共线关系聚类为货架行（row）：总览只显示区
+ * 域色块、作业区显示行轮廓、近景才显示单个库位方垫（节点盘与方垫由场景
+ * 等级门控）。聚类为缺省启发式，后续可被显式视觉配置覆盖（§5.5）。 */
+/** 仓储聚类间距阈值（米）：节点两两间距 ≤ 该值归入同一仓储区域 */
+export const WAREHOUSE_CLUSTER_SPACING_M = 4
+/** 货架行聚类：成员沿副轴投影的一维间距阈值（米） */
+export const WAREHOUSE_ROW_GAP_M = 2
+/** 货架行最小宽度（米）：退化行（单列节点）保持一个方垫的可读宽度 */
+export const WAREHOUSE_ROW_MIN_WIDTH_M = 1.1
+/** 货架行轮廓沿主轴的端部延伸（米），使行轮廓盖住两端节点的方垫 */
+export const WAREHOUSE_ROW_END_PAD_M = 0.55
+/** 仓储区域色块高度（世界 y）：网格之上、独占区外沿之下 */
+export const WAREHOUSE_ZONE_FILL_Y = 0.025
+/** 仓储区域色块颜色与透明度：仓库黄的极低透明度整块着色 */
+export const WAREHOUSE_ZONE_FILL_COLOR = '#e3cf7a'
+export const WAREHOUSE_ZONE_FILL_OPACITY = 0.1
+/** 货架行凸起 slab 高度（米）与颜色透明度：形态对齐停车 slab 的微凸语言 */
+export const WAREHOUSE_RACK_HEIGHT_M = 0.05
+export const WAREHOUSE_RACK_COLOR = '#b39a5c'
+export const WAREHOUSE_RACK_OPACITY = 0.6
+
 /**
  * 节点站点圆盘半径与离散段数（一个 InstancedMesh 渲染全部节点，SPEC §5.1）。
  * 半径 ≤ 0.5× 半路宽（P0-3）：节点是嵌在路口里的小圆点；段数 20 保证近景

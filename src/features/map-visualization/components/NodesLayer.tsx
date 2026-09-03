@@ -1,22 +1,26 @@
 /**
  * 节点实例图层（SPEC §5.1 节点行：一个 InstancedMesh + 实例颜色；TASK-004；
- * P1-5 视觉差距修订：屏幕尺寸 shader LOD；P2-3：几何内环暗描边）。
+ * P1-5 视觉差距修订：屏幕尺寸 shader LOD；P2-3：几何内环暗描边；
+ * 视觉对齐 P0-5.4/5.1：实例角色最低可见场景等级门控）。
  *
  * 职责：以唯一一个 InstancedMesh 渲染地图全部节点站点（当前 4,291 个），
- *       实例矩阵与实例颜色来自 buildMapGeometry 的 NodeInstanceData 静态数据，
- *       上载一次后不再逐帧修改。几何为中心盘 + 外圈暗描边环的合并几何
- *       （P2-3：描边经顶点色 × 实例颜色表达，Reference 的「嵌 into 路面」
- *       轮廓）；材质注入屏幕尺寸淡出（P1-5）：投影直径低于阈值的节点盘在
- *       GPU 侧渐隐，总览回归路网骨架、近景不受影响；本组件仅把视口高度
- *       写入材质 uniform（低频真值，非实例缓冲写入）。
+ *       实例矩阵、实例颜色与角色最低可见场景等级来自 buildMapGeometry 的
+ *       NodeInstanceData 静态数据，上载一次后不再逐帧修改。几何为中心盘 +
+ *       外圈暗描边环的合并几何（P2-3：描边经顶点色 × 实例颜色表达，参考
+ *       原型的「嵌 into 路面」轮廓）；材质注入两路 GPU 显隐（P1-5）：投影
+ *       尺寸淡出 + 场景等级门控（aMinLevel ≤ uSceneLevel 才可见，等级由
+ *       SceneDetailController 共享写入）——总览隐藏普通节点与纯导航控制
+ *       点、作业区显示工位与交叉节点、近景补齐单个库位标识。本组件仅把
+ *       视口高度写入材质 uniform（低频真值，非实例缓冲写入）。
  * 边界：实例数据由 MapGeometry 拥有；本组件拥有圆盘截面 geometry、材质与
  *       InstancedMesh 自身的实例属性缓冲，卸载或数据更换时全部显式释放。
  * 关键不变量：
  * 1. 全部节点共用一个 InstancedMesh 与一份材质：颜色差异完全由 instanceColor
  *    表达（work/warehouse/charge/park/unknown），Draw Call 恒为 1；描边色 =
  *    实例色 × 顶点色乘数（不新增 Draw Call、不破坏实例着色管线）；
- * 2. 实例数据是静态的：instanceMatrix/instanceColor 上载一次即标记
- *    StaticDrawUsage，本图层不存在逐帧实例写入路径（LOD 淡出纯 GPU）；
+ * 2. 实例数据是静态的：instanceMatrix/instanceColor/aMinLevel 上载一次即标
+ *    记 StaticDrawUsage，本图层不存在逐帧实例写入路径（LOD 与场景等级门控
+ *    纯 GPU）；
  * 3. count=0 时同样成立（不创建实例缓冲歧义），地图空数据由上层校验拦截。
  */
 import { useEffect, useMemo, useRef } from 'react'
@@ -30,9 +34,13 @@ import {
   NODE_RADIUS_M,
 } from '../scene/mapAppearance'
 import { createNodeLodMaterial, type NodeLodUniforms } from '../scene/semanticMaterials'
+import type { SceneDetailController } from '../scene/sceneDetailController'
 
-export function NodesLayer({ data }: NodesLayerProps) {
-  const nodes = useMemo(() => createNodesMesh(data), [data])
+export function NodesLayer({ data, sceneDetail }: NodesLayerProps) {
+  const nodes = useMemo(
+    () => createNodesMesh(data, sceneDetail?.uniforms.uSceneLevel),
+    [data, sceneDetail],
+  )
   useEffect(() => () => disposeNodesMesh(nodes), [nodes])
 
   // 视口高度 uniform：真实渲染循环随 resize/首帧写入；测试渲染器无循环时
@@ -48,6 +56,8 @@ export function NodesLayer({ data }: NodesLayerProps) {
 
 interface NodesLayerProps {
   data: NodeInstanceData
+  /** 场景细节控制器（P0-5.1）；null 时材质使用自建等级 uniform（恒为总览） */
+  sceneDetail: SceneDetailController | null
 }
 
 /** 组件自建的 GPU 资源集合：mesh、截面 geometry、材质与 LOD uniforms */
@@ -58,12 +68,17 @@ interface NodesResources {
   uniforms: NodeLodUniforms
 }
 
-/** 创建唯一节点 InstancedMesh：上载一次静态矩阵与颜色 */
-function createNodesMesh(data: NodeInstanceData): NodesResources {
+/** 创建唯一节点 InstancedMesh：上载一次静态矩阵、颜色与角色等级 */
+function createNodesMesh(
+  data: NodeInstanceData,
+  sceneLevelUniform: { value: number } | undefined,
+): NodesResources {
   // 盘 + 暗描边内环合并几何（P2-3）；实例颜色经 instanceColor 进着色器，
-  // 屏幕尺寸淡出注入见 createNodeLodMaterial
+  // 屏幕尺寸淡出与场景等级门控注入见 createNodeLodMaterial
   const geometry = createNodeDiscGeometry()
-  const { material, uniforms } = createNodeLodMaterial()
+  const { material, uniforms } = createNodeLodMaterial({
+    sceneLevelUniform,
+  })
   uniforms.uNodeRadiusM.value = NODE_RADIUS_M
   uniforms.uFadeStartPx.value = NODE_FADE_START_PX
   uniforms.uFadeEndPx.value = NODE_FADE_END_PX
@@ -78,6 +93,9 @@ function createNodesMesh(data: NodeInstanceData): NodesResources {
     const instanceColor = new THREE.InstancedBufferAttribute(data.colors, 3)
     instanceColor.setUsage(THREE.StaticDrawUsage)
     mesh.instanceColor = instanceColor
+    const minLevels = new THREE.InstancedBufferAttribute(data.minLevels, 1)
+    minLevels.setUsage(THREE.StaticDrawUsage)
+    geometry.setAttribute('aMinLevel', minLevels)
     mesh.computeBoundingSphere()
   }
 

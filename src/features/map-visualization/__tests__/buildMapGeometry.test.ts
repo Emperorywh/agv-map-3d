@@ -18,7 +18,7 @@ import {
   buildMapGeometry,
   dedupePhysicalPaths,
 } from '@/features/map-visualization/scene/buildMapGeometry'
-import { NODE_COLORS, NODE_Y, PATH_CENTERLINE_Y } from '@/features/map-visualization/scene/mapAppearance'
+import { JUNCTION_PAD_SCALE, JUNCTION_PAD_SEGMENTS, NODE_COLORS, NODE_Y, PATH_CENTERLINE_Y, PATH_SURFACE_WIDTH_M } from '@/features/map-visualization/scene/mapAppearance'
 import { makeBezierEdge, makeLineEdge, makeNode } from './fixtures'
 
 /**
@@ -110,7 +110,7 @@ describe('buildMapGeometry：世界坐标静态几何', () => {
   const { mapModel, worldTransform } = buildSyntheticMap()
   const geometry = buildMapGeometry(mapModel, worldTransform)
 
-  it('中线虚线几何（P1-4）：全部顶点位于路径上、高度一致、单段不超实线长', () => {
+  it('中线虚线几何（P1-4 + P0-5.3 端部截除）：全部顶点位于链上、高度一致、单段不超实线长', () => {
     const positions = geometry.pathsCenterline.getAttribute('position')
     const physical = dedupePhysicalPaths(mapModel)
 
@@ -157,12 +157,41 @@ describe('buildMapGeometry：世界坐标静态几何', () => {
     }
   })
 
-  it('中线虚线首段从路径起点开始（相位 0 = 实段）', () => {
+  it('虚线在链端截除（P0-5.3）：交叉端截除补面半径、断头端截除半路宽', () => {
     const positions = geometry.pathsCenterline.getAttribute('position')
-    const first = dedupePhysicalPaths(mapModel).physicalPaths[0]
-    const start = worldTransform.toWorldXZ(first.points[0].x, first.points[0].y)
-    expect(positions.getX(0)).toBeCloseTo(start.x, 6)
-    expect(positions.getZ(0)).toBeCloseTo(start.z, 6)
+    const halfWidth = PATH_SURFACE_WIDTH_M / 2
+    const padRadius = halfWidth * JUNCTION_PAD_SCALE
+
+    // 合成图世界坐标：节点 a(0,0)/b(3,4)/c(0,10)，包围盒中心 (1.5,5)。
+    // 链 1（a→c 直线）在世界 x' = -1.5 的竖直线上；其余顶点属链 0。
+    const chain0: { x: number; z: number }[][] = []
+    const chain1: { x: number; z: number }[][] = []
+    for (let d = 0; d < positions.count / 2; d += 1) {
+      const pair = [
+        { x: positions.getX(d * 2), z: positions.getZ(d * 2) },
+        { x: positions.getX(d * 2 + 1), z: positions.getZ(d * 2 + 1) },
+      ]
+      if (Math.abs(pair[0].x + 1.5) < 1e-6 && Math.abs(pair[1].x + 1.5) < 1e-6) {
+        chain1.push(pair)
+      } else {
+        chain0.push(pair)
+      }
+    }
+
+    const junctionWorld = worldTransform.toWorldXZ(0, 0)
+    const deadEndWorld = worldTransform.toWorldXZ(0, 10)
+    const distTo = (p: { x: number; z: number }, q: { x: number; z: number }): number =>
+      Math.hypot(p.x - q.x, p.z - q.z)
+
+    // 两条链都起于交叉节点 a：首个虚线顶点距 a ≥ 补面半径
+    expect(chain0.length).toBeGreaterThan(0)
+    expect(chain1.length).toBeGreaterThan(0)
+    expect(distTo(chain0[0][0], junctionWorld)).toBeGreaterThanOrEqual(padRadius - 1e-3)
+    expect(distTo(chain1[0][0], junctionWorld)).toBeGreaterThanOrEqual(padRadius - 1e-3)
+
+    // 链 1 终于断头端 c：最后一段虚线的远端距 c ≥ 半路宽（圆帽内无虚线）
+    const lastPair = chain1[chain1.length - 1]
+    expect(distTo(lastPair[1], deadEndWorld)).toBeGreaterThanOrEqual(halfWidth - 1e-3)
   })
 
   it('节点实例矩阵与颜色：平移到世界坐标、类别颜色正确、count 一致', () => {
@@ -205,8 +234,10 @@ describe('buildMapGeometry：世界坐标静态几何', () => {
     const positions = scaled.pathsCenterline.getAttribute('position')
     const start = scaledTransform.toWorldXZ(0, 0)
     const end = scaledTransform.toWorldXZ(4, 0)
-    // P1-4 虚线化：首段仍从路径起点开始，全部顶点落在唯一线段上
-    expect(positions.getX(0)).toBeCloseTo(start.x, 6)
+    // P0-5.3 端部截除：首段从断头端圆帽边缘（世界半路宽，路面宽度是世界
+    // 米制常量、不随地图仿射缩放）开始，全部顶点落在唯一线段上
+    const worldHalfWidth = PATH_SURFACE_WIDTH_M / 2
+    expect(positions.getX(0)).toBeCloseTo(start.x + worldHalfWidth, 3)
     expect(positions.getZ(0)).toBeCloseTo(start.z, 6)
     expect(positions.count).toBeGreaterThan(2)
     for (let v = 0; v < positions.count; v += 1) {
@@ -215,6 +246,49 @@ describe('buildMapGeometry：世界坐标静态几何', () => {
       expect(positions.getX(v)).toBeLessThanOrEqual(Math.max(start.x, end.x) + 1e-5)
     }
     scaled.dispose()
+  })
+
+  it('道路拓扑重建（P0-5.3）：断头端补圆帽、交叉节点只补一个路口圆盘', () => {
+    const network = geometry.network
+    const halfWidth = PATH_SURFACE_WIDTH_M / 2
+    const padRadius = halfWidth * JUNCTION_PAD_SCALE
+
+    // 合成图：链 0 = line+bezier 经二度节点 b 合并（端点都是交叉节点 a，
+    // 无端帽）；链 1 = a→c（c 是断头端，补一个端帽）。节点 a 度数 3 → 恰
+    // 一个路口圆盘补面。
+    expect(network.chains).toHaveLength(2)
+    expect(network.chains[0].startNodeId).toBe('a')
+    expect(network.chains[0].endNodeId).toBe('a')
+    expect(network.chains[1].startNodeId).toBe('a')
+    expect(network.chains[1].endNodeId).toBe('c')
+    expect(network.junctions).toHaveLength(1)
+    expect(network.junctions[0].nodeId).toBe('a')
+
+    // 顶点账本：链条带（关节对 + 断头端帽）+ 每交叉节点一个圆盘
+    let expectedVertices = 0
+    for (const chain of network.chains) {
+      const capStart = (network.nodeDegree.get(chain.startNodeId) ?? 0) === 1
+      const capEnd = (network.nodeDegree.get(chain.endNodeId) ?? 0) === 1
+      expectedVertices += 2 * chain.points.length
+      expectedVertices += (capStart ? 1 : 0) * 17 + (capEnd ? 1 : 0) * 17
+    }
+    expectedVertices += network.junctions.length * (1 + JUNCTION_PAD_SEGMENTS)
+    const surface = geometry.pathsSurface.getAttribute('position')
+    expect(surface.count).toBe(expectedVertices)
+
+    // 路口补面圆盘：恰 JUNCTION_PAD_SEGMENTS 个顶点与节点 a 距离 = padRadius
+    const junctionWorld = worldTransform.toWorldXZ(0, 0)
+    let padRingVertices = 0
+    for (let v = 0; v < surface.count; v += 1) {
+      const d = Math.hypot(
+        surface.getX(v) - junctionWorld.x,
+        surface.getZ(v) - junctionWorld.z,
+      )
+      if (Math.abs(d - padRadius) < 1e-4) {
+        padRingVertices += 1
+      }
+    }
+    expect(padRingVertices).toBeGreaterThanOrEqual(JUNCTION_PAD_SEGMENTS)
   })
 
   it('dispose 幂等释放两张静态几何，重复调用不抛错', () => {

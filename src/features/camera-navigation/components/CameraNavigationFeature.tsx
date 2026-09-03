@@ -14,7 +14,7 @@
  * 2. bounds 为 null（地图未就绪）时不取景也不设最大距离，相机保持 R3F 初
  *    始位姿——首个有效包围盒到达后一次性完成自动取景。
  */
-import type { SceneBounds } from '@/features/map-visualization'
+import type { FocusBounds, SceneBounds } from '@/features/map-visualization'
 import type { FollowTargetReader } from '@/features/fleet-monitoring'
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
@@ -25,6 +25,12 @@ import {
 export interface CameraNavigationFeatureProps {
   /** 地图场景包围盒；null 表示地图未就绪（保持相机初始位姿） */
   bounds: SceneBounds | null
+  /**
+   * 默认聚焦作业区包围盒（视觉对齐 P0-5.2）：首次就绪且用户尚未交互时机位
+   * 一次性移动到该区域；null 表示保持全厂总览。由 app 组合层从地图模型与
+   * 车队运行时派生（活跃车辆最多的连通区域）。
+   */
+  initialFocusBounds?: FocusBounds | null
   /** 只读跟随目标读取器；null 表示跟随不可用（命令进入后当帧退出） */
   readFollowTarget: FollowTargetReader | null
   /** 相机命令出口引用；app 组合层经它把双击跟随/俯瞰请求转交本 Feature */

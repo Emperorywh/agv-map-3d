@@ -34,7 +34,7 @@
  */
 import { Fragment, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { SceneBounds } from '../model/types'
 import {
@@ -62,7 +62,13 @@ import { GroundLayer } from './GroundLayer'
 import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { NodesLayer } from './NodesLayer'
 import { LandmarksLayer } from './LandmarksLayer'
+import { WarehouseRacksLayer } from './WarehouseRacksLayer'
 import { ExclusiveGroupsLayer } from './ExclusiveGroupsLayer'
+import {
+  computeCameraFocusDistance,
+  createSceneDetailController,
+  type SceneDetailController,
+} from '../scene/sceneDetailController'
 
 export interface MapVisualizationFeatureProps {
   /** 地图视图描述符；null 表示尚无可加载的地图（保持清屏色） */
@@ -141,6 +147,14 @@ export function MapVisualizationFeature({
   const background = useMemo(() => createBackgroundGradient(), [])
   useEffect(() => () => background?.dispose(), [background])
 
+  // 三级场景细节控制器（视觉对齐 P0-5.1）：随视图（对角线）创建；驱动组件
+  // 每帧写共享 uSceneLevel uniform，节点/仓储方垫/货架行在 GPU 侧按等级与
+  // 角色显隐。与 render-quality 的性能降级正交，不复用状态。
+  const sceneDetail = useMemo(
+    () => (view !== null ? createSceneDetailController(view.mapModel.sceneBounds.diagonal) : null),
+    [view],
+  )
+
   return (
     <>
       {/* 背景（P2-6）：渐变 + 暗角纹理优先，Canvas 不可用时保持纯色清屏——
@@ -159,13 +173,24 @@ export function MapVisualizationFeature({
         <Fragment key={`map-resources-${contextGeneration}`}>
           <GroundLayer key={`ground-${view.version}`} bounds={view.mapModel.sceneBounds} />
           <PhysicalPathsLayer key={`paths-${view.version}`} geometry={view.geometry} />
-          <NodesLayer key={`nodes-${view.version}`} data={view.geometry.nodeInstances} />
+          <NodesLayer
+            key={`nodes-${view.version}`}
+            data={view.geometry.nodeInstances}
+            sceneDetail={sceneDetail}
+          />
           <LandmarksLayer
             key={`landmarks-${view.version}`}
             mapModel={view.mapModel}
             worldTransform={view.worldTransform}
             nameAtlas={nameAtlas}
             decorationsEnabled={decorationsEnabled}
+            sceneDetail={sceneDetail}
+          />
+          <WarehouseRacksLayer
+            key={`warehouse-racks-${view.version}`}
+            mapModel={view.mapModel}
+            worldTransform={view.worldTransform}
+            sceneDetail={sceneDetail}
           />
           <ExclusiveGroupsLayer
             key={`exclusive-${view.version}`}
@@ -174,6 +199,9 @@ export function MapVisualizationFeature({
             physical={view.geometry.physical}
             nameAtlas={nameAtlas}
           />
+          {sceneDetail !== null ? (
+            <SceneDetailDriver key={`scene-detail-${view.version}`} controller={sceneDetail} />
+          ) : null}
         </Fragment>
       ) : null}
       {/* 环境与灯光位于图层之后（不变量 6）：恢复提交中环境重建恒在地图
@@ -196,6 +224,18 @@ function createMapNameAtlasDefault(
   ...args: Parameters<MapNameAtlasFactory>
 ): ReturnType<MapNameAtlasFactory> {
   return createMapNameAtlas(...args)
+}
+
+/**
+ * 场景细节等级驱动（P0-5.1）：每帧由相机位姿推导聚焦距离并刷新共享
+ * uSceneLevel uniform。等级跃迁带迟滞（低频），uniform 写入不进 React
+ * state；相机位姿只读，绝不写入（不变量 5）。
+ */
+function SceneDetailDriver({ controller }: { controller: SceneDetailController }) {
+  useFrame(({ camera }) => {
+    controller.update(computeCameraFocusDistance(camera as THREE.PerspectiveCamera))
+  })
+  return null
 }
 
 interface SceneLightingProps {
