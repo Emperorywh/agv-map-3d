@@ -1,33 +1,6 @@
 /**
- * 车辆实例批次图层（SPEC §4、§5.2、§6.3、§11.13、§12.5；TASK-010）。
- *
- * 职责：把程序化 AGV 以「批次 × 九部件 InstancedMesh」挂载到场景——按当前
- *       批次数挂载对应数量的批次对象，并把逐帧提交交给 useFleetFrameSync
- *       （脏集合的唯一帧消费者）。实例槽位表与批次数由 FleetMonitoringFeature
- *       持有并与车辆标签图层共享（TASK-011：标签槽位 = 车体槽位），批次扩
- *       容经 onBatchCountChanged 上抛，属结构性低频变化，允许进入 React state。
- * 边界：本组件只拥有各批次的 InstancedMesh 实例缓冲；几何与材质归
- *       VehicleResources 所有者（FleetMonitoringFeature），本组件绝不释放
- *       它们；槽位表归 Feature 根组件（矩阵等高频状态不进 React）。
- *       外壳网格携带 userData.batchId，供拾取层把 (batchId, instanceId)
- *       映射回实体键（映射本体在槽位表 resolve，选择接线属 TASK-012）。
- * 关键不变量：
- * 1. 每批次恒为 9 个 InstancedMesh（底盘/外壳/楔/平台/托盘/纸箱/信标/车轮/
- *    假阴影），200 台（单批次）车辆主体 Draw Call = 9。P1-6 视觉差距修订：
- *    在 SPEC §6.3 的 7 部件（预算 ≤8）基础上按视觉分析授权新增车轮与载货
- *    纸箱 2 个部件（静态合批批次内增量 2 DC，预算偏差已在进展文档记录）；
- *    不参与拾取的部件关闭 raycast，仅外壳保留拾取（SPEC §5.2）；
- * 2. 全部实例矩阵初始为零缩放：空槽位与超容量等待的车辆绝不以默认单位阵
- *    出现在原点；count 恒等于批次容量，可见性完全由矩阵表达；
- * 3. 车辆受光主体部件投射实时阴影（P0-8：castShadow=true），车底假阴影贴片
- *    保留作接触暗部（SPEC §5.4；阴影开关由灯光 castShadow 总控）；车轮不投
- *    （藏于底盘阴影内）、纸箱投射；InstancedMesh 关闭视锥剔除（包围球不随
- *    实例动态变化）；
- * 4. key 携带批次数：批次数变化时全部批次走卸载/挂载路径——R3F 对已挂载
- *    primitive 换 object 依赖「兄弟序列尾部」探测，与条件子树组合时重建
- *    会被静默丢弃（TASK-005 实测），key 变化强制干净重建；
- * 5. 高频车辆事件不触碰本组件的任何 React 状态（扩批除外），实例矩阵与
- *    脏集合永远在 Hook 自有对象中（SPEC §4/§12.5）。
+ * 车辆按材质和部件批量实例渲染，精修资产与程序回退共用原来的车辆槽位表。
+ * 模型资源归上层所有，各批次只释放实例缓冲；资源替换强制重新挂载并全量回填。
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
@@ -36,178 +9,58 @@ import type { WorldTransform } from '@/shared/spatial'
 import type { FleetRuntime } from '../model/createFleetRuntime'
 import type { InstanceSlotTable } from '../model/instanceSlots'
 import { SLOT_BATCH_CAPACITY } from '../model/instanceSlots'
-import {
-  INSTANCE_COLOR_PARTS,
-  VEHICLE_PART_KINDS,
-  type VehiclePartKind,
-  type VehicleResources,
-} from '../scene/createVehicleGeometry'
-import {
-  useFleetFrameSync,
-  type FleetBatchMeshes,
-} from '../hooks/useFleetFrameSync'
+import { INSTANCE_COLOR_PARTS, PICKABLE_PARTS, VEHICLE_PART_KINDS, type VehiclePartKind, type VehicleResources } from '../scene/createVehicleGeometry'
+import { useFleetFrameSync, type FleetBatchMeshes } from '../hooks/useFleetFrameSync'
 
 export interface VehicleInstancesProps {
-  /** 高频车队运行时（来自 FleetRuntimeProvider 的稳定引用） */
   runtime: FleetRuntime
-  /** 地图世界变换；null 时不提交任何车辆矩阵（等待地图就绪） */
   worldTransform: WorldTransform | null
-  /** 共用几何与材质（Feature 根组件单一所有者） */
   resources: VehicleResources
-  /** 实例槽位表（Feature 根组件持有，与标签图层共享） */
   table: InstanceSlotTable
-  /** 当前批次数（Feature 根组件持有的结构值，与标签图层一致） */
   batchCount: number
-  /** 批次数变化上抛（Feature 根组件 setState 挂载新批次） */
   onBatchCountChanged?: (batchCount: number) => void
-  /** 硬上限溢出诊断通道（未渲染数上抛） */
   diagnostics?: DiagnosticsReporter
 }
 
-export function VehicleInstances({
-  runtime,
-  worldTransform,
-  resources,
-  table,
-  batchCount,
-  onBatchCountChanged,
-  diagnostics,
-}: VehicleInstancesProps) {
-  // 批次网格按 batchCount 构建：容量、零缩放初始化、命名与拾取元数据一次完成
-  const batches = useMemo(
-    () => createBatches(resources, batchCount),
-    [resources, batchCount],
-  )
-  useEffect(() => () => disposeBatches(batches), [batches])
-
-  useFleetFrameSync({
-    runtime,
-    table,
-    worldTransform,
-    batches,
-    onBatchCountChanged,
-    diagnostics,
-  })
-
-  return (
-    <group name="fleet-vehicles">
-      {/* key 含 batchCount：批次数变化时强制全部批次卸载/挂载（不变量 4） */}
-      {batches.map((batch, index) => (
-        <group key={`fleet-batch-${index}-${batchCount}`} name={`fleet-batch-${index}`}>
-          {VEHICLE_PART_KINDS.map((kind) => (
-            <primitive
-              key={kind}
-              object={batch.parts[kind]}
-              dispose={null}
-            />
-          ))}
-        </group>
-      ))}
-    </group>
-  )
+export function VehicleInstances({ runtime, worldTransform, resources, table, batchCount, onBatchCountChanged, diagnostics }: VehicleInstancesProps) {
+  const batches = useMemo(() => createBatches(resources, batchCount), [resources, batchCount])
+  useEffect(() => () => {
+    for (const batch of batches) for (const mesh of Object.values(batch.parts)) mesh.dispose()
+  }, [batches])
+  useFleetFrameSync({ runtime, table, worldTransform, batches, onBatchCountChanged, diagnostics })
+  return <group name="fleet-vehicles">
+    {batches.map((batch, index) => <group key={batch.parts.shell.uuid} name={`fleet-batch-${index}`}>
+      {VEHICLE_PART_KINDS.map((kind) => <primitive key={kind} object={batch.parts[kind]} dispose={null} />)}
+    </group>)}
+  </group>
 }
 
-/** 批次容量即槽位表默认批次容量（256）；矩阵数量 = 容量 × 16 浮点 */
-function createBatches(resources: VehicleResources, batchCount: number): FleetBatchMeshes[] {
-  const batches: FleetBatchMeshes[] = []
-  for (let b = 0; b < batchCount; b += 1) {
+/**
+ * 所有矩阵以零缩放初始化，空槽位绝不出现在原点；动态颜色缓冲只分配给灯带。
+ * 拾取部件携带相同批次号，加载模型或点击载货纸箱仍映射到同一车辆实体。
+ */
+function createBatches(resources: VehicleResources, count: number): FleetBatchMeshes[] {
+  return Array.from({ length: count }, (_, batchId) => {
     const parts = {} as Record<VehiclePartKind, THREE.InstancedMesh>
     for (const kind of VEHICLE_PART_KINDS) {
-      const mesh = createPartMesh(resources, kind, b)
+      const resource = resources.parts[kind]
+      const mesh = new THREE.InstancedMesh(resource.geometry, resource.material, SLOT_BATCH_CAPACITY)
+      mesh.name = `fleet-${kind}-b${batchId}`
+      mesh.matrixAutoUpdate = false
+      mesh.frustumCulled = false
+      mesh.castShadow = !INSTANCE_COLOR_PARTS.has(kind) && kind !== 'shadow'
+      mesh.receiveShadow = kind !== 'shadow'
+      mesh.instanceMatrix.array.fill(0)
+      for (let i = 0; i < SLOT_BATCH_CAPACITY; i += 1) mesh.instanceMatrix.array[i * 16 + 15] = 1
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      if (INSTANCE_COLOR_PARTS.has(kind)) {
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(SLOT_BATCH_CAPACITY * 3).fill(1), 3)
+        mesh.instanceColor.setUsage(THREE.DynamicDrawUsage)
+      }
+      if (PICKABLE_PARTS.has(kind)) mesh.userData.batchId = batchId
+      else mesh.raycast = () => {}
       parts[kind] = mesh
     }
-    batches.push({ parts })
-  }
-  return batches
-}
-
-/** 部件 → 共用几何/材质的静态映射（VehicleResources 单一所有者的只读视图） */
-const PART_GEOMETRY_KEYS: Record<VehiclePartKind, keyof VehicleResources> = {
-  chassis: 'box',
-  shell: 'box',
-  wedge: 'wedge',
-  platform: 'box',
-  pallet: 'box',
-  cargo: 'cargo',
-  beacon: 'beacon',
-  wheels: 'wheels',
-  shadow: 'shadow',
-}
-
-const PART_MATERIAL_KEYS: Record<VehiclePartKind, keyof VehicleResources> = {
-  chassis: 'chassisMaterial',
-  shell: 'shellMaterial',
-  wedge: 'wedgeMaterial',
-  platform: 'platformMaterial',
-  pallet: 'palletMaterial',
-  cargo: 'cargoMaterial',
-  beacon: 'beaconMaterial',
-  wheels: 'wheelMaterial',
-  shadow: 'shadowMaterial',
-}
-
-/** 投射实时阴影的受光主体部件（车轮藏于底盘阴影内、贴片/信标不投） */
-const SHADOW_CASTING_PARTS: ReadonlySet<VehiclePartKind> = new Set([
-  'chassis',
-  'shell',
-  'wedge',
-  'platform',
-  'pallet',
-  'cargo',
-])
-
-/** 创建单个部件 InstancedMesh：零缩放初始化、动态用法、拾取与阴影语义 */
-function createPartMesh(
-  resources: VehicleResources,
-  kind: VehiclePartKind,
-  batchIndex: number,
-): THREE.InstancedMesh {
-  const geometry = resources[PART_GEOMETRY_KEYS[kind]] as THREE.BufferGeometry
-  const material = resources[PART_MATERIAL_KEYS[kind]] as THREE.Material
-
-  const capacity = SLOT_BATCH_CAPACITY
-  const mesh = new THREE.InstancedMesh(geometry, material, capacity)
-  mesh.name = `fleet-${kind}-b${batchIndex}`
-  mesh.count = capacity
-  mesh.matrixAutoUpdate = false
-  // P0-8 实时阴影：受光主体部件投射阴影，假阴影贴片与信标不投（贴片是
-  // 接收暗部本体、信标悬空无意义）；地面 receiveShadow
-  mesh.castShadow = SHADOW_CASTING_PARTS.has(kind)
-  mesh.receiveShadow = false
-  mesh.frustumCulled = false
-
-  // 实例矩阵零缩放初始化：空槽位绝不以单位阵出现在原点（不变量 2）
-  const matrices = mesh.instanceMatrix.array as unknown as number[]
-  for (let s = 0; s < capacity; s += 1) {
-    const base = s * 16
-    for (let i = 0; i < 15; i += 1) {
-      matrices[base + i] = 0
-    }
-    matrices[base + 15] = 1
-  }
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-
-  // 实例颜色缓冲：外壳/楔/信标逐车差异色；默认白色由材质/写入路径覆盖
-  if (INSTANCE_COLOR_PARTS.has(kind)) {
-    const colors = new Float32Array(capacity * 3).fill(1)
-    mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
-    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage)
-  }
-
-  // 拾取语义：仅外壳可拾取并携带批次号；其余部件关闭 raycast（SPEC §6.3）
-  if (kind === 'shell') {
-    mesh.userData.batchId = batchIndex
-  } else {
-    mesh.raycast = () => {}
-  }
-  return mesh
-}
-
-/** 释放批次实例缓冲（几何/材质归 resources 所有者，这里只释放 mesh 自身） */
-function disposeBatches(batches: readonly FleetBatchMeshes[]): void {
-  for (const batch of batches) {
-    for (const kind of VEHICLE_PART_KINDS) {
-      batch.parts[kind].dispose()
-    }
-  }
+    return { parts, modelReady: resources.modelReady }
+  })
 }

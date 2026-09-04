@@ -27,7 +27,7 @@ export interface CameraNavigationFeatureProps {
   bounds: SceneBounds | null
   /**
    * 默认聚焦作业区包围盒（视觉对齐 P0-5.2）：首次就绪且用户尚未交互时机位
-   * 一次性移动到该区域；null 表示保持全厂总览。由 app 组合层从地图模型与
+   * 一次性移动到该区域；null 表示保留默认监控视图。由 app 组合层从地图模型与
    * 车队运行时派生（活跃车辆最多的连通区域）。
    */
   initialFocusBounds?: FocusBounds | null

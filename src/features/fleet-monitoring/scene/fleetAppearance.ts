@@ -109,8 +109,8 @@ export const BEACON_FAULT_COLOR = '#ff2d2d'
 export const BEACON_OFF_COLOR = '#3a3f47'
 
 /**
- * 主状态 → 车体基础色（SPEC §2.6 投影顺序）：
- * STALE 冻结灰 > DISCONNECTED 深灰 > FRESH 业务状态色。
+ * 主状态只作用于局部指示灯和标签，浅灰车壳不再消费这份颜色表。
+ * 继续保留过期灰、离线深灰和故障红的投影语义，普通运行采用蓝绿色。
  */
 export const SHELL_STATE_COLORS: Record<string, string> = {
   // FRESH 业务操作状态
@@ -118,8 +118,8 @@ export const SHELL_STATE_COLORS: Record<string, string> = {
   PAUSED: '#c084fc',
   CHARGING: '#31d9e8',
   TRAFFIC_WAIT: '#f5a524',
-  EXECUTING: '#3fbf6f',
-  IDLE: '#4f8dff',
+  EXECUTING: '#10b8a7',
+  IDLE: '#538d9a',
   UNKNOWN: '#9aa1ac',
   // 数据不可信投影（最后业务状态只作副徽标，属 TASK-011 标签）
   STALE: '#6f7680',
@@ -143,7 +143,11 @@ export const LABEL_HEIGHT_M = 0.48
 export const LABEL_ASPECT = 4
 /** 标签世界宽度：由名称单元宽高比推出（帧同步与测试共用同一事实源） */
 export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
-export const LABEL_ANCHOR_Y_M = 0.8
+/**
+ * 标签锚点高于工业平台、托盘和纸箱顶面，避免载货时遮住箱体。
+ * 屏幕尺寸由帧同步层限制，靠近车辆也不会出现巨幅标签。
+ */
+export const LABEL_ANCHOR_Y_M = 1.0
 
 /**
  * 标签背景底色（P0-6）：Reference 为深灰黑底 + 白色 ID + 左上角状态色小圆点

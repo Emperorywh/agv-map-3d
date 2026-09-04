@@ -1,0 +1,19 @@
+/*
+ * 开发样板面板使用紧凑工业配色，明确区分观察控件和三维资产。
+ * 样式限定在预览根节点中，真实监控页面不受影响。
+ */
+.industrial-preview { width: 100vw; height: 100dvh; color: #e5e9e9; font-family: "Microsoft YaHei", sans-serif; }
+.industrial-preview-panel { position: absolute; top: 20px; left: 20px; width: 248px; padding: 20px; background: rgba(26, 34, 39, 0.94); border: 1px solid #56636b; border-radius: 4px; box-shadow: 0 8px 32px #1115; font-size: 12px; }
+.industrial-eyebrow { color: #72b9b1; font-size: 10px; letter-spacing: 2px; }
+.industrial-preview h1 { font-size: 23px; font-weight: 500; margin: 10px 0; }
+.industrial-preview p { color: #a7b4bb; line-height: 1.65; }
+.industrial-preview label { display: block; margin: 13px 0; }
+.industrial-preview select { display: block; width: 100%; margin-top: 7px; padding: 7px; color: #eef2f2; background: #36434b; border: 1px solid #61717b; }
+.industrial-controls { display: flex; gap: 7px; margin: 10px 0; }
+.industrial-preview button { color: #dce5e8; background: #354149; border: 1px solid #61717b; border-radius: 3px; padding: 7px 11px; cursor: pointer; }
+.industrial-preview button[aria-pressed="true"] { background: #386963; border-color: #75b5ac; }
+.industrial-preview button:hover { border-color: #9fd1cb; }
+.industrial-preview output { display: block; padding-top: 12px; margin-top: 12px; border-top: 1px solid #45545c; color: #b9c7ce; line-height: 1.8; white-space: pre-line; }
+.industrial-preview a { color: #9ad2c8; }
+.industrial-preview input { accent-color: #78b7ad; vertical-align: middle; }
+@media (max-height: 760px) { .industrial-preview-panel { top: 10px; padding: 12px; font-size: 11px; max-height: calc(100dvh - 45px); overflow: auto; } }

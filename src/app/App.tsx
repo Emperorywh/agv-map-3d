@@ -343,11 +343,9 @@ export function App() {
          此前 Canvas 未传该 prop，灯光的阴影相机与分辨率全部空转；
          阴影相机按灯光空间地图四角收紧，见 MapVisualizationFeature */
       shadows
-      /* fov 25（P0-2）：Reference 是长焦/弱透视机位；fov 60 的广角透视在
-         总览距离下近大远小强烈。初始 position 取与俯瞰取景同方向（45° 俯
-         角 + 45° 方位角）、同量级距离（当前地图四角包络 ≈ 550m）的机位，
-         避免 bounds 就绪前以完全不同透视闪帧；精确取景由 overviewFraming 完成 */
-      camera={{ fov: 25, near: 0.5, far: 4000, position: [280, 396, 280] }}
+      /* 室内监控采用四十五度视场，保留厂房纵深与设施之间的尺度关系。
+         初始高度与默认监控相近，地图就绪后由统一厂房取景接管精确机位。 */
+      camera={{ fov: 45, near: 0.05, far: 2000, position: [26, 53, 26] }}
       frameloop={pageVisible && recovery.phase === 'running' ? 'always' : 'never'}
       onCreated={(state) => {
         setRenderer(state.gl)

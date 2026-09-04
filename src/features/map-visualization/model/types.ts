@@ -138,7 +138,10 @@ export interface SceneBounds {
   readonly maxWorldZ: number
   readonly centerWorldX: number
   readonly centerWorldZ: number
-  /** 包围盒对角线长度（相机最大距离为对角线 3 倍，SPEC §5.5） */
+  /**
+   * 包围盒对角线用于布局余量、场景细节和远裁剪估算。
+   * 相机缩远上限独立按厂房视锥覆盖计算。
+   */
   readonly diagonal: number
 }
 

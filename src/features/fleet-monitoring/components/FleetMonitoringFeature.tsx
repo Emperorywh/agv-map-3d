@@ -41,10 +41,7 @@ import { createDiagnosticsReporter, type DiagnosticsReporter } from '@/shared/di
 import type { WorldTransform } from '@/shared/spatial'
 import { useFleetRuntime } from '../hooks/FleetRuntimeContext'
 import { useVehicleSelection } from '../hooks/useVehicleSelection'
-import {
-  createVehicleResources,
-  type VehicleResources,
-} from '../scene/createVehicleGeometry'
+import { useVehicleResources } from '../hooks/useVehicleResources'
 import {
   createInstanceSlotTable,
   SLOT_HARD_CAP,
@@ -94,11 +91,11 @@ export function FleetMonitoringFeature({
   // 共用几何/材质单一所有者：同一资源代内恒定，换代（TASK-016 恢复重建）
   // 与卸载时幂等释放（旧资源在 effect 清理中 dispose，新资源同提交内生效）。
   // 资源代是「何时重建」的触发器而非构造入参：工厂不消费代号，代号变化即换代。
-  const resources = useMemo<VehicleResources>(() => {
-    void contextGeneration
-    return createVehicleResources()
-  }, [contextGeneration])
-  useEffect(() => () => resources.dispose(), [resources])
+  /**
+   * 整队共享一次模型加载，资源替换由独立 Hook 管理取消、释放与代际隔离。
+   * 加载完成只替换批次资源，不重置车辆运行时、选中或槽位表。
+   */
+  const resources = useVehicleResources(contextGeneration)
 
   // 实例槽位表：车体/标签共享，随卸载丢弃
   const tableRef = useRef<ReturnType<typeof createInstanceSlotTable> | null>(null)
@@ -155,6 +152,8 @@ export function FleetMonitoringFeature({
   return (
     <group
       name="fleet-monitoring-feature"
+      onPointerMove={selection.onPointerMove}
+      onPointerOut={selection.onPointerOut}
       onPointerDown={selection.onPointerDown}
       onClick={selection.onClick}
       onDoubleClick={selection.onDoubleClick}

@@ -18,16 +18,16 @@
 
 /**
  * 场景清屏底色（地图未就绪或失败重试期间页面保持的唯一颜色，SPEC §7.4）。
- * P1-1：提亮至 Reference 色域（Reference 实测 #161b22）。
+ * 与厂房灰色墙板共用色系，加载间隙和远处雾色不再回落到黑色。
  */
-export const MAP_CLEAR_COLOR = '#14181f'
+export const FACTORY_WALL_COLOR = '#a5afb5'
+export const MAP_CLEAR_COLOR = FACTORY_WALL_COLOR
 
 /**
- * 场景雾（P1-3）：FogExp2 密度 = 该系数 / 地图对角线（当前 ≈ 0.00092/m）。
- * 雾色 = 清屏底色，总览距离（450~800m）下远处对象渐隐进背景；近景
- * （< 100m）雾因子 < 1%，无感知。
+ * 室内只保留很弱的距离空气感，密度按厂房对角线归一化。
+ * 雾色与墙板一致，保留远侧墙柱和设备轮廓，不向黑色背景衰减。
  */
-export const SCENE_FOG_DENSITY_PER_DIAGONAL = 0.25
+export const SCENE_FOG_DENSITY_PER_DIAGONAL = 0.055
 
 /** 图层高度阶梯（世界 y，单位米；见关键不变量 1） */
 export const GRID_Y = 0.02
@@ -147,33 +147,29 @@ export const NODE_COLORS: Record<'work' | 'warehouse' | 'charge' | 'park' | 'unk
 
 /** 方向光强度与环境贴图强度（P0-7：2.2 过曝把受光车体色洗白，降档回血；
  *  只影响受光材质，节点/标签等 Unlit 层不受影响；exposure 不动） */
-export const DIRECTIONAL_LIGHT_INTENSITY = 1.2
+export const DIRECTIONAL_LIGHT_INTENSITY = 1.5
 /** 静态阴影相机按灯光空间地图四角包络后的扩展边距（车辆高度与贴图渗漏余量） */
 export const LIGHT_SHADOW_MARGIN_M = 6
 /** 默认阴影贴图分辨率（可被 config.renderer.shadowMapSize 覆盖，SPEC §5.4） */
 export const DEFAULT_SHADOW_MAP_SIZE = 2048
 
 /**
- * 自定义渐变环境（P2-5/9.4）：替代 RoomEnvironment 的「棚拍灯箱」感——
- * 大球面顶点色渐变（天顶冷白 → 地平灰蓝 → 天底深灰蓝）经 PMREM 预滤波为
- * IBL。整体亮度低于灯箱环境，受光车体色的饱和度回血（P1 遗留的「车体偏
- * 浅」即源于 IBL 过亮）；模糊半径 0.04 沿用（静态场景不需要锐利反射）。
+ * 顶部柔光、冷灰内墙和混凝土地面的反射色经预滤波生成环境光。
+ * 暗部仍保留明度，车体与墙柱不再像置于黑色摄影棚中。
  */
-export const ENVIRONMENT_ZENITH_COLOR = '#c9d7e8'
-export const ENVIRONMENT_HORIZON_COLOR = '#3a4250'
-export const ENVIRONMENT_GROUND_COLOR = '#161a21'
+export const ENVIRONMENT_ZENITH_COLOR = '#e2e8eb'
+export const ENVIRONMENT_HORIZON_COLOR = '#929fa7'
+export const ENVIRONMENT_GROUND_COLOR = '#626d76'
 
 /**
- * 页面背景渐变与暗角（P2-6）：Canvas 生成的屏幕空间背景纹理（顶部冷灰蓝 →
- * 底部更深、四角暗角），替代纯色清屏，提供 Reference 的聚焦感。Canvas 不可
- * 用（无头测试环境）时降级为 MAP_CLEAR_COLOR 纯色；雾色仍为清屏底色——雾
- * 把远处对象渐隐进背景中间档，暗角只压屏幕边缘。
+ * 背景使用接近厂房墙板的冷灰渐变，关闭黑色暗角。
+ * 正常相机范围内由实体地坪和内墙填满画面，背景仅作加载与降级兜底。
  */
 export const BACKGROUND_TEXTURE_PX = 512
-export const BACKGROUND_TOP_COLOR = '#181d26'
-export const BACKGROUND_BOTTOM_COLOR = '#10141b'
+export const BACKGROUND_TOP_COLOR = '#b1bbc1'
+export const BACKGROUND_BOTTOM_COLOR = FACTORY_WALL_COLOR
 /** 四角暗角强度：角点颜色向黑压暗的比例（0 = 无暗角） */
-export const BACKGROUND_VIGNETTE_STRENGTH = 0.3
+export const BACKGROUND_VIGNETTE_STRENGTH = 0
 
 /* ==================== TASK-005 地图业务语义图层 ==================== */
 
@@ -265,6 +261,76 @@ export const PARK_GLYPH_OFFSET_Z_M = 0.2
  */
 export const LANDMARK_NAME_FADE_NEAR_M = 30
 export const LANDMARK_NAME_FADE_FAR_M = 70
+
+/* ==================== 程序化地坪（地面平面 + Canvas 程序纹理） ====================
+ * 参照原型参考的蓝灰混凝土地坪：低对比底色 + 多尺度斑驳 + 细颗粒磨损 +
+ * 按实际米制尺寸的稀疏分缝 + 粗糙度变化；地面接收实时阴影提供落地感。
+ * 纹理按世界尺寸平铺（一张贴图覆盖 GROUND_TEXTURE_TILE_M 米），不整图拉伸；
+ * 地面细节刻意保持低对比，不与车辆和路线抢视觉重心。
+ */
+
+/**
+ * 地坪表面高度：略低于 y=0（充电光环、停车 slab 底面、车轮接地点所在高度）。
+ * 亚厘米偏移在米制地图尺度下不可见，同时保证既有贴花不与地面共面 z-fight。
+ */
+export const GROUND_SURFACE_Y = -0.008
+
+/** 程序纹理边长（px，2 的幂保证 mipmap）与整张贴图覆盖的世界尺寸（米） */
+export const GROUND_TEXTURE_PX = 1024
+export const GROUND_TEXTURE_TILE_M = 12
+/** 地坪分缝间距（米）：实际车间接缝尺度；纹理内画 2×2 缝格，降低颗粒重复感 */
+export const GROUND_SEAM_SPACING_M = 6
+
+/**
+ * 室内混凝土地坪采用中性冷灰，与墙板形成明确的水平、竖直明度关系。
+ * 纯色降级保持同一底色，纹理只负责细微磨损和分缝。
+ */
+export const GROUND_BASE_COLOR = '#69747c'
+export const GROUND_FALLBACK_COLOR = '#69747c'
+/** 斑驳明暗两色：与底色同色系、低对比，叠出「深浅变化」而非花斑 */
+export const GROUND_MOTTLE_LIGHT_COLOR = '#7b858c'
+export const GROUND_MOTTLE_DARK_COLOR = '#59656e'
+/** 大尺度云斑 + 中尺度色块各画两遍（明/暗），数量为每遍的渐变个数 */
+export const GROUND_MOTTLE_LARGE_COUNT = 26
+export const GROUND_MOTTLE_MID_COUNT = 90
+/** 渐变半径占纹理边长的比例区间与不透明度上限（径向渐变衰变到 0） */
+export const GROUND_MOTTLE_RADIUS_MIN_RATIO = 0.03
+export const GROUND_MOTTLE_RADIUS_MAX_RATIO = 0.32
+export const GROUND_MOTTLE_ALPHA = 0.055
+
+/** 细颗粒：1px 明暗斑点数量与不透明度上限（近看是混凝土骨料，远看融为灰面） */
+export const GROUND_GRAIN_COUNT = 24000
+export const GROUND_GRAIN_ALPHA = 0.09
+/** 稀疏较大深色磨损点：数量与不透明度上限 */
+export const GROUND_SPECK_COUNT = 1400
+export const GROUND_SPECK_ALPHA = 0.1
+/** 磨损划痕：数量、长度占边长比例区间与不透明度上限（明暗随机：抛亮/积灰） */
+export const GROUND_SCUFF_COUNT = 46
+export const GROUND_SCUFF_LENGTH_MIN_RATIO = 0.05
+export const GROUND_SCUFF_LENGTH_MAX_RATIO = 0.16
+export const GROUND_SCUFF_ALPHA = 0.05
+
+/** 接缝：缝宽（px）与暗缝/外侧受光亮边的不透明度 */
+export const GROUND_SEAM_WIDTH_PX = 2
+export const GROUND_SEAM_DARK_COLOR = '#262b31'
+export const GROUND_SEAM_DARK_ALPHA = 0.38
+export const GROUND_SEAM_LIGHT_ALPHA = 0.08
+
+/** 粗糙度：基准值直接烘进贴图灰度（材质 roughness=1 只作乘子），±变化幅度 */
+export const GROUND_ROUGHNESS_BASE = 0.88
+export const GROUND_ROUGHNESS_VARIATION = 0.1
+/** 凹凸强度（接缝下陷 + 颗粒微起伏；bumpMap 灰度即相对高度） */
+export const GROUND_BUMP_SCALE = 0.012
+
+/** 金属度（混凝土地坪为 0）与环境反射强度（缎面柔光，不镜像） */
+export const GROUND_METALNESS = 0
+export const GROUND_ENV_INTENSITY = 0.6
+
+/** 各向异性过滤上限：掠射角下接缝与颗粒不糊（实际取 renderer 能力的较小值） */
+export const GROUND_TEXTURE_MAX_ANISOTROPY = 8
+
+/** 程序纹理的固定随机种子：同版本视觉稳定，刷新与重建不复现随机差异 */
+export const GROUND_TEXTURE_SEED = 20260904
 
 /**
  * 地面图层的最高世界高度：标线、节点圆台和停车贴花都属于地面包络。

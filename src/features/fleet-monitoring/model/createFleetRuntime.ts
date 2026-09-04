@@ -338,7 +338,12 @@ function isKnownEventShape(
 
 /** 位姿签名：位置/朝向/尺寸/有效性任一变化都视为位姿变化 */
 function poseSignature(snapshot: VehicleSnapshot): string {
+  /**
+   * 明确车型配置的变化也属于渲染结构输入，车型切换必须重新写入部件矩阵。
+   * 不解释未知对象类型，也不从车辆实体编号推断车型。
+   */
   return [
+    typeof snapshot.rawType === 'string' || typeof snapshot.rawType === 'number' ? snapshot.rawType : '',
     snapshot.position.x,
     snapshot.position.y,
     snapshot.position.theta,

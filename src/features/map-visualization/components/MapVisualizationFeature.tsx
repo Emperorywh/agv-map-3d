@@ -1,9 +1,10 @@
 /**
  * 地图可视化 Feature 公开根组件（SPEC §5.1、§5.4、§12.3；TASK-004/005/016）。
  *
- * 职责：协调地图场景的全部静态表达——背景渐变/暗角（P2-6，Canvas 不可用
+ * 职责：协调地图场景的全部静态表达——室内冷灰背景（Canvas 不可用
  *       降级纯色清屏）、环境与灯光（方向光 + 渐变环境 PMREM（P2-5）+
- *       静态阴影相机）、节点实例层，以及 TASK-005 的业务语义
+ *       静态阴影相机）、统一厂房外壳与贴墙地坪、节点实例层，
+ *       以及 TASK-005 的业务语义
  *       层（充电桩/呼吸灯、停车地面标识与名称合批）；地图生命周期由
  *       useMapVisualization 驱动，名称图集由本组件经 useMapNameAtlas 单一持有。
  *       TASK-016 接入上下文恢复重建：contextGeneration 资源代递增时，三个
@@ -36,6 +37,7 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { SceneBounds } from '../model/types'
+import { getFactoryLayout } from '../model/factoryLayout'
 import {
   useMapVisualization,
   type MapViewDescriptor,
@@ -60,6 +62,8 @@ import {
 import { NodesLayer } from './NodesLayer'
 import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { LandmarksLayer } from './LandmarksLayer'
+import { GroundLayer } from './GroundLayer'
+import { FactoryLayer } from './FactoryLayer'
 import {
   computeCameraFocusDistance,
   createSceneDetailController,
@@ -137,7 +141,7 @@ export function MapVisualizationFeature({
     diagnostics,
   })
 
-  // 背景渐变纹理（P2-6）：模块级静态资源，挂载时创建一次；Canvas 不可得
+  // 室内背景纹理：挂载时创建一次，冷灰渐变不再叠加黑色暗角；Canvas 不可得
   // （无头测试环境）时为 null，降级为 MAP_CLEAR_COLOR 纯色清屏。Canvas 源
   // 纹理上下文恢复后由 three.js 自动重传，不随资源换代。
   const background = useMemo(() => createBackgroundGradient(), [])
@@ -151,22 +155,36 @@ export function MapVisualizationFeature({
     [view],
   )
 
+  /**
+   * 地坪、厂房外壳与灯光共用布局；相机通过公开入口取得同一缓存结果。
+   * 地图视图替换时整体换新，禁止地坪与墙体各自推算边距。
+   */
+  const factoryLayout = useMemo(
+    () => view !== null ? getFactoryLayout(view.mapModel.sceneBounds) : null,
+    [view],
+  )
+
   return (
     <>
-      {/* 背景（P2-6）：渐变 + 暗角纹理优先，Canvas 不可用时保持纯色清屏——
+      {/* 室内背景：冷灰渐变优先，Canvas 不可用时保持墙板色清屏——
           地图未就绪或失败重试期间页面同样保持背景色 */}
       {background !== null ? (
         <primitive object={background.texture} attach="background" />
       ) : (
         <color attach="background" args={[MAP_CLEAR_COLOR]} />
       )}
-      {view !== null ? (
+      {view !== null && factoryLayout !== null ? (
         // key 绑定资源代（TASK-016）：上下文恢复时代号变化强制四个图层整体
         // 卸载/挂载——旧 GPU 对象由各图层所有权 effect 释放，新对象在同一
         // 提交内重建（渲染阶段创建、清理阶段释放旧对象），规避 R3F 对已挂
         // 载 primitive 换 object 的重建丢弃问题；图层自身 key 仍携带视图版
         // 本，视图原子替换语义不变。
         <Fragment key={`map-resources-${contextGeneration}`}>
+          <GroundLayer
+            key={`ground-${view.version}`}
+            bounds={factoryLayout.bounds}
+          />
+          <FactoryLayer key={`factory-${view.version}`} layout={factoryLayout} />
           <PhysicalPathsLayer
             key={`paths-${view.version}`}
             geometry={view.geometry}
@@ -191,7 +209,8 @@ export function MapVisualizationFeature({
       {/* 环境与灯光位于图层之后（不变量 6）：恢复提交中环境重建恒在地图
           资源之后落地；方向光对象身份与场景图位置无关，语义不变 */}
       <SceneLighting
-        bounds={view?.mapModel.sceneBounds ?? null}
+        bounds={factoryLayout?.bounds ?? null}
+        wallHeight={factoryLayout?.config.wallHeightM ?? 12}
         shadowMapSize={shadowMapSize}
         dynamicShadowsEnabled={dynamicShadowsEnabled}
         environmentFactory={environmentFactory}
@@ -224,6 +243,11 @@ function SceneDetailDriver({ controller }: { controller: SceneDetailController }
 
 interface SceneLightingProps {
   bounds: SceneBounds | null
+  /**
+   * 阴影包络包含厂房墙高，避免高窗和立柱超出阴影相机而失去落地阴影。
+   * 布局为空时使用标准高度，不改变加载阶段的资源生命周期。
+   */
+  wallHeight: number
   shadowMapSize: number
   dynamicShadowsEnabled: boolean
   environmentFactory: SceneEnvironmentFactory
@@ -237,6 +261,7 @@ interface SceneLightingProps {
 /** 灯光与环境：PMREM 环境贴图 + 按地图包围盒静态配置的方向光阴影 */
 function SceneLighting({
   bounds,
+  wallHeight,
   shadowMapSize,
   dynamicShadowsEnabled,
   environmentFactory,
@@ -277,15 +302,16 @@ function SceneLighting({
   const lighting = useMemo(
     () =>
       bounds !== null
-        ? createStaticDirectionalLight(bounds, shadowMapSize, dynamicShadowsEnabled)
+        ? createStaticDirectionalLight(bounds, wallHeight, shadowMapSize, dynamicShadowsEnabled)
         : null,
-    [bounds, shadowMapSize, dynamicShadowsEnabled],
+    [bounds, wallHeight, shadowMapSize, dynamicShadowsEnabled],
   )
   useEffect(() => () => lighting?.light.dispose(), [lighting])
 
-  // 场景雾（P1-3）：FogExp2 密度按地图对角线缩放，雾色 = 清屏底色——远处
-  // 对象渐隐进背景，总览画面边缘与背景色自然融合；近景无感知。fog 是
-  // 纯 CPU 场景属性（非 GPU 资源），不参与 TASK-016 资源换代。
+  /**
+   * 低密度冷灰雾按厂房范围归一化，保留远侧墙和立柱的轮廓。
+   * 雾是场景属性，不参与上下文恢复时的资源重建。
+   */
   useEffect(() => {
     if (bounds === null) {
       return
@@ -319,8 +345,8 @@ function SceneLighting({
         object={lighting.target}
         dispose={null}
       />
-      {/* 冷色半球光（P1-9）：暗部补冷蓝灰环境光，明暗过渡更接近 Reference；
-          强度 0.5，与方向光降档（P0-7）后的总量平衡，不过曝 */}
+      {/* 顶部大面积柔光模拟厂房室内照明，地面反射填补墙脚和设备暗部。
+          与主光保持同一资源代，质量降级关闭动态阴影后仍保留空间层次。 */}
       <primitive
         key={`map-hemisphere-${lighting.id}`}
         object={lighting.hemisphere}
@@ -343,14 +369,12 @@ interface StaticLighting {
 }
 
 /**
- * 按地图包围盒配置方向光：位置取对角线比例偏移，阴影正交相机静态覆盖全图。
- * 阴影相机按「灯光空间下的地图四角」包络（P0-8）：此前按 对角线/2 + margin 的
- * 正方形覆盖 311m 见方，近半面积在地图之外；改按四角在光空间的 min/max 设
- * left/right/top/bottom 与 near/far，有效分辨率显著提升（同贴图尺寸下）。
- * 同时创建冷色半球光（P1-9：天顶冷蓝 / 地面深灰，强度 0.5），补匀暗部。
+ * 阴影相机覆盖厂房底部和墙顶的八个角，保留墙根、立柱与设备底部阴影。
+ * 主光从接近顶部的方向落下，配合半球柔光表现室内漫反射。
  */
 function createStaticDirectionalLight(
   bounds: SceneBounds,
+  wallHeight: number,
   shadowMapSize: number,
   dynamicShadowsEnabled: boolean,
 ): StaticLighting {
@@ -358,9 +382,9 @@ function createStaticDirectionalLight(
   const light = new THREE.DirectionalLight(0xffffff, DIRECTIONAL_LIGHT_INTENSITY)
   light.name = 'map-directional-light'
   light.position.set(
-    bounds.centerWorldX + diagonal * 0.4,
+    bounds.centerWorldX + diagonal * 0.12,
     diagonal * 0.9,
-    bounds.centerWorldZ + diagonal * 0.25,
+    bounds.centerWorldZ + diagonal * 0.08,
   )
   // 动态阴影能力开关（SPEC §6.5 行动 3）：false 时不再投射阴影贴图
   light.castShadow = dynamicShadowsEnabled
@@ -379,9 +403,10 @@ function createStaticDirectionalLight(
   const up = new THREE.Vector3().crossVectors(right, forward).normalize()
 
   const margin = LIGHT_SHADOW_MARGIN_M
-  // 角点（y=0）相对灯光位置的 y 分量为常量 −灯高：left/right/top/bottom 的
-  // min/max 不受常量平移影响，但 near/far 是沿视线的绝对深度，必须计入
-  const cornerY = -light.position.y
+  /**
+   * 逐一投影地面与墙顶，阴影裁剪面同时覆盖地坪和十二米高的围护结构。
+   * 扩展边距保留柱脚和柔化采样空间，不依赖相机当前正在看哪一区域。
+   */
   let minRight = Infinity
   let maxRight = -Infinity
   let minUp = Infinity
@@ -397,14 +422,17 @@ function createStaticDirectionalLight(
     const rx = cx - light.position.x
     const rz = cz - light.position.z
     const sx = rx * right.x + rz * right.z
-    const sy = rx * up.x + cornerY * up.y + rz * up.z
-    const depth = rx * forward.x + cornerY * forward.y + rz * forward.z
     minRight = Math.min(minRight, sx)
     maxRight = Math.max(maxRight, sx)
-    minUp = Math.min(minUp, sy)
-    maxUp = Math.max(maxUp, sy)
-    minDepth = Math.min(minDepth, depth)
-    maxDepth = Math.max(maxDepth, depth)
+    for (const cornerHeight of [0, wallHeight]) {
+      const cornerY = cornerHeight - light.position.y
+      const sy = rx * up.x + cornerY * up.y + rz * up.z
+      const depth = rx * forward.x + cornerY * forward.y + rz * forward.z
+      minUp = Math.min(minUp, sy)
+      maxUp = Math.max(maxUp, sy)
+      minDepth = Math.min(minDepth, depth)
+      maxDepth = Math.max(maxDepth, depth)
+    }
   }
   const camera = light.shadow.camera
   camera.left = minRight - margin
@@ -414,7 +442,13 @@ function createStaticDirectionalLight(
   camera.near = Math.max(minDepth - margin, 1)
   camera.far = maxDepth + margin
   camera.updateProjectionMatrix()
-  light.shadow.bias = -0.0005
+  /**
+   * 小幅偏移压制墙板自阴影条纹，保留墙脚接触边缘。
+   * 柔化参数沿用现有阴影管线，不额外增加多盏投影灯。
+   */
+  light.shadow.bias = -0.00008
+  light.shadow.normalBias = 0.025
+  light.shadow.radius = 2
 
   // 方向光的目标点必须同时在场景图中才参与矩阵计算
   const target = new THREE.Object3D()
@@ -422,7 +456,7 @@ function createStaticDirectionalLight(
   target.position.set(bounds.centerWorldX, 0, bounds.centerWorldZ)
   light.target = target
 
-  const hemisphere = new THREE.HemisphereLight(0x3a4660, 0x14171c, 0.5)
+  const hemisphere = new THREE.HemisphereLight(0xdce5eb, 0x737e87, 1.15)
   hemisphere.name = 'map-hemisphere-light'
   sceneLightingSeq += 1
   return { id: sceneLightingSeq, light, target, hemisphere }

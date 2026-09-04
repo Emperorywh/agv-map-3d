@@ -71,6 +71,11 @@ export function labelImportanceRank(input: LabelImportanceInput): number | null 
       return 5
     }
   }
+  /**
+   * 普通标签隐藏后，其他现有告警也需要进入持续提示候选集合。
+   * 这里只决定视觉优先级，不删除或改写告警数据。
+   */
+  if (input.alerts.length > 0) return 6
   return null
 }
 

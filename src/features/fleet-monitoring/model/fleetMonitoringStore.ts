@@ -21,6 +21,12 @@ import { create } from 'zustand'
 export interface FleetMonitoringState {
   /** 当前选中车辆的实体键；null 表示无选中 */
   selectedKey: string | null
+  /**
+   * 悬停只保存实体键，和选中、告警互相独立。
+   * 指针离开、拖拽开始及实体删除时清空，不影响业务数据。
+   */
+  hoveredKey: string | null
+  hover: (key: string | null) => void
   /** 选中指定车辆；传 null 取消选中（幂等） */
   select: (key: string | null) => void
   /** 存在活跃 L1/L2 告警的实体键集合（内容幂等更新） */
@@ -49,6 +55,10 @@ function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 
 export const useFleetMonitoringStore = create<FleetMonitoringState>((set, get) => ({
   selectedKey: null,
+  hoveredKey: null,
+  hover: (key) => {
+    if (get().hoveredKey !== key) set({ hoveredKey: key })
+  },
   select: (key) => {
     if (get().selectedKey !== key) {
       set({ selectedKey: key })
@@ -62,6 +72,9 @@ export const useFleetMonitoringStore = create<FleetMonitoringState>((set, get) =
     }
   },
   notifyEntitiesRemoved: (keys) => {
+    if (get().hoveredKey !== null && keys.includes(get().hoveredKey!)) {
+      set({ hoveredKey: null })
+    }
     const { selectedKey } = get()
     if (selectedKey !== null && keys.includes(selectedKey)) {
       set({ selectedKey: null })

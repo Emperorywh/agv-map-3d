@@ -3,14 +3,13 @@
  * 默认作业区聚焦）。
  *
  * 职责：在唯一 Canvas 内自持 OrbitControls 实例（旋转/平移/光标定点滚轮缩
- *       放 + 阻尼、最小 0.25m / 最大地图对角线 3 倍）、按地图包围盒 45° 自
- *       动取景（初始取景
- *       与空格俯瞰共用同一数学）、双击跟随状态机（进入时捕获相对偏移、每帧
+ *       放 + 阻尼、按厂房视锥约束距离）、以高位监控视角自动取景，主动总览
+ *       与初始聚焦共用室内保护；双击跟随状态机（进入时捕获相对偏移、每帧
  *       读取只读目标、手动拖拽或目标删除立即退出）、监听器对称清理；并把
  *       { follow, exitFollow, overview } 命令经 commandsRef 交给 app 组合层
  *       ——双击跟随请求由组合层转交，跨 Feature 协作不经过任何共享 Store。
  *       P0-5.2：initialFocusBounds 就绪且用户尚未交互时，把机位一次性移动
- *       到活跃作业区（距离限制仍按全图包围盒），空格键保留完整全厂总览。
+ *       到活跃作业区，空格键保留单独的全厂总览入口。
  * 边界：本 Hook 只操作相机与输入事件，不读取车辆数据（目标位置经注入的
  *       FollowTargetReader 获取；聚焦包围盒由 app 组合层从地图模型与车队
  *       运行时派生后注入）、不修改场景内容、不渲染任何 DOM；Esc/空白
@@ -26,11 +25,8 @@
  *    缩放关闭，两者不会互相抢占；
  * 4. 拖拽判定与车辆选择的拖拽抑制同阈值（6px）：单击（含双击的第一次单击）
  *    不退出跟随、不移动相机；
- * 5. 距离限制恒等式：minDistance=0.25，maxDistance=max(对角线×3,
- *    minDistance+间隔)，
- *    bounds 变化时与取景同时重设，任何时刻都满足 max > min；
- * 6. 默认聚焦一次性且不抢镜：只移动 position/target，不缩拢 near/far 与
- *    距离限制；用户已交互（按下/滚轮/空格）后到达的聚焦请求被静默丢弃。
+ * 5. 屏幕四角的地面投影与镜头水平位置都在厂内，视口变化后重新求解；
+ * 6. 默认聚焦一次性且不抢镜；用户已交互后到达的聚焦请求被静默丢弃。
  * 7. 地面保护：极角始终小于 90°，最终相机高度还必须高于实际地面图层及
  *    近裁剪面所需净空；所有控制器 change 与每帧渲染前统一收敛，修正后的
  *    跟随偏移同步回写，避免下一帧恢复到地面内。
@@ -39,7 +35,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { FocusBounds, SceneBounds } from '@/features/map-visualization'
+import { getFactoryLayout, type FocusBounds, type SceneBounds } from '@/features/map-visualization'
 import type { FollowTargetReader } from '@/features/fleet-monitoring'
 import { useCameraNavigationStore } from '../model/cameraNavigationStore'
 /**
@@ -47,6 +43,8 @@ import { useCameraNavigationStore } from '../model/cameraNavigationStore'
  * 自由浏览与跟随模式共用此实现，防止不同输入路径出现约束遗漏。
  */
 import { constrainCameraToGround } from '../scene/constrainCameraToGround'
+import { constrainCameraToFactory } from '../scene/constrainCameraToFactory'
+import { CAMERA_MAX_PITCH_RAD, getFactoryMinPitch } from '../model/factoryFraming'
 import {
   CAMERA_MIN_DISTANCE_M,
   computeOverviewPose,
@@ -58,7 +56,7 @@ export interface CameraNavigationCommands {
   follow(entityKey: string): void
   /** 立即退出跟随（幂等） */
   exitFollow(): void
-  /** 空格俯瞰语义：退出跟随并回到地图包围盒中心 45° 机位 */
+  /** 空格俯瞰语义：退出跟随，使用受厂房边界约束的总览机位 */
   overview(): void
   /** 是否正在跟随（桥接诊断与测试用） */
   isFollowing(): boolean
@@ -71,8 +69,8 @@ export interface UseCameraNavigationOptions {
   bounds: SceneBounds | null
   /**
    * 默认聚焦作业区包围盒（视觉对齐 P0-5.2）：首次就绪且用户尚未交互时把
-   * 机位一次性移动到该区域（取景数学与全厂俯瞰共用，距离限制不缩拢）；
-   * null 表示保持全厂总览。
+   * 机位一次性移动到该区域，所有机位使用同一厂房约束；
+   * null 表示保留地图中心附近的默认监控视图。
    */
   initialFocusBounds?: FocusBounds | null
   /** 只读跟随目标读取器：实体键 → 世界坐标；null 时跟随命令无法成立 */
@@ -107,17 +105,20 @@ const WHEEL_DOLLY_NOTCH = 100
 
 /**
  * 自由浏览与车辆跟随共用的滚轮缩放速度。
- * 略高于 OrbitControls 默认值，使新增的 8 倍近景范围无需过多滚轮操作即可
- * 到达，同时保留足够细的步进以检查相邻路径。
+ * 保留连续缩放的细步进，倍率上下限由室内覆盖约束提供。
  */
 const CAMERA_ZOOM_SPEED = 1.25
 
 /**
- * 左键轨道旋转允许的最大极角。
- * 与 90° 地平线保留 1° 余量，只负责防止翻到理论地平面下方。
- * 近景离地高度由 constrainCameraToGround 单独保证，不能由极角替代。
+ * 主动取景前消费剩余轨道阻尼，避免上一轮拖拽继续改变新总览的方位。
+ * 暂时关闭阻尼只影响这次同步更新，随后恢复原设置，正常浏览手感不变。
  */
-const CAMERA_MAX_POLAR_ANGLE = Math.PI / 2 - THREE.MathUtils.degToRad(1)
+function clearOrbitMomentum(controls: OrbitControls): void {
+  const damping = controls.enableDamping
+  controls.enableDamping = false
+  controls.update()
+  controls.enableDamping = damping
+}
 
 export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const { bounds, initialFocusBounds, readFollowTarget, commandsRef, controlsRef } = options
@@ -141,11 +142,31 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const userInteractedRef = useRef(false)
 
   /**
-   * 控制器事件和帧循环共用最终机位保护；跟随模式必须同步回写修正后偏移，
-   * 否则车辆下一帧移动时会再次把相机放回未经约束的低高度。
+   * 保存上次约束完成后的轨道距离，以区分缩远与保持距离的旋转、平移。
+   * 不依赖鼠标按键状态，因此松开左键后剩余的旋转阻尼也不会误触发总览。
+   */
+  const constrainedDistanceRef = useRef<number | null>(null)
+
+  /**
+   * 控制器事件与帧循环共用地面、视锥和平移保护；修正后同步跟随偏移。
+   * 厂房约束最后执行，防止前一步调整高度之后屏幕边缘重新越界。
    */
   const applyGroundConstraint = useCallback((controlsNow: OrbitControls): void => {
-    if (constrainCameraToGround(camera as THREE.PerspectiveCamera, controlsNow)) {
+    const perspective = camera as THREE.PerspectiveCamera
+    const requestedDistance = camera.position.distanceTo(controlsNow.target)
+    const previousDistance = constrainedDistanceRef.current
+    const zoomingOut = previousDistance !== null && requestedDistance > previousDistance + 0.001
+    const groundChanged = constrainCameraToGround(perspective, controlsNow)
+    const currentBounds = boundsRef.current
+    const factoryChanged = currentBounds !== null && constrainCameraToFactory(
+      perspective,
+      controlsNow,
+      getFactoryLayout(currentBounds),
+      followRef.current !== null,
+      zoomingOut,
+    )
+    constrainedDistanceRef.current = camera.position.distanceTo(controlsNow.target)
+    if (groundChanged || factoryChanged) {
       followRef.current?.offset.copy(camera.position).sub(controlsNow.target)
     }
   }, [camera])
@@ -180,20 +201,25 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     useCameraNavigationStore.getState().setFollowedEntityKey(null)
   }, [])
 
-  /** 按当前包围盒重新取景（初始取景与空格俯瞰共用；先退出跟随） */
-  const frameOverview = useCallback((): void => {
+  /**
+   * 默认监控与主动总览显式区分，地图加载不会先把全部设施缩成微小点阵。
+   * 两种模式的结果都再次经过统一约束，命令调用也不能绕过边界。
+   */
+  const frameMap = useCallback((mode: 'monitor' | 'overview'): void => {
     const controlsNow = internalControlsRef.current
     const currentBounds = boundsRef.current
     if (controlsNow === null || currentBounds === null) {
       return
     }
     exitFollow()
+    clearOrbitMomentum(controlsNow)
     const perspective = camera as THREE.PerspectiveCamera
     // 四角投影包络需要视口纵横比（P0-1）：取画布实测尺寸，异常时退化为方视口
     const width = gl.domElement.clientWidth
     const height = gl.domElement.clientHeight
     const aspect = width > 0 && height > 0 ? width / height : 1
-    const pose = computeOverviewPose(currentBounds, perspective.fov, aspect)
+    const pose = computeOverviewPose(currentBounds, perspective.getEffectiveFOV(), aspect, getFactoryLayout(currentBounds), mode)
+    perspective.aspect = aspect
     perspective.near = pose.near
     perspective.far = pose.far
     perspective.updateProjectionMatrix()
@@ -202,12 +228,18 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     controlsNow.target.set(pose.target.x, 0, pose.target.z)
     camera.position.set(pose.position.x, pose.position.y, pose.position.z)
     controlsNow.update()
-  }, [camera, gl, exitFollow])
+    applyGroundConstraint(controlsNow)
+  }, [camera, gl, exitFollow, applyGroundConstraint])
 
   /**
-   * 聚焦作业区取景（视觉对齐 P0-5.2）：取景数学与全厂俯瞰完全共用，但只
-   * 移动 position/target——near/far 与距离限制保持全图包围盒的取景结果，
-   * 用户随时可以缩放回全厂；地图未就绪时不动作。
+   * 空格和公开命令只调用主动总览，初始加载单独选择监控模式。
+   * 保留稳定回调，避免注册命令和键盘监听在每帧重建。
+   */
+  const frameOverview = useCallback((): void => frameMap('overview'), [frameMap])
+
+  /**
+   * 作业区聚焦复用默认监控取景，始终传入整张地图的厂房布局。
+   * 分量仅决定关注位置，不会生成另一套地面或缩小可浏览地图。
    */
   const frameFocusArea = useCallback((focusBounds: FocusBounds): void => {
     const controlsNow = internalControlsRef.current
@@ -215,15 +247,21 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       return
     }
     exitFollow()
+    clearOrbitMomentum(controlsNow)
     const perspective = camera as THREE.PerspectiveCamera
     const width = gl.domElement.clientWidth
     const height = gl.domElement.clientHeight
     const aspect = width > 0 && height > 0 ? width / height : 1
-    const pose = computeOverviewPose(focusBounds, perspective.fov, aspect)
+    const pose = computeOverviewPose(focusBounds, perspective.getEffectiveFOV(), aspect, getFactoryLayout(boundsRef.current), 'monitor')
+    perspective.aspect = aspect
+    perspective.updateProjectionMatrix()
+    controlsNow.minDistance = pose.minDistance
+    controlsNow.maxDistance = pose.maxDistance
     controlsNow.target.set(pose.target.x, 0, pose.target.z)
     camera.position.set(pose.position.x, pose.position.y, pose.position.z)
     controlsNow.update()
-  }, [camera, gl, exitFollow])
+    applyGroundConstraint(controlsNow)
+  }, [camera, gl, exitFollow, applyGroundConstraint])
 
   // OrbitControls 生命周期：随 (camera, gl) 创建，卸载对称释放（不变量 1）。
   // 本 effect 必须先于取景/命令 effect 声明，保证同一次提交内先创建实例。
@@ -240,9 +278,10 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     /**
      * 极角上限阻止左键把相机旋转到地图下方；关闭屏幕空间平移后，右键平移
      * 与光标定点缩放都以世界水平面求交，target.y 不会随操作漂移到地下。
-     * 两项约束只限定轨道；最终离地高度仍由统一地面保护检查。
+     * 轨道允许更低的斜视角，最终屏幕覆盖范围仍由统一厂房保护检查。
      */
-    controlsInstance.maxPolarAngle = CAMERA_MAX_POLAR_ANGLE
+    controlsInstance.minPolarAngle = Math.PI / 2 - CAMERA_MAX_PITCH_RAD
+    controlsInstance.maxPolarAngle = Math.PI / 2 - getFactoryMinPitch((camera as THREE.PerspectiveCamera).fov, camera.zoom)
     controlsInstance.screenSpacePanning = false
     internalControlsRef.current = controlsInstance
     if (controlsRef !== undefined) {
@@ -268,9 +307,9 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   // 取景：bounds 对象身份变化（地图就绪/替换）即重取景并重设距离限制
   useEffect(() => {
     if (bounds !== null) {
-      frameOverview()
+      frameMap('monitor')
     }
-  }, [bounds, frameOverview])
+  }, [bounds, frameMap])
 
   // 默认作业区聚焦（视觉对齐 P0-5.2）：聚焦包围盒首次就绪且用户尚未交互
   // 时执行一次；用户已交互（按下/滚轮/空格）则静默丢弃，绝不抢镜头。
@@ -388,8 +427,12 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       // 跟随期间缩放相对偏移（不变量 3）；controls 缩放已关闭不会抢占
       event.preventDefault()
       const { offset } = followRef.current
+      /**
+       * 正向滚轮表示缩远，与原生轨道控制保持一致。
+       * 原先指数符号相反，跟随模式会出现滚轮方向倒置。
+       */
       const factor = WHEEL_DOLLY_BASE ** (
-        (event.deltaY / WHEEL_DOLLY_NOTCH) * CAMERA_ZOOM_SPEED
+        -(event.deltaY / WHEEL_DOLLY_NOTCH) * CAMERA_ZOOM_SPEED
       )
       const nextLength = THREE.MathUtils.clamp(
         offset.length() * factor,
@@ -437,11 +480,16 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
         )
       }
     }
+    /**
+     * 先刷新视口对应的限制，避免旧视口的缩远上限提前截断本帧跟随偏移。
+     * 再更新控制器并最终收敛，所有地图图层随后读取本帧实际机位。
+     */
+    applyGroundConstraint(controlsNow)
     controlsNow.update()
     /**
      * 渲染前再次兜底，覆盖低于 change 事件阈值的小位移以及视口、裁剪面变化。
      * 该保护不依赖鼠标事件，因此车辆跟随和剩余阻尼也不能把机位带入地面。
      */
     applyGroundConstraint(controlsNow)
-  })
+  }, -1)
 }

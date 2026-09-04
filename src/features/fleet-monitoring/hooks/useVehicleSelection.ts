@@ -40,6 +40,12 @@ export interface VehicleSelectionOptions {
 }
 
 export interface VehicleSelectionHandlers {
+  /**
+   * 悬停不阻止事件传播，地图轨道控制仍接收拖拽和滚轮。
+   * 移动时检查按键状态，只在未拖拽时显示简要标签。
+   */
+  onPointerMove(event: ThreeEvent<PointerEvent>): void
+  onPointerOut(event: ThreeEvent<PointerEvent>): void
   /** 记录按下位置（拖拽判定基准），展开在包裹 group 上 */
   onPointerDown(event: ThreeEvent<PointerEvent>): void
   /** 命中外壳 → 选中；命中部件非外壳时 R3F 不会触发（raycast 已关闭） */
@@ -73,8 +79,22 @@ export function useVehicleSelection(
       }
     }
     window.addEventListener('keydown', onKeyDown)
+    /**
+     * 全局按下记录覆盖从空白开始的拖拽，避免释放在车辆上被误判为点击。
+     * 按下和窗口失焦均清空悬停，监听器随组件生命周期对称移除。
+     */
+    const onDown = (event: PointerEvent) => {
+      downRef.current = { x: event.clientX, y: event.clientY }
+      useFleetMonitoringStore.getState().hover(null)
+    }
+    const clearHover = () => useFleetMonitoringStore.getState().hover(null)
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('blur', clearHover)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('blur', clearHover)
+      clearHover()
     }
   }, [])
 
@@ -115,6 +135,19 @@ export function useVehicleSelection(
   }
 
   return {
+    onPointerMove(event) {
+      if (!isMainMousePointer(event.nativeEvent) || event.nativeEvent.buttons !== 0) {
+        useFleetMonitoringStore.getState().hover(null)
+        return
+      }
+      const nearest = event.intersections.find((hit) => typeof hit.object.userData.batchId === 'number')
+      useFleetMonitoringStore.getState().hover(resolveEntityKey(nearest ?? event))
+    },
+    onPointerOut(event) {
+      if (useFleetMonitoringStore.getState().hoveredKey === resolveEntityKey(event)) {
+        useFleetMonitoringStore.getState().hover(null)
+      }
+    },
     onPointerDown(event) {
       if (!isMainMousePointer(event.nativeEvent)) {
         return
@@ -125,8 +158,13 @@ export function useVehicleSelection(
       if (!isMainMousePointer(event.nativeEvent) || isDrag(event.nativeEvent)) {
         return
       }
-      const key = resolveEntityKey(event)
+      /**
+       * 多部件或多车投影重叠时始终选择最近命中，避免后方车辆覆盖前方选择。
+       * 只在确定点击时终止拾取传播，指针移动和地图拖拽保持原样。
+       */
+      const key = resolveEntityKey(event.intersections.find((hit) => typeof hit.object.userData.batchId === 'number') ?? event)
       if (key !== null) {
+        event.stopPropagation()
         useFleetMonitoringStore.getState().select(key)
       }
     },
@@ -134,8 +172,9 @@ export function useVehicleSelection(
       if (!isMainMousePointer(event.nativeEvent) || isDrag(event.nativeEvent)) {
         return
       }
-      const key = resolveEntityKey(event)
+      const key = resolveEntityKey(event.intersections.find((hit) => typeof hit.object.userData.batchId === 'number') ?? event)
       if (key !== null) {
+        event.stopPropagation()
         // 只上抛跟随请求：相机行为归 TASK-013，本 Hook 不移动相机
         optionsRef.current.onFollowRequest?.(key)
       }
@@ -157,8 +196,14 @@ function isMainMousePointer(native: object): boolean {
   if (typeof pointerType === 'string' && pointerType !== 'mouse') {
     return false
   }
-  if ((native as { isPrimary?: unknown }).isPrimary === false) {
+  /**
+   * 浏览器的点击事件也可能是指针对象，但其主指针字段可以为假。
+   * 主指针限制只适用于指针会话事件，普通左键点击与双击按按钮判断。
+   */
+  const type = (native as { type?: string }).type ?? ''
+  if (type.startsWith('pointer') && (native as { isPrimary?: unknown }).isPrimary === false) {
     return false
   }
+  if ((type === 'click' || type === 'dblclick') && (native as { button?: number }).button !== 0) return false
   return true
 }

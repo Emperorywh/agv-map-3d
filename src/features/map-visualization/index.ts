@@ -59,6 +59,12 @@ export { DEFAULT_SHADOW_MAP_SIZE, GRID_Y } from './scene/mapAppearance'
  * 外部无需穿过 Feature 边界读取道路、节点等内部外观常量。
  */
 export { MAP_GROUND_TOP_Y } from './scene/mapAppearance'
+/**
+ * 对外提供唯一厂房布局，供相机与地图外壳共用边界。
+ * 相机不需要读取地图内部的材质或几何实现。
+ */
+export { getFactoryLayout } from './model/factoryLayout'
+export type { FactoryLayout } from './model/factoryLayout'
 export { useMapVisualization } from './hooks/useMapVisualization'
 export type {
   MapView,

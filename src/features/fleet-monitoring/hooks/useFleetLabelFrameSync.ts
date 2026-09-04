@@ -1,34 +1,8 @@
 /**
- * 标签帧同步（SPEC §5.1、§6.4、§7.2、§11.5、§12.5；TASK-011）。
- *
- * 职责：作为车辆标签实例缓冲的唯一帧消费者——每帧对运行时实体做一次全量
- *       扫描（≤512 台），以「快照/显示状态对象引用」为差量依据只写变化的
- *       实例属性：内容差 → 底色/电量条/告警级/芯片 UV/名称图集单元；相机
- *       相关的投影档位逐帧重算（8px/20px 分级）；远景（<8px）只保留按优先
- *       级截断的前 20 个重点标签；删除 → 释放图集单元并零缩放清场。
- *       质量降级能力（TASK-014 接入）：importantLabelsOnly=true 时中距离纯
- *       名称档隐藏，仅保留重点标签与近景完整档（SPEC §6.5 行动 1）。
- * 边界：绝不消费运行时的 pose/display/removed 脏集合——那是车体帧同步
- *       （useFleetFrameSync）的独占输入，两者的差量口径互不干扰；标签只渲染
- *       已被槽位表分配槽位的实体（无车体者无标签）。全部缓存、投影草稿与
- *       脏标记为本 Hook 自有普通对象，绝不进入 React state/zustand（SPEC §4）。
- *       名称绘制只在内容变化时触达图集账本，电量/选中/告警变化绝不重绘名称
- *       纹理（SPEC §6.4）。
- * 关键不变量：
- * 1. 名称单元即槽位：cell = slot，槽位分配/复用/释放完全跟随车体槽位表；
- *    删除清理先用账本中记录的（批次, 槽位）清除单元，再用 table.resolve 防
- *    护——若该槽位同帧已被转派给等待车辆，矩阵清零跳过（新车主本帧全量
- *    写入覆盖），图集单元清除仍安全（转派车的名称写入发生在其后的内容
- *    扫描中，次序保证不被本清理覆盖）；
- * 2. 删除清理先于内容扫描：先以当前实体集合构建 seen，再清理消失实体的
- *    缓存与图集单元，杜绝「先绘新名后被旧清理覆盖」的次序缺陷；
- * 3. 未变化槽位不写：内容以快照/显示状态引用比对，档位与选中以缓存值比对，
- *    同一 (批次, 属性) 一帧内多次写合并为一次 needsUpdate；图集一帧至多
- *    一次纹理上载（SPEC §6.3/§6.4 合并提交语义）；
- * 4. 批次数组身份变化（扩批挂载/StrictMode 重挂载）即清空全部缓存：下一帧
- *    全量重写（新图集、新缓冲），任何挂载路径都收敛到运行时当前真相；
- * 5. 相机后方或视口尺寸不可得的投影长度记 0（隐藏），绝不以 NaN 进入档位
- *    判定。
+ * 车辆标签继续共享车辆槽位和图集，快照更新只写变化的内容属性。
+ * 普通车辆隐藏，悬停显示摘要，选中完整显示；异常进入持续提示候选。
+ * 距离分级与质量预算保留，所有可见标签按优先级、数量和屏幕碰撞统一控制。
+ * 标签显隐不消费车体脏集合、不修改业务告警，不改变实例到车辆的映射。
  */
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
@@ -55,7 +29,6 @@ import {
 import { LABEL_BG_ATTR, LABEL_BG_ATTRIBUTE_NAMES } from '../scene/labelMaterials'
 import {
   capImportantLabels,
-  isFarImportantRank,
   labelAlertLevel,
   labelChipOf,
   labelImportanceRank,
@@ -119,6 +92,8 @@ interface LabelEntityCache {
   poseX: number
   poseZ: number
   levelNext: LabelLevelNext
+  scaleNext: number
+  writtenScale: number
   farRank: number | null
   selectedNext: boolean
 }
@@ -217,7 +192,7 @@ export function useFleetLabelFrameSync({
 
 /** 单帧标签提交（useFrame 回调本体） */
 function tickLabelFrame(
-  state: { camera: THREE.Camera; size?: { width: number } },
+  state: { camera: THREE.Camera; size?: { width: number; height: number } },
   controller: LabelFrameController,
   options: {
     runtime: FleetRuntime
@@ -243,6 +218,7 @@ function tickLabelFrame(
   camera.updateMatrixWorld()
   const viewportWidth = state.size?.width ?? 0
   const selectedKey = useFleetMonitoringStore.getState().selectedKey
+  const hoveredKey = useFleetMonitoringStore.getState().hoveredKey
   const entities = runtime.entities()
 
   // —— 删除清理（先于内容扫描）：清除消失实体的图集单元与残留矩阵 ——
@@ -267,6 +243,11 @@ function tickLabelFrame(
 
   // —— PASS 1：内容差量写入 + 投影档位采集 ——
   let farCount = 0
+  /**
+   * 所有可见标签统一执行数量限制和屏幕碰撞避让，优先保留选中与悬停。
+   * 异常提示使用现有告警优先级；普通车辆即使在近景也默认不展开。
+   */
+  const rectangles = new Map<number, { x: number; y: number; width: number; height: number }>()
   for (const entity of entities) {
     const slot = table.get(entity.key)
     if (slot === undefined || slot.batch >= batches.length) {
@@ -290,6 +271,8 @@ function tickLabelFrame(
         poseX: 0,
         poseZ: 0,
         levelNext: 0,
+        scaleNext: 1,
+        writtenScale: Number.NaN,
         farRank: null,
         selectedNext: false,
       }
@@ -330,40 +313,60 @@ function tickLabelFrame(
             viewportWidth,
           )
         : 0
-    cache.levelNext = labelLevelForPixels(projectedPx)
-    // 质量降级能力（SPEC §6.5 行动 1）：中距离纯名称档隐藏。抑制发生在远景
-    // 重点登记之前——中距离的重点车落入 0 档后仍可经重点通道以名称档保留，
-    // 近景完整档（≥20px）不受影响（仅保留重点标签和近景标签）。
-    if (importantLabelsOnly && cache.levelNext === 1) {
-      cache.levelNext = 0
-    }
-
-    // 远景候选登记（<8px，P1-12 白名单：总览只保留 selected + FAULT，
-    // 即秩 0/1；STALE/断连/低电量只在近中景显示标签）
-    if (cache.levelNext === 0) {
-      const rank = labelImportanceRank({
+    const distanceLevel = labelLevelForPixels(projectedPx)
+    const hovered = entity.key === hoveredKey
+    const alertRank = labelImportanceRank({
         selected: cache.selectedNext,
         primary: entity.displayState.primary,
         alerts: entity.staticState.alerts,
       })
-      if (isFarImportantRank(rank)) {
+    cache.levelNext = cache.selectedNext ? 2 : hovered || alertRank !== null ? 1 : 0
+    const rank = cache.selectedNext ? 0 : hovered ? 1 : alertRank === null ? null : alertRank + 2
+    if (rank !== null && projectedPx > 0) {
+      const screen = new THREE.Vector3(pose.cx, LABEL_ANCHOR_Y_M, pose.cz).project(camera)
+      if (screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < 1.1 && Math.abs(screen.y) < 1.1) {
         const flat = slot.batch * SLOT_BATCH_CAPACITY + slot.slot
         controller.farFlat[farCount] = flat
         controller.farRank[farCount] = rank
         farCount += 1
         cache.farRank = rank
+        /**
+         * 按屏幕宽度限制标签，避免贴近车辆时标签膨胀遮住工业细节。
+         * 远景重点保留最低可读宽度，并使用实际宽度参与碰撞避让。
+         */
+        const projectedWidth = projectedBodyLengthPx(camera, pose.cx, LABEL_ANCHOR_Y_M, pose.cz, LABEL_WIDTH_M, viewportWidth)
+        const width = Math.min(cache.selectedNext ? 240 : 176, Math.max(112, projectedWidth))
+        cache.scaleNext = projectedWidth > 0 ? width / projectedWidth : 1
+        rectangles.set(flat, { x: (screen.x + 1) * viewportWidth / 2, y: (1 - screen.y) * (state.size?.height ?? 0) / 2, width: width + 8, height: width / 4 + 6 })
       }
     }
+    if (cache.farRank === null) cache.levelNext = 0
+    // 保留距离分档用于降级预算，选中始终完整，悬停和异常始终简要。
+    // 所有候选继续经过同一个上限，远景不会重新展开普通车辆标签。
+    if (importantLabelsOnly && distanceLevel === 0 && !cache.selectedNext) cache.levelNext = Math.min(cache.levelNext, 1) as LabelLevelNext
   }
 
   // —— 远景重点截断：超过上限时按（秩, 扁平槽位）保留前 20 ——
   let kept: Set<number> | null = null
-  if (farCount > LABEL_IMPORTANT_MAX) {
+  if (farCount > (importantLabelsOnly ? 12 : LABEL_IMPORTANT_MAX)) {
     const entries: ImportantLabelEntry[] = []
     for (let i = 0; i < farCount; i += 1) {
       entries.push({ flatSlot: controller.farFlat[i], rank: controller.farRank[i] })
     }
-    kept = capImportantLabels(entries, LABEL_IMPORTANT_MAX)
+    kept = capImportantLabels(entries, importantLabelsOnly ? 12 : LABEL_IMPORTANT_MAX)
+  }
+  const admitted = new Set<number>()
+  const ordered = Array.from({ length: farCount }, (_, index) => index)
+    .sort((a, b) => controller.farRank[a] - controller.farRank[b] || controller.farFlat[a] - controller.farFlat[b])
+  for (const index of ordered) {
+    const flat = controller.farFlat[index]
+    if (kept !== null && !kept.has(flat)) continue
+    const rect = rectangles.get(flat)!
+    if ([...admitted].some((other) => {
+      const placed = rectangles.get(other)!
+      return Math.abs(rect.x - placed.x) < (rect.width + placed.width) / 2 && Math.abs(rect.y - placed.y) < (rect.height + placed.height) / 2
+    })) continue
+    admitted.add(flat)
   }
 
   // —— PASS 2：应用档位 / 选中 / 矩阵 ——
@@ -383,12 +386,7 @@ function tickLabelFrame(
 
     // 档位决策：远景（0 档）只对通过截断的重点车降级显示为「仅名称」
     let level = cache.levelNext
-    if (level === 0 && cache.farRank !== null) {
-      const flat = slot.batch * SLOT_BATCH_CAPACITY + slot.slot
-      if (kept === null || kept.has(flat)) {
-        level = 1
-      }
-    }
+    if (!admitted.has(slot.batch * SLOT_BATCH_CAPACITY + slot.slot)) level = 0
 
     // 内容档位写入（电量条与芯片由 shader 按 aLevel 裁剪）
     if (level !== cache.level) {
@@ -409,16 +407,17 @@ function tickLabelFrame(
     const shown = level > 0
     if (
       shown !== cache.shown ||
-      (shown && (cache.writtenX !== cache.poseX || cache.writtenZ !== cache.poseZ))
+      (shown && (cache.writtenX !== cache.poseX || cache.writtenZ !== cache.poseZ || Math.abs(cache.writtenScale - cache.scaleNext) > 0.0001))
     ) {
       if (shown) {
-        writeLabelMatrix(controller, batches, slot.batch, slot.slot, cache.poseX, cache.poseZ)
+        writeLabelMatrix(controller, batches, slot.batch, slot.slot, cache.poseX, cache.poseZ, cache.scaleNext)
       } else {
         zeroLabelMatrix(controller, batches, slot.batch, slot.slot)
       }
       cache.shown = shown
       cache.writtenX = cache.poseX
       cache.writtenZ = cache.poseZ
+      cache.writtenScale = cache.scaleNext
     }
   }
 
@@ -539,9 +538,10 @@ function writeLabelMatrix(
   slot: number,
   x: number,
   z: number,
+  scale: number,
 ): void {
   scratchPosition.set(x, LABEL_ANCHOR_Y_M, z)
-  scratchScale.set(LABEL_WIDTH_M, LABEL_HEIGHT_M, 1)
+  scratchScale.set(LABEL_WIDTH_M * scale, LABEL_HEIGHT_M * scale, 1)
   scratchMatrix.compose(scratchPosition, IDENTITY_QUATERNION, scratchScale)
   writeBatchMatrix(controller, batches, batch, slot)
 }

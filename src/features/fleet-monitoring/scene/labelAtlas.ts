@@ -199,7 +199,6 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
   texture.generateMipmaps = true
   texture.anisotropy = 4
 
-  let disposed = false
   return {
     texture,
     book,
@@ -210,10 +209,10 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
       }
     },
     dispose() {
-      if (disposed) {
-        return
-      }
-      disposed = true
+      /**
+       * 开发严格模式会在清理后复用同一纹理并重新上传，不能永久标记为已释放。
+       * 底层纹理释放本身安全可重复，真正卸载时再次释放当前 GPU 分配。
+       */
       book.dispose()
       texture.dispose()
     },
@@ -306,14 +305,13 @@ export function createVehicleBadgeAtlas(): VehicleBadgeAtlas {
   texture.magFilter = THREE.LinearFilter
   texture.generateMipmaps = false
 
-  let disposed = false
   return {
     texture,
     dispose() {
-      if (disposed) {
-        return
-      }
-      disposed = true
+      /**
+       * 芯片图集同样允许严格模式清理后的重新上传。
+       * 资源换代时总是发出释放事件，避免每次恢复遗留一张旧纹理。
+       */
       texture.dispose()
     },
   }

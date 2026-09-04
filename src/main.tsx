@@ -1,7 +1,14 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@/app/styles/global.css'
 import App from '@/app/App'
+
+/**
+ * 样板入口仅在开发环境显式启用，设施预览不加载真实地图和业务数据源。
+ * 生产构建会删除预览模块，默认入口继续执行原有启动和恢复流程。
+ */
+const Preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('assets') === 'industrial'
+  ? lazy(() => import('@/app/preview/IndustrialPreview')) : null
 
 // 浏览器唯一入口。
 // 职责：把 <App /> 挂载到 #root，并始终包裹 StrictMode。
@@ -14,6 +21,6 @@ import App from '@/app/App'
 // 3. 不在此处引入业务逻辑、数据源或 3D 资源，组合只发生在 app 内部。
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {Preview === null ? <App /> : <Suspense fallback={null}><Preview /></Suspense>}
   </StrictMode>,
 )
