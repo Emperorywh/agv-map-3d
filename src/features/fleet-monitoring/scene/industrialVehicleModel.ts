@@ -1,5 +1,5 @@
 /**
- * 精修资源按材质合并为八个实例部件，模型层级的世界矩阵在合并前烘焙到顶点。
+ * 精修资源按材质合并为九个实例部件，模型层级的世界矩阵在合并前烘焙到顶点。
  * 原始文件只缓存二进制，不缓存 GPU 对象；每次上下文恢复都重新解析并明确释放。
  */
 import * as THREE from 'three'
@@ -8,15 +8,21 @@ import { joinGeometry } from '@/shared/industrial/geometry'
 import { createStatusMaterial } from '@/shared/industrial/materials'
 import { INDUSTRIAL_AGV_MODEL } from './vehicleModelConfig'
 
+/**
+ * AGV_FUTURE 资产的材质→实例部件映射（材质名必须与 GLB 完全一致）。
+ * glbPaint 为主车体（可拾取），glbPlatform 承载黑色货舱面板（可拾取），
+ * glbStatus 为青色灯带并替换为实例色状态材质，其余保持资产原始 PBR 参数。
+ */
 export const GLB_MATERIAL_PARTS = {
-  Paint_LightGray: 'glbPaint',
-  Chassis_DarkGray: 'glbChassis',
-  Platform_Matte: 'glbPlatform',
+  Body_Metal_Graphite: 'glbPaint',
+  Panel_Black: 'glbPlatform',
+  Body_Metal_Silver: 'glbArmor',
+  Marking_Satin_Silver: 'glbMetal',
   Rubber_Black: 'glbRubber',
-  Sensor_Glass: 'glbSensor',
-  Hardware_SatinMetal: 'glbMetal',
-  Emergency_Red: 'glbEmergency',
-  Status_Emission: 'glbStatus',
+  Sensor_Dark_Glass: 'glbSensor',
+  Red_Emissive: 'glbEmergency',
+  Cyan_Emissive: 'glbStatus',
+  LiDAR_Blue_Emissive: 'glbLidar',
 } as const
 export type GlbPartKind = typeof GLB_MATERIAL_PARTS[keyof typeof GLB_MATERIAL_PARTS]
 export interface IndustrialModel {
@@ -25,6 +31,11 @@ export interface IndustrialModel {
 }
 let binary: Promise<ArrayBuffer> | undefined
 
+/** 资产原朝向为车头 +Z，场景约定车头 +X：合并前绕 Y 旋转 90° 烘入顶点 */
+const FORWARD_BAKE_ROTATION_Y = Math.PI / 2
+/** 资产车长方向首尾不对称约 3mm，居中校验放宽到厘米级即可接受 */
+const CENTERING_TOLERANCE_M = 0.01
+
 export async function loadIndustrialVehicleModel(): Promise<IndustrialModel> {
   const url = new URL(INDUSTRIAL_AGV_MODEL.url, document.baseURI)
   binary ??= fetch(url).then((response) => {
@@ -32,12 +43,13 @@ export async function loadIndustrialVehicleModel(): Promise<IndustrialModel> {
     return response.arrayBuffer()
   }).catch((error: unknown) => { binary = undefined; throw error })
   const gltf = await new GLTFLoader().parseAsync(await binary, new URL('.', url).href)
+  gltf.scene.rotation.y = FORWARD_BAKE_ROTATION_Y
+  gltf.scene.updateMatrixWorld(true)
   const sourceGeometries = new Set<THREE.BufferGeometry>()
   const sourceMaterials = new Set<THREE.Material>()
   const sourceTextures = new Set<THREE.Texture>()
   const geometryGroups = new Map<GlbPartKind, THREE.BufferGeometry[]>()
   const parts = {} as IndustrialModel['parts']
-  gltf.scene.updateMatrixWorld(true)
   const dispose = () => {
     for (const part of Object.values(parts)) { part.geometry.dispose(); part.material.dispose() }
   }
@@ -54,9 +66,12 @@ export async function loadIndustrialVehicleModel(): Promise<IndustrialModel> {
     })
     const bounds = new THREE.Box3().setFromObject(gltf.scene)
     const size = bounds.getSize(new THREE.Vector3())
-    if (Math.abs(size.x - 1.8) > 0.001 || Math.abs(size.z - 0.7) > 0.001 ||
-      Math.abs(size.y - 0.35) > 0.001 || Math.abs(bounds.min.y) > 0.001 ||
-      Math.abs(bounds.min.x + bounds.max.x) > 0.001 || Math.abs(bounds.min.z + bounds.max.z) > 0.001) {
+    const config = INDUSTRIAL_AGV_MODEL
+    const tolerance = config.dimensionToleranceM
+    if (Math.abs(size.x - config.length) > tolerance || Math.abs(size.z - config.width) > tolerance ||
+      Math.abs(size.y - config.height) > tolerance || Math.abs(bounds.min.y) > tolerance ||
+      Math.abs(bounds.min.x + bounds.max.x) > CENTERING_TOLERANCE_M ||
+      Math.abs(bounds.min.z + bounds.max.z) > CENTERING_TOLERANCE_M) {
       throw new Error('工业模型尺寸或定位与适配档案不一致')
     }
     gltf.scene.traverse((object) => {

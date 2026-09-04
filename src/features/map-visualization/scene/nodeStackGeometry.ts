@@ -1,22 +1,12 @@
 /**
- * 节点站点实心圆台几何。
- *
- * 职责：按 mapAppearance 的节点分层常量构建「暗色底座 → 状态色实心柱身」
- *       的合并圆台堆叠——每层侧壁为圆柱/圆台面（CylinderGeometry 开口筒），
- *       层顶为平面圆盘（Circle）；各部件带顶点色亮度乘数（最终色 =
- *       实例色 × 乘数），柱身顶面乘数 >1 借 ACES 色调映射产生过曝辉光。
- *       顶点色与 instanceColor 在着色器中相乘，仍是一个 InstancedMesh
- *       一趟 Draw Call。
- * 边界：纯几何工厂（无材质、无实例、不进 React）；LOD 淡出注入归
- *       semanticMaterials，实例上载归 NodesLayer。
- * 关键不变量：
- * 1. 部件按「自下而上」顺序合并（画家序兜底），底座外沿 = NODE_OUTER_RADIUS_M
- *    ≤ 半路宽（P0-3 尺度链）；除各层顶面外不生成任何底面/不可见面（节点立于
- *    NODE_Y 台阶上，底面永远不可见），整体不再二次旋转（各部件自行放置）；
- * 2. 全部半径/高度/倒角/乘数只来自 mapAppearance 常量，本文件不含视觉数值；
- * 3. 合并后立即释放源几何；顶点总数 < 65536，索引保持 Uint16。
+ * 节点标识由暗色底座、类型色倒角、低亮度顶面与白色语义图标组成。
+ * 普通点为圆形，工位为圆角方形，停靠为方形，充电为六边形，库区为菱形。
+ * 每种类型的底座和符号合并成一份几何，实例批次不随节点数量增长。
+ * 外轮廓始终限制在既有节点半径内，密集避让与 GPU 淡出沿用同一尺度。
  */
 import * as THREE from 'three'
+import type { NodeCategory } from '../model/types'
+import { createNodeSymbolGeometry } from './nodeSymbolGeometry'
 import {
   NODE_BASE_CHAMFER_M,
   NODE_BASE_HEIGHT_M,
@@ -25,6 +15,8 @@ import {
   NODE_CIRCLE_SEGMENTS,
   NODE_RADIUS_M,
   NODE_SIDE_STRENGTH,
+  NODE_SYMBOL_LIFT_M,
+  NODE_SYMBOL_SCALE_M,
   NODE_TOP_CHAMFER_M,
   NODE_TOP_CHAMFER_STRENGTH,
   NODE_TOP_M,
@@ -66,22 +58,61 @@ function buildNodeStackParts(): NodeStackPart[] {
   ]
 }
 
-function createPartGeometry(part: NodeStackPart): THREE.BufferGeometry {
+/**
+ * 所有轮廓归一化到单位外接圆，避免方形角点超出最近邻避让半径。
+ * 圆角方形使用实际弧线，不依赖贴图透明度或片元裁切来伪造轮廓。
+ */
+function createOutline(category: NodeCategory): THREE.Vector2[] {
+  if (category === 'work') {
+    const shape = new THREE.Shape()
+    const half = Math.SQRT1_2
+    const radius = 0.2
+    shape.absarc(half - radius, half - radius, radius, 0, Math.PI / 2, false)
+    shape.absarc(-half + radius, half - radius, radius, Math.PI / 2, Math.PI, false)
+    shape.absarc(-half + radius, -half + radius, radius, Math.PI, Math.PI * 1.5, false)
+    shape.absarc(half - radius, -half + radius, radius, Math.PI * 1.5, Math.PI * 2, false)
+    return shape.getPoints(4)
+  }
+  const segments = category === 'charge' ? 6 : category === 'park' || category === 'warehouse' ? 4 : NODE_CIRCLE_SEGMENTS
+  const rotation = category === 'park' ? Math.PI / 4 : 0
+  return Array.from({ length: segments }, (_, i) => {
+    const angle = i / segments * Math.PI * 2 + rotation
+    return new THREE.Vector2(Math.cos(angle), Math.sin(angle))
+  })
+}
+
+function createPartGeometry(part: NodeStackPart, outline: readonly THREE.Vector2[]): THREE.BufferGeometry {
   switch (part.kind) {
     case 'side': {
-      const geometry = new THREE.CylinderGeometry(
-        part.radiusTopM,
-        part.radiusBottomM,
-        part.yTopM - part.yBottomM,
-        NODE_CIRCLE_SEGMENTS,
-        1,
-        true,
-      )
-      geometry.translate(0, (part.yTopM + part.yBottomM) / 2, 0)
+      /**
+       * 按同一轮廓连接上下两圈，生成直壁或倒角；XY 图标平面映射到 XZ 地面。
+       * 每段独立顶点保留清晰折角，绕序保证正面朝外且不生成不可见底面。
+       */
+      const positions: number[] = []
+      const indices: number[] = []
+      const uvs: number[] = []
+      for (let i = 0; i < outline.length; i += 1) {
+        const a = outline[i]
+        const b = outline[(i + 1) % outline.length]
+        const offset = positions.length / 3
+        positions.push(
+          a.x * part.radiusBottomM, part.yBottomM, -a.y * part.radiusBottomM,
+          b.x * part.radiusBottomM, part.yBottomM, -b.y * part.radiusBottomM,
+          b.x * part.radiusTopM, part.yTopM, -b.y * part.radiusTopM,
+          a.x * part.radiusTopM, part.yTopM, -a.y * part.radiusTopM,
+        )
+        uvs.push(0, 0, 1, 0, 1, 1, 0, 1)
+        indices.push(offset, offset + 1, offset + 2, offset, offset + 2, offset + 3)
+      }
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+      geometry.setIndex(indices)
+      geometry.computeVertexNormals()
       return geometry
     }
     case 'disc': {
-      const geometry = new THREE.CircleGeometry(part.radiusM, NODE_CIRCLE_SEGMENTS)
+      const geometry = new THREE.ShapeGeometry(new THREE.Shape(outline.map((point) => point.clone().multiplyScalar(part.radiusM))))
       geometry.rotateX(-Math.PI / 2)
       geometry.translate(0, part.yM, 0)
       return geometry
@@ -89,11 +120,22 @@ function createPartGeometry(part: NodeStackPart): THREE.BufferGeometry {
   }
 }
 
-export function createNodeStackGeometry(): THREE.BufferGeometry {
+export function createNodeStackGeometry(category: NodeCategory): THREE.BufferGeometry {
+  const outline = createOutline(category)
   const geometries = buildNodeStackParts().map((part) => ({
-    part,
-    geometry: createPartGeometry(part),
+    colorStrength: part.colorStrength,
+    symbolMask: 0,
+    geometry: createPartGeometry(part, outline),
   }))
+  /**
+   * 图标和顶面同批绘制，符号掩码让白色笔画不被实例颜色再次染色。
+   * 极小高度差确保笔画不会与顶面闪烁，旋转后正面统一朝向地面上方。
+   */
+  const symbol = createNodeSymbolGeometry(category)
+  symbol.scale(NODE_SYMBOL_SCALE_M, NODE_SYMBOL_SCALE_M, 1)
+  symbol.rotateX(-Math.PI / 2)
+  symbol.translate(0, NODE_TOP_M + NODE_SYMBOL_LIFT_M, 0)
+  geometries.push({ colorStrength: 1, symbolMask: 1, geometry: symbol })
 
   let vertexTotal = 0
   let indexTotal = 0
@@ -106,11 +148,12 @@ export function createNodeStackGeometry(): THREE.BufferGeometry {
   merged.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(vertexTotal * 3), 3))
   merged.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(vertexTotal * 2), 2))
   merged.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertexTotal * 3), 3))
+  merged.setAttribute('aNodeSymbol', new THREE.BufferAttribute(new Float32Array(vertexTotal), 1))
   const indices = new Uint16Array(indexTotal)
 
   let vertexOffset = 0
   let indexOffset = 0
-  for (const { part, geometry } of geometries) {
+  for (const { colorStrength, symbolMask, geometry } of geometries) {
     const count = geometry.getAttribute('position').count
     for (const name of ['position', 'normal', 'uv'] as const) {
       ;(merged.getAttribute(name) as THREE.BufferAttribute).array.set(
@@ -122,10 +165,11 @@ export function createNodeStackGeometry(): THREE.BufferGeometry {
       .array as Float32Array
     for (let v = 0; v < count; v += 1) {
       const base = (vertexOffset + v) * 3
-      colors[base] = part.colorStrength
-      colors[base + 1] = part.colorStrength
-      colors[base + 2] = part.colorStrength
+      colors[base] = colorStrength
+      colors[base + 1] = colorStrength
+      colors[base + 2] = colorStrength
     }
+    ;(merged.getAttribute('aNodeSymbol').array as Float32Array).fill(symbolMask, vertexOffset, vertexOffset + count)
     const sourceIndices = geometry.getIndex()!
     for (let i = 0; i < sourceIndices.count; i += 1) {
       indices[indexOffset + i] = sourceIndices.getX(i) + vertexOffset

@@ -44,6 +44,9 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
   const industrial = modelReady && usesIndustrialModel(snapshot)
   const at = (x: number, y: number, sx: number, sy: number, sz: number, z = 0): PartPlacement => ({ x, y, z, sx, sy, sz })
   const platformTop = INDUSTRIAL_AGV_MODEL.platformTop
+  // 精修模式忽略申报长宽：贴地阴影与故障信标跟随模型档案尺寸，避免异尺寸车辆错位。
+  const bodyLength = industrial ? INDUSTRIAL_AGV_MODEL.length : length
+  const bodyWidth = industrial ? INDUSTRIAL_AGV_MODEL.width : width
   const palletHeight = 0.10
   const cargoHeight = 0.24
   const glb = Object.fromEntries(Object.values(GLB_MATERIAL_PARTS).map((kind) => [kind, at(0, 0, 1, 1, 1)])) as Record<GlbPartKind, PartPlacement>
@@ -62,12 +65,12 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
     pallet: at(0, platformTop + palletHeight / 2, loadLength * 0.8, palletHeight, loadWidth * 0.8),
     cargo: at(0, platformTop + palletHeight + cargoHeight / 2, loadLength * 0.78, cargoHeight, loadWidth * 0.78),
     tape: at(0, platformTop + palletHeight + cargoHeight / 2, loadLength * 0.78, cargoHeight, loadWidth * 0.78),
-    beacon: at(-length * 0.42, 0.365, 0.035, 0.028, 0.035),
+    beacon: at(-bodyLength * 0.39, platformTop + 0.014, 0.035, 0.028, 0.035),
     wheels: at(0, 0.098, length, 1, width),
     metal: at(0, 0.098, length, 1, width),
     bumper: at(0, 0.16, length, 0.05, width),
     status: at(0, 0.277, length, 0.018, width),
-    shadow: at(0, 0.002, length * 1.01, 1, width * 1.06),
+    shadow: at(0, 0.002, bodyLength * 1.01, 1, bodyWidth * 1.06),
   }
 }
 

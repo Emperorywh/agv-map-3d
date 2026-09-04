@@ -12,7 +12,7 @@ export function useVehicleResources(generation: number): VehicleResources {
   useEffect(() => () => fallback.dispose(), [fallback])
   /**
    * 精修资源提交后回收加载占位资源，避免首帧程序模型的 GPU 缓冲长期保留。
-   * 新资源自身包含远景和异尺寸回退几何，因此释放占位不影响后续细节切换。
+   * 资源换代换批次身份，由帧同步的全量重写机制回填，释放占位不影响后续渲染。
    */
   useEffect(() => {
     if (loaded?.generation === generation) fallback.dispose()

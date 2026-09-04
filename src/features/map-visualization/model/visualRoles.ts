@@ -8,15 +8,15 @@
  *       不感知地图几何与渲染层。
  * 关键不变量：
  * 1. 业务类别优先：charge/park 恒为对应业务角色；度数只影响 work 与
- *    unknown 类别的细分（业务节点即使位于交叉路口也保持业务语义）；
+ *    node / unknown 类别的细分（业务节点即使位于交叉路口也保持业务语义）；
  * 2. work 类别按道路形态细分：当前真实地图 3,045 个 work 点构成库位巷道
  *    网格（度数分布：1/2/3/4/5/6+ = 1/1499/1017/186/28/314）——只有主干
  *    走廊交汇（邻居 ≥5，342 个）承担「精选工位」的视觉权重
  *    （work-station，作业区可见）；其余（巷道中部与普通 T 岔）语义等同
  *    库位取放点，归入 storage-slot（仅车辆近景显示，作业区由仓储聚合轮
  *    廓接管）；
- * 3. unknown 类别按道路形态二分：邻居 ≥3 为 junction（交叉节点），≤2 为
- *    route-control（纯导航控制点）。
+ * 3. node / unknown 类别按道路形态二分：邻居 ≥3 为 junction，≤2 为
+ *    route-control；角色仅决定显隐，节点图标始终按业务类别绘制。
  */
 import type { NodeCategory, NodeVisualRole } from './types'
 
@@ -41,6 +41,7 @@ export function deriveNodeVisualRole(
       return 'charge'
     case 'park':
       return 'park'
+    case 'node':
     case 'unknown':
       return neighborCount >= 3 ? 'junction' : 'route-control'
   }

@@ -1,0 +1,369 @@
+{
+  "passed": true,
+  "loader": "Three.js r185 GLTFLoader",
+  "sha256": "53685a7686b990022d0a48d5961b3b45e665b884ab4ebbf9934f14b1c1a3eefd",
+  "bytes": 960984,
+  "triangles": 58732,
+  "materials": 9,
+  "gltfNodesIncludingRoot": 40,
+  "gltfMeshNodes": 39,
+  "threeMeshObjects": 62,
+  "baseDrawCalls": 62,
+  "dimensionsMeters": {
+    "length": 2.4489998817443848,
+    "width": 1.3200000114738941,
+    "height": 0.5365000292658806
+  },
+  "forwardAxis": "+Z",
+  "upAxis": "+Y",
+  "extensionsUsed": [
+    "KHR_materials_emissive_strength"
+  ],
+  "materialsDetails": [
+    {
+      "name": "Panel_Black",
+      "metallic": 0.46000000834465027,
+      "roughness": 0.25999999046325684,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Rubber_Black",
+      "metallic": 0.019999999552965164,
+      "roughness": 0.7799999713897705,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Body_Metal_Graphite",
+      "metallic": 0.75,
+      "roughness": 0.3199999928474426,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Body_Metal_Silver",
+      "metallic": 0.8199999928474426,
+      "roughness": 0.2800000011920929,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Marking_Satin_Silver",
+      "metallic": 0.5199999809265137,
+      "roughness": 0.3799999952316284,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Sensor_Dark_Glass",
+      "metallic": 0.3199999928474426,
+      "roughness": 0.11500000208616257,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "LiDAR_Blue_Emissive",
+      "metallic": 0.10000000149011612,
+      "roughness": 0.23999999463558197,
+      "emissive": [
+        0.004000000189989805,
+        0.2199999988079071,
+        1
+      ],
+      "emissiveIntensity": 4
+    },
+    {
+      "name": "Cyan_Emissive",
+      "metallic": 0.10000000149011612,
+      "roughness": 0.25999999046325684,
+      "emissive": [
+        0.006000000052154064,
+        0.699999988079071,
+        1
+      ],
+      "emissiveIntensity": 4
+    },
+    {
+      "name": "Red_Emissive",
+      "metallic": 0.05000000074505806,
+      "roughness": 0.2800000011920929,
+      "emissive": [
+        1,
+        0.008999999612569809,
+        0.004000000189989805
+      ],
+      "emissiveIntensity": 4
+    }
+  ],
+  "checks": [
+    {
+      "name": "GLB 2.0 文件头及字节长度",
+      "passed": true,
+      "detail": 960984
+    },
+    {
+      "name": "原点及根节点单位变换",
+      "passed": true,
+      "detail": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "地面为 Y=0",
+      "passed": true,
+      "detail": [
+        -0.6600000057369471,
+        0,
+        -1.2274999618530273
+      ]
+    },
+    {
+      "name": "面数为两万至六万",
+      "passed": true,
+      "detail": 58732
+    },
+    {
+      "name": "顶点及单位法线有效",
+      "passed": true,
+      "detail": {
+        "finite": true,
+        "normalsValid": true
+      }
+    },
+    {
+      "name": "所有节点缩放均为一",
+      "passed": true,
+      "detail": 40
+    },
+    {
+      "name": "不含相机、灯光、动画及外部依赖",
+      "passed": true,
+      "detail": [
+        "KHR_materials_emissive_strength"
+      ]
+    },
+    {
+      "name": "无需专用解码器",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "Wheel_FL 独立轮轴和着地点",
+      "passed": true,
+      "detail": {
+        "pivot": [
+          -0.5889999866485596,
+          0.1469999998807907,
+          0.765999972820282
+        ],
+        "boundsMin": [
+          -0.6495000012218952,
+          0,
+          0.6189999729394913
+        ]
+      }
+    },
+    {
+      "name": "Wheel_FR 独立轮轴和着地点",
+      "passed": true,
+      "detail": {
+        "pivot": [
+          0.5889999866485596,
+          0.1469999998807907,
+          0.765999972820282
+        ],
+        "boundsMin": [
+          0.5389999859035015,
+          0,
+          0.6189999729394913
+        ]
+      }
+    },
+    {
+      "name": "Wheel_RL 独立轮轴和着地点",
+      "passed": true,
+      "detail": {
+        "pivot": [
+          -0.5889999866485596,
+          0.1469999998807907,
+          -0.765999972820282
+        ],
+        "boundsMin": [
+          -0.6495000012218952,
+          0,
+          -0.9129999727010727
+        ]
+      }
+    },
+    {
+      "name": "Wheel_RR 独立轮轴和着地点",
+      "passed": true,
+      "detail": {
+        "pivot": [
+          0.5889999866485596,
+          0.1469999998807907,
+          -0.765999972820282
+        ],
+        "boundsMin": [
+          0.5389999859035015,
+          0,
+          -0.9129999727010727
+        ]
+      }
+    },
+    {
+      "name": "Three.js 中正 Z 为车头",
+      "passed": true,
+      "detail": {
+        "front": [
+          0,
+          0.28999999165534973,
+          1.218000054359436
+        ],
+        "rear": [
+          0,
+          0.3100000023841858,
+          -1.218000054359436
+        ]
+      }
+    },
+    {
+      "name": "Light_Front_Main 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Cyan_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Front_Wrap_L 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Cyan_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Front_Wrap_R 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Cyan_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Front_Lower 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Cyan_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Side_L 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Cyan_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Side_R 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Cyan_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Rear_Wrap_L 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Red_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Rear_Wrap_R 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "Red_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_LiDAR_Ring 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "LiDAR_Blue_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_LiDAR_Front 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "LiDAR_Blue_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "Light_Rear_Localization 独立发光 Mesh",
+      "passed": true,
+      "detail": {
+        "material": "LiDAR_Blue_Emissive",
+        "intensity": 4
+      }
+    },
+    {
+      "name": "LiDAR 独立且灯环随动",
+      "passed": true,
+      "detail": "LiDAR_Top"
+    },
+    {
+      "name": "仅使用标准 PBR 材质",
+      "passed": true,
+      "detail": 9
+    }
+  ]
+}

@@ -1,34 +1,14 @@
 /**
- * 节点实例图层（SPEC §5.1 节点行：一个 InstancedMesh + 实例颜色；TASK-004；
- * P1-5 视觉差距修订：屏幕尺寸 shader LOD；P2-8 视觉对齐：多层同心圆台；
- * 视觉对齐 P0-5.4/5.1：实例角色最低可见场景等级门控）。
- *
- * 职责：以唯一一个 InstancedMesh 渲染地图全部节点站点（当前 4,291 个），
- *       实例矩阵、实例颜色与角色最低可见场景等级来自 buildMapGeometry 的
- *       NodeInstanceData 静态数据，上载一次后不再逐帧修改。几何为「暗色底
- *       座 → 状态色实心柱身」的两层圆台（各层亮度经顶点色 × 实例颜色表达，
- *       柱身顶面 >1 借 ACES 过曝提亮）；材质注入两路 GPU 显隐（P1-5）：
- *       投影尺寸淡出 + 场景等级门控（aMinLevel ≤ uSceneLevel 才可见，等级由
- *       SceneDetailController 共享写入）——总览隐藏普通节点与纯导航控制点、
- *       作业区显示工位与交叉节点、近景补齐单个库位标识。材质开启深度写入：
- *       圆台层间/实例间的遮挡由深度测试保证，与绘制顺序无关；淡出残留在
- *       投影 ≤3.5px 的尺寸内不可察。本组件仅把视口高度写入材质 uniform
- *       （低频真值，非实例缓冲写入）。
- * 边界：实例数据由 MapGeometry 拥有；本组件拥有圆台截面 geometry、材质与
- *       InstancedMesh 自身的实例属性缓冲，卸载或数据更换时全部显式释放。
- * 关键不变量：
- * 1. 全部节点共用一个 InstancedMesh 与一份材质：颜色差异完全由 instanceColor
- *    表达（work/warehouse/charge/park/unknown），Draw Call 恒为 1；层间明暗
- *    = 实例色 × 顶点色乘数（不新增 Draw Call、不破坏实例着色管线）；
- * 2. 实例数据是静态的：instanceMatrix/instanceColor/aMinLevel 上载一次即标
- *    记 StaticDrawUsage，本图层不存在逐帧实例写入路径（LOD 与场景等级门控
- *    纯 GPU）；
- * 3. count=0 时同样成立（不创建实例缓冲歧义），地图空数据由上层校验拦截。
+ * 节点按五种业务类型及未知兜底分批，共享一份材质和场景显隐参数。
+ * 每类轮廓与图标合并在一个实例网格中，最多六次绘制，不逐节点创建对象。
+ * 原始实例矩阵、颜色、角色等级只上载一次，投影淡出仍完全由 GPU 处理。
+ * 本组件统一拥有并释放分组、实例缓冲、各类几何与共享材质。
  */
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { NodeInstanceData } from '../scene/buildMapGeometry'
+import type { NodeCategory } from '../model/types'
 import { createNodeStackGeometry } from '../scene/nodeStackGeometry'
 import {
   NODE_FADE_END_PX,
@@ -53,8 +33,11 @@ export function NodesLayer({ data, sceneDetail }: NodesLayerProps) {
     nodes.uniforms.uViewportHeightPx.value = state.size?.height ?? 0
   })
 
-  // dispose={null}：mesh 及其资源由本组件显式释放，禁止 R3F 二次释放
-  return <primitive object={nodes.mesh} dispose={null} />
+  /**
+   * 分组替换时使用新资源标识重挂载，避免沿用已经释放的实例几何。
+   * 资源统一由 effect 释放，关闭框架对 primitive 的自动回收。
+   */
+  return <primitive key={nodes.group.uuid} object={nodes.group} dispose={null} />
 }
 
 interface NodesLayerProps {
@@ -63,22 +46,36 @@ interface NodesLayerProps {
   sceneDetail: SceneDetailController | null
 }
 
-/** 组件自建的 GPU 资源集合：mesh、截面 geometry、材质与 LOD uniforms */
+/**
+ * 每个非空类别独占一份几何和实例缓冲，全部类别共享唯一材质。
+ * 空地图只保留空分组，不分配零长度实例属性。
+ */
 interface NodesResources {
-  mesh: THREE.InstancedMesh
-  geometry: THREE.BufferGeometry
+  group: THREE.Group
+  meshes: THREE.InstancedMesh[]
   material: THREE.Material
   uniforms: NodeLodUniforms
 }
 
-/** 创建唯一节点 InstancedMesh：上载一次静态矩阵、颜色与角色等级 */
+/**
+ * 按真实类别分桶，保留每个节点对应的矩阵、颜色和原有最低场景等级。
+ * 分桶只发生在地图构建或资源重建时，不改变业务节点顺序和道路拓扑。
+ */
 function createNodesMesh(
   data: NodeInstanceData,
   sceneLevelUniform: { value: number } | undefined,
 ): NodesResources {
-  // 实心圆台合并几何（暗色底座 + 状态色柱身）；实例颜色经 instanceColor
-  // 进着色器，屏幕尺寸淡出与场景等级门控注入见 createNodeLodMaterial
-  const geometry = createNodeStackGeometry()
+  const group = new THREE.Group()
+  group.name = 'map-nodes'
+  group.matrixAutoUpdate = false
+  const meshes: THREE.InstancedMesh[] = []
+  const buckets = new Map<NodeCategory, number[]>()
+  for (let i = 0; i < data.count; i += 1) {
+    const category = data.categories[i]
+    const bucket = buckets.get(category)
+    if (bucket === undefined) buckets.set(category, [i])
+    else bucket.push(i)
+  }
   const { material, uniforms } = createNodeLodMaterial({
     sceneLevelUniform,
   })
@@ -86,32 +83,44 @@ function createNodesMesh(
   uniforms.uNodeRadiusM.value = NODE_OUTER_RADIUS_M
   uniforms.uFadeStartPx.value = NODE_FADE_START_PX
   uniforms.uFadeEndPx.value = NODE_FADE_END_PX
-  const mesh = new THREE.InstancedMesh(geometry, material, Math.max(data.count, 0))
-  mesh.name = 'map-nodes'
-  mesh.count = data.count
-
-  if (data.count > 0) {
-    mesh.instanceMatrix.array.set(data.matrices)
+  for (const [category, indices] of buckets) {
+    const geometry = createNodeStackGeometry(category)
+    const mesh = new THREE.InstancedMesh(geometry, material, indices.length)
+    mesh.name = `map-nodes-${category}`
+    const colors = new Float32Array(indices.length * 3)
+    const levels = new Float32Array(indices.length)
+    for (let i = 0; i < indices.length; i += 1) {
+      const source = indices[i]
+      mesh.instanceMatrix.array.set(data.matrices.subarray(source * 16, source * 16 + 16), i * 16)
+      colors.set(data.colors.subarray(source * 3, source * 3 + 3), i * 3)
+      levels[i] = data.minLevels[source]
+    }
     mesh.instanceMatrix.needsUpdate = true
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
-    const instanceColor = new THREE.InstancedBufferAttribute(data.colors, 3)
+    const instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
     instanceColor.setUsage(THREE.StaticDrawUsage)
     mesh.instanceColor = instanceColor
-    const minLevels = new THREE.InstancedBufferAttribute(data.minLevels, 1)
+    const minLevels = new THREE.InstancedBufferAttribute(levels, 1)
     minLevels.setUsage(THREE.StaticDrawUsage)
     geometry.setAttribute('aMinLevel', minLevels)
     mesh.computeBoundingSphere()
+    mesh.matrixAutoUpdate = false
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    meshes.push(mesh)
+    group.add(mesh)
   }
-
-  mesh.matrixAutoUpdate = false
-  mesh.castShadow = false
-  mesh.receiveShadow = false
-  return { mesh, geometry, material, uniforms }
+  return { group, meshes, material, uniforms }
 }
 
-/** 释放节点图层全部自建 GPU 资源：截面 geometry、材质与实例属性缓冲 */
+/**
+ * 各批次分别释放实例与几何，共享材质仅释放一次。
+ * 不回收输入数据，地图模型和原始节点数组仍由上层拥有。
+ */
 function disposeNodesMesh(resources: NodesResources): void {
-  resources.mesh.dispose()
-  resources.geometry.dispose()
+  for (const mesh of resources.meshes) {
+    mesh.dispose()
+    mesh.geometry.dispose()
+  }
   resources.material.dispose()
 }

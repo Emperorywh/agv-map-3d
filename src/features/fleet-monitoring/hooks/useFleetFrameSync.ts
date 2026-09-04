@@ -1,7 +1,7 @@
 /**
  * 车队脏槽位的唯一帧消费者，继续使用原有槽位分配、删除清场和批次扩容机制。
- * 精修与程序部件按距离互斥显示，整车共用中心偏移和朝向；颜色仅写局部状态灯。
- * 载货部件始终遵守有效性和载荷状态，资源换代后从运行时全量回填。
+ * 模型资源就绪后全程展示精修模型，不再按相机距离分档；资源换代触发全量回填。
+ * 载货部件始终遵守有效性和载荷状态，颜色仅写局部状态灯。
  */
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
@@ -10,7 +10,6 @@ import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 import type { FleetRuntime } from '../model/createFleetRuntime'
 import type { InstanceSlotTable } from '../model/instanceSlots'
-import { INDUSTRIAL_AGV_MODEL } from '../scene/vehicleModelConfig'
 import {
   shellColorOf,
   BEACON_BLINK_HZ,
@@ -69,11 +68,6 @@ const PART_COUNT = VEHICLE_PART_KINDS.length
 
 /** 帧同步控制器的自有可变状态（普通对象，绝不进入 React） */
 interface FrameSyncController {
-  /**
-   * 每车只保留一个细节档位，距离跨越迟滞边界时才重写实例矩阵。
-   * 该表属于渲染控制器，车辆数据与业务状态完全不受影响。
-   */
-  modelLod: Map<string, boolean>
   /** 累积时间（秒）：信标旋转/闪烁时钟；真实循环与测试 advanceFrames 通用 */
   elapsed: number
   /** 上一次全量重写对应的批次数组身份；null 表示尚未收敛 */
@@ -112,7 +106,6 @@ export function useFleetFrameSync({
   if (controllerRef.current === null) {
     controllerRef.current = {
       elapsed: 0,
-      modelLod: new Map(),
       lastBatchesIdentity: null,
       notifiedBatchCount: 1,
       matrixDirty: [],
@@ -149,13 +142,13 @@ export function useFleetFrameSync({
     [],
   )
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const controller = controllerRef.current
     if (controller === null) {
       return
     }
     controller.elapsed += delta
-    tickFrame(controller, optionsRef.current, diagnosticsRef.current, state.camera.position)
+    tickFrame(controller, optionsRef.current, diagnosticsRef.current)
   })
 }
 
@@ -170,7 +163,6 @@ function tickFrame(
     onBatchCountChanged?: (batchCount: number) => void
   },
   diagnostics: DiagnosticsReporter | undefined,
-  cameraPosition: THREE.Vector3,
 ): void {
   const { runtime, table, worldTransform, batches, onBatchCountChanged } = options
   if (worldTransform === null || batches.length === 0) {
@@ -179,21 +171,6 @@ function tickFrame(
   }
 
   ensureDirtyCapacity(controller, batches.length)
-  /**
-   * 精修部件只用于近中景，远景回退保持同一中心、朝向和实际尺寸。
-   * 档位变化也覆盖静止车辆，相机靠近后无需等待下一条位置消息。
-   */
-  for (const entity of runtime.entities()) {
-    if (!entity.snapshot.positionValid) continue
-    const pose = computeVehicleWorldPose(entity.snapshot, worldTransform)
-    const wasDetailed = controller.modelLod.get(entity.key)
-    const distance = Math.hypot(cameraPosition.x - pose.cx, cameraPosition.y, cameraPosition.z - pose.cz)
-    const detailed = distance < (wasDetailed ? INDUSTRIAL_AGV_MODEL.detailedExitM : INDUSTRIAL_AGV_MODEL.detailedEnterM)
-    if (detailed !== wasDetailed) {
-      controller.modelLod.set(entity.key, detailed)
-      writeVehiclePose(controller, runtime, table, worldTransform, batches, entity.key)
-    }
-  }
 
   // 结构变化（首帧/扩批挂载/StrictMode 重挂载）：先收敛到运行时真相
   if (controller.pendingFullRewrite) {
@@ -207,7 +184,6 @@ function tickFrame(
   // —— 删除：释放槽位 + 零缩放清场；槽位转派时对补录实体立即全量写入 ——
   for (const key of dirty.removed) {
     controller.beaconKeys.delete(key)
-    controller.modelLod.delete(key)
     const result = table.release(key)
     if (result.admitted !== null) {
       writeVehicleFull(controller, runtime, table, worldTransform, batches, result.admitted)
@@ -311,7 +287,7 @@ function writeVehicleFull(
   writeVehicleDisplay(controller, runtime, table, worldTransform, batches, key)
 }
 
-/** 位姿写入：整车可见时合成九部件中的八个矩阵；不可见时整车零缩放 */
+/** 位姿写入：整车可见时写入除信标外的全部部件矩阵；不可见时整车零缩放 */
 function writeVehiclePose(
   controller: FrameSyncController,
   runtime: FleetRuntime,
@@ -324,7 +300,7 @@ function writeVehiclePose(
   if (entity === undefined) {
     return
   }
-  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady && controller.modelLod.get(key) !== false)
+  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true)
   let slot = table.get(key)
   if (!layout.visible) {
     // 非法坐标/尺寸：不放置车体也不占用新槽位；已持槽位整车清零
@@ -379,7 +355,7 @@ function writeVehicleDisplay(
   if (entity === undefined) {
     return
   }
-  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady && controller.modelLod.get(key) !== false)
+  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true)
   const slot = table.get(key)
   if (slot === undefined || slot.batch >= batches.length) {
     // 无可见槽位（非法车或硬上限等待）：只需保证不留在信标激活集合
@@ -432,7 +408,7 @@ function animateBeacon(
     controller.beaconKeys.delete(key)
     return
   }
-  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady && controller.modelLod.get(key) !== false)
+  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true)
   if (!layout.visible || !layout.beaconActive) {
     // 故障恢复或整车非法：移出激活集合并熄灭
     controller.beaconKeys.delete(key)
@@ -543,7 +519,7 @@ function flushDirtyBatches(
         controller.matrixDirty[b][k] = false
         /**
          * 收紧到最后一个有效槽位，空部件整批隐藏，避免空槽位仍产生精修顶点开销。
-         * 删除、载货切换、车型回退和资源重建均走矩阵脏路径，显隐随之同步。
+         * 删除、载货切换和资源换代均走矩阵脏路径，显隐随之同步。
          */
         let count = 0
         const array = mesh.instanceMatrix.array

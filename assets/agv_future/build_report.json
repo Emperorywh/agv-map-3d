@@ -1,0 +1,26 @@
+{
+  "triangles": 58732,
+  "mesh_objects": 39,
+  "objects_including_root": 40,
+  "materials": 9,
+  "dimensions_blender_xyz": [
+    1.3200000524520874,
+    2.4489998817443848,
+    0.5365000367164612
+  ],
+  "bounds_min": [
+    -0.6600000262260437,
+    -1.2214999198913574,
+    0.0
+  ],
+  "bounds_max": [
+    0.6600000262260437,
+    1.2274999618530273,
+    0.5365000367164612
+  ],
+  "forward_blender": "-Y",
+  "forward_gltf": "+Z",
+  "units": "meter",
+  "glb": "C:\\code\\agv-map-3d\\public\\models\\AGV_FUTURE.glb",
+  "blend": "C:\\code\\agv-map-3d\\assets\\agv_future\\AGV_FUTURE.blend"
+}

@@ -30,14 +30,16 @@ export interface RawMapJson {
 export type EdgeType = 'LINE' | 'BEZIER'
 
 /**
- * 节点类别：四种已知业务类型 + 未知兜底。
+ * 节点类别：五种已知业务类型 + 未知兜底，直接对应原始 type 字段。
+ * 普通 node 是合法导航节点，不应误报为未知类型或混用未知标识。
  * 未知类型节点保留在地图中（category='unknown'），渲染层使用灰色通用站点，
  * 并产生一次采样数据告警，不阻断地图（SPEC §2.1）。
  */
-export type NodeCategory = 'work' | 'warehouse' | 'charge' | 'park' | 'unknown'
+export type NodeCategory = 'node' | 'work' | 'warehouse' | 'charge' | 'park' | 'unknown'
 
 /** 已知节点类型集合（validateMap 以此判定 category） */
 export const KNOWN_NODE_TYPES: ReadonlySet<string> = new Set([
+  'node',
   'work',
   'warehouse',
   'charge',
@@ -71,7 +73,10 @@ export interface MapNode {
   readonly name: string
   /** 原始 type 字符串（未知类型原样保留，供诊断与兜底渲染） */
   readonly type: string
-  /** 归一类别：已知四类之一或 'unknown' */
+  /**
+   * 归一类别：已知五类之一或 unknown。
+   * 渲染样式以该类别为准，不使用节点名称或道路邻居数猜测业务类型。
+   */
   readonly category: NodeCategory
   readonly mapId: string
   readonly x: number

@@ -7,7 +7,7 @@
  * 边界：只包含数值与颜色常量，不创建任何 Three.js 对象、不含业务语义推导；
  *       车辆与标签外观属 fleet-monitoring 的 fleetAppearance。
  * 关键不变量：
- * 1. 图层高度阶梯（GRID_Y → PATH_CENTER_LINE_Y → PATH_DIRECTION_ARROW_Y →
+ * 1. 图层高度阶梯（GRID_Y → ROAD_SURFACE_Y → ROAD_BOUNDARY_Y → ROAD_GUIDE_Y →
  *    NODE_Y → NAME_QUAD_Y）单调递增且间隔足够小（厘米级）：静态贴花靠微小
  *    高度差避免 z-fighting，在米制地图尺度下肉眼不可见；
  * 2. 颜色语言沿用原型参考：蓝绿 work 站点、青色 charge、紫色 park、灰色
@@ -31,61 +31,46 @@ export const SCENE_FOG_DENSITY_PER_DIAGONAL = 0.055
 
 /** 图层高度阶梯（世界 y，单位米；见关键不变量 1） */
 export const GRID_Y = 0.02
-export const PATH_CENTER_LINE_Y = 0.064
-export const PATH_DIRECTION_ARROW_Y = 0.068
+export const ROAD_SURFACE_Y = 0.045
+export const ROAD_BOUNDARY_Y = 0.064
+export const ROAD_GUIDE_Y = 0.068
+export const ROAD_JUNCTION_Y = 0.074
 export const NODE_Y = 0.08
 /** 名称四边形：高于节点圆台顶（P2-2 停车 slab 抬升后节点顶 =
  *  PARK_SLAB_HEIGHT_M + NODE_Y + NODE_TOP_M = 0.22），文字不被节点遮挡 */
 export const NAME_QUAD_Y = 0.24
 
-/* ==================== 物理路径（标线表达） ====================
- * 道路只以标线表达：中央黄色实线负责连接节点，叠加的箭头负责表达逻辑边
- * 方向；不绘制路面、路缘、路肩与路口补面。
+/* ==================== 道路与引导层 ====================
+ * 宽度仅是展示包络，不代表调度车道宽度；所有路径均绘制路面与清晰引导线。
+ * 灰蓝路面配连续白边，蓝色引导沿真实轨迹，不再使用黄色标线或方向箭头。
  */
+export const ROAD_MAIN_WIDTH_M = 1.5
+export const ROAD_BRANCH_WIDTH_M = 0.8
+export const ROAD_BOUNDARY_WIDTH_M = 0.065
+export const ROAD_MAIN_MIN_LENGTH_M = 12
+export const ROAD_ACCESS_MAX_LENGTH_M = 3
+export const ROAD_CONTINUATION_COS = Math.cos(Math.PI / 9)
+export const ROAD_SURFACE_COLOR = '#465762'
+export const ROAD_SURFACE_OPACITY = 0.32
+export const ROAD_BOUNDARY_COLOR = '#e6edf0'
+export const ROAD_GUIDE_COLOR = '#65b7db'
+/**
+ * 引导线统一加宽并提高透明度，不因路径分级在普通观察距离下消失。
+ * 保持蓝色实线且不绘制箭头，原有调度方向仍由业务模型负责。
+ */
+export const ROAD_GUIDE_WIDTH_M = 0.065
+export const ROAD_GUIDE_OPACITY = 0.9
 
 /**
- * 节点间黄色中心实线：每条去重后的物理路径各绘制一次，完整保留直线与
- * 贝塞尔曲线形状；端点精确落在路径起止节点中心并由上层节点圆盘自然收口。
+ * 关键路口以稀疏静态光点定位，不把全部调度节点铺成发光点阵。
+ * 光晕保持在地面贴花高度，近景由原业务节点自然覆盖中心。
  */
-export const PATH_CENTER_LINE_WIDTH_M = 0.055
-export const PATH_MARKING_COLOR = '#f2c94c'
-export const PATH_MARKING_BOOST = 1
+export const ROAD_JUNCTION_SPACING_M = 6
+export const ROAD_JUNCTION_RADIUS_M = 0.34
+export const ROAD_JUNCTION_COLOR = '#99ddf5'
 
 /**
- * 方向箭头优先位于每个逻辑方向起点量起的 30% 弧长处。
- * 密集区域按可用弧长缩放并避让节点和已放置箭头，30% 只作为布局偏好。
- */
-export const PATH_DIRECTION_ARROW_POSITION_RATIO = 0.3
-export const PATH_DIRECTION_ARROW_LENGTH_M = 0.34
-export const PATH_DIRECTION_ARROW_SHAFT_HALF_WIDTH_M = 0.04
-export const PATH_DIRECTION_ARROW_HEAD_HALF_WIDTH_M = 0.14
-export const PATH_DIRECTION_ARROW_HEAD_LENGTH_M = 0.17
-/**
- * 标记之间保留实际世界间隙；箭头依次尝试较小尺寸，空间不足时整组省略。
- * 双向标记必须成对保留，避免只剩一枚箭头而误导通行方向。
- */
-export const PATH_MARKING_CLEARANCE_M = 0.035
-export const PATH_DIRECTION_ARROW_SCALES = [1, 0.8, 0.6, 0.45, 0.3, 0.2] as const
-/**
- * 箭头投影长度低于 3px 时隐藏、达到 7px 时完全显示。
- * 只按屏幕尺寸淡出，不把小箭头强行放大，以免缩远后重新挤成一团。
- */
-export const PATH_DIRECTION_ARROW_FADE_END_PX = 3
-export const PATH_DIRECTION_ARROW_FADE_START_PX = 7
-/**
- * 方向箭头采用真实道路常见的暖白标线，与黄色中心实线建立明确的色相差异；
- * 轻微提亮用于抵消远景缩小后的亮度损失，不使用透明或发光混合。
- */
-export const PATH_DIRECTION_ARROW_COLOR = '#fff4d6'
-export const PATH_DIRECTION_ARROW_BOOST = 1.08
-/**
- * 反向逻辑边（isBackEdge=true）的方向箭头改为红色警示，与默认暖白箭头区分；
- * 箭头颜色在几何构建时烘焙为逐顶点色，材质BOOST仍统一作用于两种颜色。
- */
-export const PATH_DIRECTION_ARROW_BACK_COLOR = '#ff4d4f'
-
-/**
- * 节点站点圆盘半径与离散段数（一个 InstancedMesh 渲染全部节点，SPEC §5.1）。
+ * 节点站点的外接半径与圆形离散段数，所有类型共用同一米制尺度。
  * NODE_RADIUS_M 是状态色外环的外半径；暗色底座再外扩 NODE_BASE_MARGIN_M，
  * 形成节点整体的暗色外轮廓；段数 20 保证近景圆形轮廓可辨（12 段的
  * 多边形边缘在近景明显）。
@@ -102,12 +87,10 @@ export const NODE_OUTER_RADIUS_M = NODE_RADIUS_M + NODE_BASE_MARGIN_M
  */
 export const NODE_NEIGHBOR_RADIUS_RATIO = 0.32
 
-/* ==================== 节点实心圆台 ====================
- * 节点是单层实心圆台：暗色底座 → 状态色实心柱身（顶外沿倒角过曝提亮），
- * 顶面为整块状态色圆盘。以下常量定义半径/高度/倒角与顶点色亮度乘数
- * （最终色 = 实例色 × 乘数），是 nodeStackGeometry 的唯一事实源。
- * 乘数 >1 的「发光面」借助 ACES 色调映射的肩部滚降把实例色推向亮色过曝，
- * 与状态色的辉光观感一致。 */
+/* ==================== 节点语义标识 ====================
+ * 各类节点共用暗色底座、明亮倒角、低亮度顶面与白色符号的视觉层次。
+ * 半径、高度与顶点亮度乘数集中在这里，具体轮廓和图标由几何工厂生成。
+ * 颜色只表达节点用途，不代表在线、故障、运行或正在充电等实时状态。 */
 
 /** 底座顶面高度（米）：底座自 NODE_Y 起的抬升，形成嵌入地面的台阶感 */
 export const NODE_BASE_HEIGHT_M = 0.045
@@ -123,8 +106,21 @@ export const NODE_BASE_STRENGTH = 0.16
 /** 柱身亮度乘数：侧壁 = 实例色原样，顶部倒角过曝提亮 */
 export const NODE_SIDE_STRENGTH = 1.0
 export const NODE_TOP_CHAMFER_STRENGTH = 1.25
-/** 顶面亮度乘数：过曝提亮的实心圆盘面 */
-export const NODE_TOP_STRENGTH = 1.35
+/**
+ * 顶面改为低亮度的类型色，给白色语义图标留下足够对比。
+ * 明亮倒角保留轮廓，避免整个节点过曝后看不清工位、箱体等线条。
+ */
+export const NODE_TOP_STRENGTH = 0.32
+
+/**
+ * 图标使用原生几何，尺寸与节点顶面共享米制尺度，不依赖字体或纹理加载。
+ * 微量抬升用于避开顶面深度冲突；普通节点缩小以突出业务站点。
+ */
+export const NODE_SYMBOL_SCALE_M = 0.15
+export const NODE_SYMBOL_STROKE = 0.13
+export const NODE_SYMBOL_LIFT_M = 0.002
+export const NODE_SYMBOL_COLOR = '#f1f7fa'
+export const NODE_REGULAR_SCALE = 0.7
 
 /**
  * 节点屏幕尺寸淡出（P1-5/2.3 的 shader LOD）：投影直径 < start 逐帧变透明、
@@ -135,8 +131,12 @@ export const NODE_TOP_STRENGTH = 1.35
 export const NODE_FADE_START_PX = 3.5
 export const NODE_FADE_END_PX = 1.5
 
-/** 节点颜色表：按归一类别取色，unknown 使用灰色通用兜底（SPEC §2.1） */
-export const NODE_COLORS: Record<'work' | 'warehouse' | 'charge' | 'park' | 'unknown', string> = {
+/**
+ * 节点颜色表直接覆盖五种 type；普通节点为中性灰蓝，未知节点另行灰色兜底。
+ * 保留既有站点配色，并由轮廓与图标补足不依赖颜色的语义识别。
+ */
+export const NODE_COLORS: Record<import('../model/types').NodeCategory, string> = {
+  node: '#9cabb6',
   // work 青绿比原型降一档饱和度（P0-3/5.1）：总览下 3045 个高饱和圆盘喧宾夺主
   work: '#35948a',
   warehouse: '#e3cf7a',
@@ -339,8 +339,10 @@ export const GROUND_TEXTURE_SEED = 20260904
  */
 export const MAP_GROUND_TOP_Y = Math.max(
   GRID_Y,
-  PATH_CENTER_LINE_Y,
-  PATH_DIRECTION_ARROW_Y,
+  ROAD_SURFACE_Y,
+  ROAD_BOUNDARY_Y,
+  ROAD_GUIDE_Y,
+  ROAD_JUNCTION_Y,
   PARK_SLAB_HEIGHT_M + NODE_Y + NODE_TOP_M,
   PARK_SLAB_HEIGHT_M + PARK_SLAB_HALO_LIFT_M,
   NAME_QUAD_Y,

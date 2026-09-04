@@ -1,0 +1,273 @@
+{
+  "reimported": true,
+  "passed": true,
+  "triangles": 58732,
+  "objects_including_root": 40,
+  "mesh_objects": 39,
+  "materials": 9,
+  "dimensions_blender_xyz": [
+    1.3200000524520874,
+    2.4489998817443848,
+    0.5365000367164612
+  ],
+  "bounds_min": [
+    -0.6600000262260437,
+    -1.2214999198913574,
+    0.0
+  ],
+  "bounds_max": [
+    0.6600000262260437,
+    1.2274999618530273,
+    0.5365000367164612
+  ],
+  "issues": [],
+  "topology": [
+    {
+      "name": "Body_Black_Fascias",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.005019601460627413
+    },
+    {
+      "name": "Body_Bumpers",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.004636859479944859
+    },
+    {
+      "name": "Body_Deck_Panels",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.11302614406184242
+    },
+    {
+      "name": "Body_Light_Housings",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.001455767467932364
+    },
+    {
+      "name": "Body_Panel_Seals",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.010951867166600737
+    },
+    {
+      "name": "Body_Shoulder_Rails",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.014176096595394634
+    },
+    {
+      "name": "Body_Side_Panels",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.043190845666420494
+    },
+    {
+      "name": "Body_Silver_Armor",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.038342124770219525
+    },
+    {
+      "name": "Chassis_Core",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.7842028802379567
+    },
+    {
+      "name": "Fasteners_Metal",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 3.4408598510509775e-05
+    },
+    {
+      "name": "Identification_Markings",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 1.4670170781615296e-06
+    },
+    {
+      "name": "LiDAR_Top",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.002145227203448384
+    },
+    {
+      "name": "Light_LiDAR_Front",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 5.852136372433536e-07
+    },
+    {
+      "name": "Light_LiDAR_Ring",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 9.71597967410879e-06
+    },
+    {
+      "name": "Light_Front_Lower",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 2.099984237400703e-05
+    },
+    {
+      "name": "Light_Front_Main",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.00014776614531501742
+    },
+    {
+      "name": "Light_Front_Wrap_L",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 7.819642892438548e-05
+    },
+    {
+      "name": "Light_Front_Wrap_R",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 7.819641853774386e-05
+    },
+    {
+      "name": "Light_Rear_Localization",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 1.8526579278994861e-06
+    },
+    {
+      "name": "Light_Rear_Wrap_L",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 7.819641853774386e-05
+    },
+    {
+      "name": "Light_Rear_Wrap_R",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 7.819642892438548e-05
+    },
+    {
+      "name": "Light_Side_L",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 7.912551827809706e-05
+    },
+    {
+      "name": "Light_Side_R",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 7.912551827809706e-05
+    },
+    {
+      "name": "Rear_Charge_Interface",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.0011978036014837147
+    },
+    {
+      "name": "Rear_Localization_Base",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 8.815578910335925e-05
+    },
+    {
+      "name": "Rear_Localization_Cap",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 4.7781172718267554e-05
+    },
+    {
+      "name": "Seals_And_Service_Details",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.00019211310740872964
+    },
+    {
+      "name": "Sensor_Camera_Front",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 1.6476037538535454e-06
+    },
+    {
+      "name": "Sensor_Camera_Rear",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 1.6476037538535454e-06
+    },
+    {
+      "name": "Sensor_Mounts",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.00022667447307833327
+    },
+    {
+      "name": "Sensor_Proximity_LF",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 2.9493921258239485e-06
+    },
+    {
+      "name": "Sensor_Proximity_LR",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 2.9493921258239485e-06
+    },
+    {
+      "name": "Sensor_Proximity_RF",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 2.9493921258239485e-06
+    },
+    {
+      "name": "Sensor_Proximity_RR",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 2.9493921258239485e-06
+    },
+    {
+      "name": "Underbody_Belly",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.026565414385498975
+    },
+    {
+      "name": "Wheel_FL",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.004386332768579242
+    },
+    {
+      "name": "Wheel_FR",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.0043863327685792495
+    },
+    {
+      "name": "Wheel_RL",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.004386332768579242
+    },
+    {
+      "name": "Wheel_RR",
+      "boundary_edges": 0,
+      "nonmanifold_edges": 0,
+      "signed_volume": 0.0043863327685792495
+    }
+  ],
+  "required_nodes": [
+    "Wheel_FL",
+    "Wheel_FR",
+    "Wheel_RL",
+    "Wheel_RR",
+    "LiDAR_Top",
+    "Light_Front_Main",
+    "Light_Side_L",
+    "Light_Side_R",
+    "Light_Rear_Wrap_L",
+    "Light_Rear_Wrap_R",
+    "Light_LiDAR_Ring"
+  ]
+}

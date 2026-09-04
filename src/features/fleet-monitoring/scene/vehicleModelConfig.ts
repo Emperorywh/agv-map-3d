@@ -1,33 +1,25 @@
 /**
- * 明确的模型适配档案：当前资产为一米八乘七十厘米，车头正 X、底面零米。
- * 未确认的原始车型枚举不猜含义；只允许明确配置的尺寸档案使用精修资产。
- * 后续得到车型字典后填写原始类型映射，差异尺寸始终走程序模型而不拉伸 GLB。
+ * 明确的模型适配档案：当前资产为 AGV_FUTURE，长 2.449 米、宽 1.32 米、高 0.5365 米，
+ * 车头正 X、底面零米、货舱面 0.433 米（与 assets/agv_future 验证报告一致）。
+ * 过渡期策略：忽略申报车型与长宽，全部车辆统一使用精修资产渲染；
+ * 尺寸档案仅供加载校验和部件摆放（载货面、信标、阴影）使用，不再筛选车辆。
+ * 不做距离分档：任何缩放级别都展示精修模型，程序轮廓仅在资源加载完成前占位。
  */
 import type { VehicleSnapshot } from '../model/types'
 
 export const INDUSTRIAL_AGV_MODEL = Object.freeze({
-  url: './models/agv_industrial.glb',
-  length: 1.8,
-  width: 0.7,
-  height: 0.35,
-  platformTop: 0.342,
+  url: './models/AGV_FUTURE.glb',
+  length: 2.449,
+  width: 1.32,
+  height: 0.5365,
+  platformTop: 0.433,
   dimensionToleranceM: 0.001,
-  /**
-   * 远景采用轻量程序轮廓，进入和退出距离不同以避免边界反复闪切。
-   * 近景仍展示完整精修倒角，距离只影响细节而不改变业务尺寸或位置。
-   */
-  detailedEnterM: 16,
-  detailedExitM: 20,
 })
 
-export const VEHICLE_TYPE_MODELS: Readonly<Record<string, 'industrial' | 'procedural'>> = Object.freeze({})
-
-export function usesIndustrialModel(snapshot: VehicleSnapshot): boolean {
-  const type = typeof snapshot.rawType === 'string' || typeof snapshot.rawType === 'number'
-    ? VEHICLE_TYPE_MODELS[String(snapshot.rawType)] : undefined
-  if (type === 'procedural') return false
-  const config = INDUSTRIAL_AGV_MODEL
-  return snapshot.dimensionValid &&
-    Math.abs(snapshot.dimension.length - config.length) <= config.dimensionToleranceM &&
-    Math.abs(snapshot.dimension.width - config.width) <= config.dimensionToleranceM
+/**
+ * 过渡期判定：不再按尺寸档案筛选车辆，所有可用精修资源的车辆一律使用 GLB。
+ * 保留函数形态与调用点，待车型字典明确后再恢复按类型/尺寸的差异化适配。
+ */
+export function usesIndustrialModel(_snapshot: VehicleSnapshot): boolean {
+  return true
 }

@@ -4,10 +4,9 @@
  * 职责：在物理路径去重结果之上重建「展示级道路网络」——把只经过二度节点
  *       （恰好两条物理路径相连）的连续道路合并为一条链式 polyline，识别
  *       三岔及以上交叉节点。几何构建层据此：
- *       1. 每条链生成一条连续路面条带（替代逐物理路径条带）；
- *       2. 只在真实道路末端（一度节点）生成圆形端帽；
- *       3. 每个交叉节点只生成一个路口补面（圆盘），盖住各链进入路口的接缝，
- *          消除逐路径端帽叠加形成的花瓣、鼓包与交叉纹理。
+ *       1. 保留连续链供诊断，路面独立按全部物理路径构建，不按链筛选；
+ *       2. 包络并集裁掉路口内部边线，再描连续白色外边界；
+ *       3. 从交叉节点中筛选稀疏蓝色光点，不再逐节点叠加圆盘路口。
  * 边界：纯数据拓扑，不创建 Three.js 对象、不进 React；输入必须来自
  *       dedupePhysicalPaths 的物理路径索引与只读 MapModel。
  * 关键不变量：
@@ -15,8 +14,8 @@
  *    重复）；链的采样点顺序与行进方向一致，相邻路径在共享节点处首尾相接；
  * 2. 度数 = 节点邻接的物理路径端数：二度节点被合并穿越，一度（断头）与
  *    三度以上（交叉）节点是链的端点；
- * 3. 链端节点与度数判定一致：cap/junction 的判定由构建层依据 chain 端节点
- *    的 nodeDegree 进行，本模块不预设任何外观决策。
+ * 3. 链端节点与度数判定一致：道路分级与边界裁剪由构建层完成，
+ *    本模块不预设宽度、端帽或交叉点的外观决策。
  */
 import type { MapModel } from '../model/types'
 import type { PlanePoint2 } from '../model/edgeGeometry'
@@ -35,7 +34,7 @@ export interface RoadChain {
   readonly pathIndexes: readonly number[]
 }
 
-/** 交叉节点（度数 ≥3）：路口补面的唯一来源 */
+/** 交叉节点（度数 ≥3）：关键路口光点的候选来源 */
 export interface RoadJunction {
   readonly nodeId: string
   /** 平面坐标（米） */
@@ -235,7 +234,10 @@ export function buildRoadNetwork(
     })
   }
 
-  // 交叉节点：度数 ≥3，每个节点一个路口补面
+  /**
+   * 每个三度及以上节点只登记一次，供展示层筛选关键路口。
+   * 节点记录不代表新增通行连接，实际方向仍由 MapModel 的有向边决定。
+   */
   const junctions: RoadJunction[] = []
   for (const node of mapModel.nodeList) {
     const degree = nodeDegree.get(node.id) ?? 0

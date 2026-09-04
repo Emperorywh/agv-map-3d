@@ -1,6 +1,6 @@
 /**
- * 地标位置继续来自地图语义节点，停车图层与名称图集沿用原有实现。
- * 充电节点改为按材质合批的工业柜体，使用局部指示灯而不再绘制光环和闪电。
+ * 地标位置继续来自地图语义节点，停车底板保留，P 字标交由节点几何统一绘制。
+ * 工业充电柜保留实体和指示灯，并在柜门、背面及顶面补充同源闪电标识。
  * 几何、材质与实例缓冲由本组件统一释放，地图与上下文换代时重新创建。
  */
 import { useEffect, useMemo } from 'react'
@@ -8,23 +8,13 @@ import * as THREE from 'three'
 import type { MapModel } from '../model/types'
 import type { WorldTransform } from '@/shared/spatial'
 import { buildLandmarkData, type LandmarkData } from '../scene/buildLandmarkData'
-import { createChargingCabinet, instanceFacility } from '@/shared/industrial/facilities'
+import { CABINET_CONFIG, createChargingCabinet, instanceFacility } from '@/shared/industrial/facilities'
+import { joinGeometry } from '@/shared/industrial/geometry'
+import type { MapNameAtlas } from '../scene/mapNameAtlas'
+import { createNodeSymbolGeometry } from '../scene/nodeSymbolGeometry'
 import {
-  buildNameQuadGeometry,
-  PARK_GLYPH_KEY,
-  type MapNameAtlas,
-  type NameQuadInput,
-} from '../scene/mapNameAtlas'
-import {
-  createNameFadeMaterial,
-} from '../scene/semanticMaterials'
-import {
-  LANDMARK_NAME_FADE_FAR_M,
-  LANDMARK_NAME_FADE_NEAR_M,
-  NAME_QUAD_Y,
   NODE_COLORS,
-  PARK_GLYPH_HEIGHT_M,
-  PARK_GLYPH_OFFSET_Z_M,
+  NODE_SYMBOL_LIFT_M,
   PARK_SLAB_HALO_LIFT_M,
   PARK_SLAB_HALO_OPACITY,
   PARK_SLAB_HEIGHT_M,
@@ -34,7 +24,10 @@ import {
 export interface LandmarksLayerProps {
   readonly mapModel: MapModel
   readonly worldTransform: WorldTransform
-  /** 地图名称图集；null 表示名称降级不可用（地标其余部分不受影响） */
+  /**
+   * 保留地图名称资源接口；停车 P 已改为节点原生几何，不依赖图集。
+   * 图集缺失时，停车与充电的语义标识仍然完整可见。
+   */
   readonly nameAtlas: MapNameAtlas | null
   /** 保留既有能力接口；工业柜体指示灯恒定，不受装饰动画开关影响 */
   readonly decorationsEnabled: boolean
@@ -47,8 +40,6 @@ interface LandmarkResources {
   parkSlabs: THREE.InstancedMesh
   parkHalos: THREE.InstancedMesh
   charging: ReturnType<typeof instanceFacility>
-  /** 名称合批 Mesh；图集不可用时为 null */
-  names: THREE.Mesh | null
   /** 创建的全部 geometry/material（不含外部图集纹理），释放责任清单 */
   owned: { dispose(): void }[]
 }
@@ -59,7 +50,6 @@ let landmarkResourcesSeq = 0
 export function LandmarksLayer({
   mapModel,
   worldTransform,
-  nameAtlas,
   decorationsEnabled,
 }: LandmarksLayerProps) {
   const data = useMemo(
@@ -67,8 +57,8 @@ export function LandmarksLayer({
     [mapModel, worldTransform],
   )
   const resources = useMemo(
-    () => createLandmarkResources(data, nameAtlas, decorationsEnabled),
-    [data, nameAtlas, decorationsEnabled],
+    () => createLandmarkResources(data, decorationsEnabled),
+    [data, decorationsEnabled],
   )
   useEffect(() => () => disposeLandmarkResources(resources), [resources])
 
@@ -81,9 +71,6 @@ export function LandmarksLayer({
       <primitive key={`park-slabs-${resources.id}`} object={resources.parkSlabs} dispose={null} />
       <primitive key={`park-halos-${resources.id}`} object={resources.parkHalos} dispose={null} />
       <primitive key={`charging-${resources.id}`} object={resources.charging.group} dispose={null} />
-      {resources.names !== null ? (
-        <primitive key={`names-${resources.id}`} object={resources.names} dispose={null} />
-      ) : null}
     </>
   )
 }
@@ -91,7 +78,6 @@ export function LandmarksLayer({
 /** 上载静态实例数据并创建全部地标 GPU 对象（一次构建、静态不再改写） */
 function createLandmarkResources(
   data: LandmarkData,
-  atlas: MapNameAtlas | null,
   decorationsEnabled: boolean,
 ): LandmarkResources {
   void decorationsEnabled
@@ -141,31 +127,34 @@ function createLandmarkResources(
   charging.group.name = 'map-charge-cabinets'
   owned.push(charging, cabinet)
 
-  // —— 名称四边形：停车字形与图集单元 join 后静态合批（P0-5：仓库节点名称
-  //    已整体移除——Reference 中不存在仓库名称文字，1185 个名称在中景形成
-  //    黄色文字海；名称机制（图集/淡出）原样保留给其余地标名称）
-  let names: THREE.Mesh | null = null
-  if (atlas !== null) {
-    const inputs: NameQuadInput[] = []
-    for (const anchor of data.parkAnchors) {
-      const cell = atlas.cells.get(PARK_GLYPH_KEY)
-      if (cell === undefined) {
-        continue
-      }
-      inputs.push({ x: anchor.x, z: anchor.z + PARK_GLYPH_OFFSET_Z_M, cell, heightM: PARK_GLYPH_HEIGHT_M })
-    }
-    if (inputs.length > 0) {
-      const namesGeometry = buildNameQuadGeometry(inputs, NAME_QUAD_Y)
-      const namesMaterial = createNameFadeMaterial(
-        atlas.texture,
-        LANDMARK_NAME_FADE_NEAR_M,
-        LANDMARK_NAME_FADE_FAR_M,
-      )
-      names = new THREE.Mesh(namesGeometry, namesMaterial)
-      names.name = 'map-landmark-names'
-      names.matrixAutoUpdate = false
-      owned.push(namesGeometry, namesMaterial)
-    }
+  /**
+   * 柜体会遮住节点顶面的闪电，因此同一图形也贴在柜门、背面和柜顶。
+   * 三面合成一个静态实例批次；标识不发光，不把设施类型误表达成充电状态。
+   */
+  if (data.chargeCount > 0) {
+    const { width, depth, height } = CABINET_CONFIG
+    const front = createNodeSymbolGeometry('charge')
+    front.scale(width * 0.3, height * 0.12, 1)
+    front.translate(0, height * 0.49, depth * 0.56 + NODE_SYMBOL_LIFT_M)
+    const back = createNodeSymbolGeometry('charge')
+    back.scale(width * 0.3, height * 0.12, 1)
+    back.rotateY(Math.PI)
+    back.translate(0, height * 0.49, -depth / 2 - NODE_SYMBOL_LIFT_M)
+    const top = createNodeSymbolGeometry('charge')
+    top.scale(width * 0.28, depth * 0.35, 1)
+    top.rotateX(-Math.PI / 2)
+    top.translate(0, height + NODE_SYMBOL_LIFT_M, 0)
+    const signsGeometry = joinGeometry([front, back, top])
+    const signsMaterial = new THREE.MeshBasicMaterial({ color: '#146b71' })
+    const signs = new THREE.InstancedMesh(signsGeometry, signsMaterial, data.chargeCount)
+    signs.name = 'map-charge-symbols'
+    uploadStaticInstances(signs, data.chargeCount, data.chargeMatrices, null)
+    charging.group.add(signs)
+    /**
+     * 实例缓冲由 charging 的分组释放器统一回收，避免重复 dispose。
+     * 标识几何和材质独立登记，不改变原柜体资产的所有权。
+     */
+    owned.push(signsGeometry, signsMaterial)
   }
 
   return {
@@ -173,7 +162,6 @@ function createLandmarkResources(
     parkSlabs,
     parkHalos,
     charging,
-    names,
     owned,
   }
 }

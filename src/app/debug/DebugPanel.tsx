@@ -13,7 +13,8 @@
  *          为 JSON（剪贴板 + 控制台），作为截图取证与 FROZEN 机位记录。
  * 边界：只经 useThree 读取场景/相机、经组合层注入的 controlsRef 只读观察
  *       OrbitControls、经对象名匹配图层——不导入任何 Feature 内部模块，
- *       不改写业务对象属性（visible 除外），不持有逐帧业务数据。
+ *       不改写业务对象属性（visible 除外），不持有逐帧业务数据；Leva 面板
+ *       属 DOM，经自建宿主挂在 document.body（不得进入 Canvas 渲染树）。
  * 关键不变量：
  * 1. 面板挂载与否完全由 App 的门控决定；本组件挂载即生效、卸载对称清理
  *    自建辅助对象；
@@ -22,8 +23,9 @@
  * 3. 所有调试常量集中在文件头常量区，不散落 magic number。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createRoot } from 'react-dom/client'
 import { useFrame, useThree } from '@react-three/fiber'
-import { button, useControls } from 'leva'
+import { Leva, button, useControls } from 'leva'
 import * as THREE from 'three'
 import { GRID_Y } from '@/features/map-visualization'
 import type { SceneBounds } from '@/features/map-visualization'
@@ -66,6 +68,10 @@ const DEBUG_LIGHT_HELPER_SIZE_M = 8
 const DEBUG_DIRECTIONAL_LIGHT_NAME = 'map-directional-light'
 /** 图层显隐重申周期（帧）：覆盖车队批次动态重建 */
 const DEBUG_LAYER_REAPPLY_FRAMES = 30
+/** 面板根宽度：默认 280px 的标签列放不下「节点盘·工作站点」等中文标签 */
+const DEBUG_PANEL_ROOT_WIDTH = '400px'
+/** 自建面板宿主 id：与 leva 自动挂载的 leva__root 区分，避免两个根共用一个容器 */
+const DEBUG_LEVA_HOST_ID = 'debug-leva-root'
 /** 相机位姿小数位（米/度，取证记录口径） */
 const DEBUG_POSE_DECIMALS = 2
 
@@ -80,10 +86,33 @@ function getSessionStore(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> 
 /** 会话记忆存储：面板挂载即记忆本次选择（刷新保持） */
 const DEBUG_SESSION_STORE = getSessionStore()
 
+/**
+ * 在 Canvas 外挂载主题化 Leva 根面板。<Leva> 是 DOM 组件，放进 R3F 渲染树
+ * 会被 reconciler 当作场景对象创建并崩溃（整页黑屏），因此按 leva 自动挂载
+ * 的同款机制自建 body 宿主再渲染，并借主题把默认 280px 根宽度加宽。
+ * 与 useControls 的自动挂载竞态安全：若自动面板先行创建，<Leva> 挂载时的
+ * 接管逻辑会把它移除，最终只保留本宿主的面板。
+ */
+function useDebugLevaRoot(): void {
+  useEffect(() => {
+    const host = Object.assign(document.createElement('div'), {
+      id: DEBUG_LEVA_HOST_ID,
+    })
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    root.render(<Leva theme={{ sizes: { rootWidth: DEBUG_PANEL_ROOT_WIDTH } }} />)
+    return () => {
+      root.unmount()
+      host.remove()
+    }
+  }, [])
+}
+
 export default function DebugPanel({ sceneBounds, controlsRef }: DebugPanelProps) {
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
   const [lightRebindTick, setLightRebindTick] = useState(0)
+  useDebugLevaRoot()
 
   // 挂载即记忆（?debug=1 首次进入后，刷新无需再带参数）
   useEffect(() => {

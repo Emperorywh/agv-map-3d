@@ -25,6 +25,7 @@
  *    深度残留；呼吸灯只调制 rgb 亮度，alpha 恒为 1。
  */
 import * as THREE from 'three'
+import { NODE_SYMBOL_COLOR } from './mapAppearance'
 
 /** 名称淡出材质注入的 uniforms（userData.uniforms 中可读写） */
 export interface NameFadeUniforms {
@@ -155,9 +156,8 @@ export function createPulseMaterial(color: string): {
  * [uFadeEndPx, uFadeStartPx] 区间内平滑淡出 alpha——总览距离下 4291 个
  * 节点盘（投影 < 4px）渐隐、路网骨架回归可读，近景完全不受影响。
  * 纯 GPU 实现：不写实例缓冲，不破坏 NodesLayer 的静态上载不变量。
- * vertexColors（实心圆台）：最终色 = 顶点色乘数（暗层 <1、发光层 >1
- * 借 ACES 过曝提亮）× 实例色，圆台的明暗与辉光由此随节点色相表达，
- * 无需额外 Draw Call。
+ * 底座和轮廓使用顶点色乘数 × 实例色，图标掩码单独保留白色笔画。
+ * 图标与顶面共用同一实例和淡出，暗色顶面保证符号不被类型色吞没。
  * 场景等级门控（P0-5.4/5.1）：实例属性 aMinLevel（角色 → 最低可见场景等
  * 级）与共享 uniform uSceneLevel 比较，step 结果乘入淡出系数——总览隐藏
  * 普通节点、近景才显示纯导航控制点与单个库位，全程 GPU 侧完成。
@@ -191,6 +191,11 @@ export function createNodeLodMaterial(options: {
     shader.uniforms.uFadeStartPx = uniforms.uFadeStartPx
     shader.uniforms.uFadeEndPx = uniforms.uFadeEndPx
     shader.uniforms.uSceneLevel = uniforms.uSceneLevel
+    /**
+     * 符号颜色在色彩空间转换前写入，与常规顶点色使用相同的线性空间。
+     * 六种几何共享该材质，只额外提供一个静态符号掩码属性。
+     */
+    shader.uniforms.uNodeSymbolColor = { value: new THREE.Color(NODE_SYMBOL_COLOR) }
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -200,6 +205,8 @@ export function createNodeLodMaterial(options: {
           'uniform float uViewportHeightPx;',
           'uniform float uSceneLevel;',
           'attribute float aMinLevel;',
+          'attribute float aNodeSymbol;',
+          'varying float vNodeSymbol;',
           'varying float vNodeFadePx;',
           'varying float vRoleVisible;',
         ].join('\n'),
@@ -208,6 +215,7 @@ export function createNodeLodMaterial(options: {
         '#include <project_vertex>',
         [
           '#include <project_vertex>',
+          'vNodeSymbol = aNodeSymbol;',
           '/**',
           ' * 密集节点的水平缩放来自实例矩阵，淡出必须使用实际显示半径。',
           ' * 裁剪坐标 w 在正交投影中为 1，在透视投影中为视深，统一两种口径。',
@@ -226,8 +234,21 @@ export function createNodeLodMaterial(options: {
           '#include <common>',
           'uniform float uFadeStartPx;',
           'uniform float uFadeEndPx;',
+          'uniform vec3 uNodeSymbolColor;',
+          'varying float vNodeSymbol;',
           'varying float vNodeFadePx;',
           'varying float vRoleVisible;',
+        ].join('\n'),
+      )
+      .replace(
+        '#include <color_fragment>',
+        [
+          '#include <color_fragment>',
+          '/**',
+          ' * 符号使用独立浅色，底座保留按实例类别计算的颜色与层次。',
+          ' * 掩码来自几何顶点，不增加图标贴图或逐节点绘制调用。',
+          ' */',
+          'diffuseColor.rgb = mix( diffuseColor.rgb, uNodeSymbolColor, vNodeSymbol );',
         ].join('\n'),
       )
       .replace(
@@ -244,7 +265,7 @@ export function createNodeLodMaterial(options: {
    * 实例缩放参与投影后使用独立程序标识，防止旧的固定半径着色器被缓存复用。
    * 几何矩阵与淡出阈值始终使用同一份节点显示尺度。
    */
-  material.customProgramCacheKey = () => 'map-node-lod-scaled-v1'
+  material.customProgramCacheKey = () => 'map-node-lod-semantic-symbols-v2'
   material.userData.uniforms = uniforms
   return { material, uniforms }
 }
