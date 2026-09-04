@@ -1,33 +1,26 @@
 /**
- * 物理路径图层（SPEC §5.1 物理路径行；实体道路俯视表达）。
+ * 物理路径图层（SPEC §5.1 物理路径行；道路标线表达）。
  *
- * 职责：把 buildMapGeometry 产出的五份静态合批几何（路面、路肩、路缘、
- *       黄色中心实线、方向箭头）以固定材质上载到场景，共五个 Draw Call。
+ * 职责：把 buildMapGeometry 产出的两份静态合批几何（黄色中心实线、方向
+ *       箭头）以固定材质上载到场景，共两个 Draw Call。
  * 边界：几何对象由 MapGeometry（地图运行时）拥有并在模型原子替换时释放；
- *       本组件只拥有五个材质，并在卸载或几何更换时释放它们，绝不释放
+ *       本组件只拥有两个材质，并在卸载或几何更换时释放它们，绝不释放
  *       外部几何。组件不感知去重与路网裁剪逻辑，只消费已构建好的世界坐
- *       标几何。
+ *       标几何。道路不绘制路面与两侧边界，只以标线表达。
  * 关键不变量：
  * 1. 几何更换（地图恢复）时：新几何先渲染、旧几何由 useMapVisualization 的
  *    所有权 effect 释放，本组件只同步更换材质引用，不产生中间空档；
- * 2. 路面为 Unlit（MeshBasicMaterial）双面：路面贴花是视觉标记而非受光面，
- *    任意绕序可见且不受灯光影响，色彩稳定；
- * 3. 路肩、路缘、中心实线与箭头均为 Unlit 贴花；高度按道路层次逐级抬升，
- *    颜色不受场景灯光影响，俯视和倾斜近景都能稳定辨识道路边界与行进方向。
+ * 2. 中心实线与箭头均为 Unlit 贴花；高度按道路层次逐级抬升，颜色不受场景
+ *    灯光影响，俯视和倾斜近景都能稳定辨识行进方向。
  */
 import { useEffect, useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { MapGeometry } from '../scene/buildMapGeometry'
+import { createPathArrowMaterial } from '../scene/pathArrowMaterial'
 import {
-  PATH_DIRECTION_ARROW_BOOST,
-  PATH_DIRECTION_ARROW_COLOR,
-  PATH_EDGE_BOOST,
-  PATH_EDGE_COLOR,
-  PATH_EDGE_HALO_COLOR,
-  PATH_EDGE_HALO_OPACITY,
   PATH_MARKING_BOOST,
   PATH_MARKING_COLOR,
-  PATH_SURFACE_COLOR,
 } from '../scene/mapAppearance'
 
 export function PhysicalPathsLayer({ geometry }: PhysicalPathsLayerProps) {
@@ -36,12 +29,16 @@ export function PhysicalPathsLayer({ geometry }: PhysicalPathsLayerProps) {
     [geometry],
   )
   useEffect(() => () => disposePathMaterials(objects), [objects])
+  /**
+   * GPU 用当前 CSS 视口计算箭头投影尺寸，避免高 DPR 改变细节显隐阈值。
+   * 相机推拉和窗口变化只更新这两个数值，不重建或遍历路径几何。
+   */
+  useFrame((state) => {
+    objects.arrowViewport.set(state.size.width, state.size.height)
+  })
   return (
     <>
       {/* dispose={null}：几何由 MapGeometry 拥有，材质由本组件 effect 释放 */}
-      <primitive object={objects.surface} dispose={null} />
-      <primitive object={objects.shoulder} dispose={null} />
-      <primitive object={objects.edgeCore} dispose={null} />
       <primitive object={objects.centerLines} dispose={null} />
       <primitive object={objects.directionArrows} dispose={null} />
     </>
@@ -53,58 +50,13 @@ interface PhysicalPathsLayerProps {
 }
 
 interface PathObjects {
-  surface: THREE.Mesh
-  edgeCore: THREE.Mesh
-  shoulder: THREE.Mesh
   centerLines: THREE.Mesh
   directionArrows: THREE.Mesh
+  arrowViewport: THREE.Vector2
   materials: THREE.Material[]
 }
 
 function createPathObjects(geometry: MapGeometry): PathObjects {
-  const surfaceMaterial = new THREE.MeshBasicMaterial({
-    color: PATH_SURFACE_COLOR,
-    side: THREE.DoubleSide,
-  })
-  const surface = new THREE.Mesh(geometry.pathsSurface, surfaceMaterial)
-  surface.name = 'map-path-surface'
-  surface.matrixAutoUpdate = false
-  surface.castShadow = false
-  surface.receiveShadow = false
-
-  /**
-   * 路缘浅色压边：双面保证任意绕序可见，固定 renderOrder 使它稳定覆盖
-   * 在较宽的混凝土路肩之上。
-   */
-  const edgeCoreMaterial = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(PATH_EDGE_COLOR).multiplyScalar(PATH_EDGE_BOOST),
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  })
-  const edgeCore = new THREE.Mesh(geometry.pathEdgeCores, edgeCoreMaterial)
-  edgeCore.name = 'map-path-edge-core'
-  edgeCore.matrixAutoUpdate = false
-  edgeCore.renderOrder = 2
-  edgeCore.castShadow = false
-  edgeCore.receiveShadow = false
-
-  /**
-   * 混凝土路肩使用不透明材质，作为沥青与浅色路缘之间的实体过渡，不再采用
-   * 加法混合的霓虹晕圈，避免道路边界呈现发光管效果。
-   */
-  const shoulderMaterial = new THREE.MeshBasicMaterial({
-    color: PATH_EDGE_HALO_COLOR,
-    opacity: PATH_EDGE_HALO_OPACITY,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  })
-  const shoulder = new THREE.Mesh(geometry.pathEdgeHalos, shoulderMaterial)
-  shoulder.name = 'map-path-edge-halo'
-  shoulder.matrixAutoUpdate = false
-  shoulder.renderOrder = 1
-  shoulder.castShadow = false
-  shoulder.receiveShadow = false
-
   /**
    * 黄色中心实线负责连接节点；方向箭头改用高对比暖白标线并单独成批，避免
    * 箭头与中心线融合成菱形。箭头略高于中心线，双向标记不会产生深度闪烁。
@@ -121,13 +73,12 @@ function createPathObjects(geometry: MapGeometry): PathObjects {
   centerLines.castShadow = false
   centerLines.receiveShadow = false
 
-  const directionArrowMaterial = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(PATH_DIRECTION_ARROW_COLOR).multiplyScalar(
-      PATH_DIRECTION_ARROW_BOOST,
-    ),
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  })
+  /**
+   * 箭头复用一份可淡出的基础材质，远景隐藏低于可读像素尺寸的标记；颜色由
+   * 几何的逐顶点色承载（默认暖白，isBackEdge=true 红色）。
+   * 静态批次与资源释放方式不变，中心线仍持续表达全部路径连接。
+   */
+  const { material: directionArrowMaterial, viewport: arrowViewport } = createPathArrowMaterial()
   const directionArrows = new THREE.Mesh(
     geometry.pathDirectionArrows,
     directionArrowMaterial,
@@ -139,15 +90,10 @@ function createPathObjects(geometry: MapGeometry): PathObjects {
   directionArrows.receiveShadow = false
 
   return {
-    surface,
-    edgeCore,
-    shoulder,
     centerLines,
     directionArrows,
+    arrowViewport,
     materials: [
-      surfaceMaterial,
-      edgeCoreMaterial,
-      shoulderMaterial,
       centerLineMaterial,
       directionArrowMaterial,
     ],

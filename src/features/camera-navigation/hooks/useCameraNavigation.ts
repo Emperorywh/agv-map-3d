@@ -31,6 +31,9 @@
  *    bounds 变化时与取景同时重设，任何时刻都满足 max > min；
  * 6. 默认聚焦一次性且不抢镜：只移动 position/target，不缩拢 near/far 与
  *    距离限制；用户已交互（按下/滚轮/空格）后到达的聚焦请求被静默丢弃。
+ * 7. 地面保护：极角始终小于 90°，最终相机高度还必须高于实际地面图层及
+ *    近裁剪面所需净空；所有控制器 change 与每帧渲染前统一收敛，修正后的
+ *    跟随偏移同步回写，避免下一帧恢复到地面内。
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
@@ -39,6 +42,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FocusBounds, SceneBounds } from '@/features/map-visualization'
 import type { FollowTargetReader } from '@/features/fleet-monitoring'
 import { useCameraNavigationStore } from '../model/cameraNavigationStore'
+/**
+ * 地面保护独立于轨道距离和极角限制，按地图的实际图层高度修正最终机位。
+ * 自由浏览与跟随模式共用此实现，防止不同输入路径出现约束遗漏。
+ */
+import { constrainCameraToGround } from '../scene/constrainCameraToGround'
 import {
   CAMERA_MIN_DISTANCE_M,
   computeOverviewPose,
@@ -104,6 +112,13 @@ const WHEEL_DOLLY_NOTCH = 100
  */
 const CAMERA_ZOOM_SPEED = 1.25
 
+/**
+ * 左键轨道旋转允许的最大极角。
+ * 与 90° 地平线保留 1° 余量，只负责防止翻到理论地平面下方。
+ * 近景离地高度由 constrainCameraToGround 单独保证，不能由极角替代。
+ */
+const CAMERA_MAX_POLAR_ANGLE = Math.PI / 2 - THREE.MathUtils.degToRad(1)
+
 export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const { bounds, initialFocusBounds, readFollowTarget, commandsRef, controlsRef } = options
   const camera = useThree((state) => state.camera)
@@ -124,6 +139,16 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null)
   // 用户已交互旗标（P0-5.2）：按下/滚轮/空格后不再接受默认聚焦请求
   const userInteractedRef = useRef(false)
+
+  /**
+   * 控制器事件和帧循环共用最终机位保护；跟随模式必须同步回写修正后偏移，
+   * 否则车辆下一帧移动时会再次把相机放回未经约束的低高度。
+   */
+  const applyGroundConstraint = useCallback((controlsNow: OrbitControls): void => {
+    if (constrainCameraToGround(camera as THREE.PerspectiveCamera, controlsNow)) {
+      followRef.current?.offset.copy(camera.position).sub(controlsNow.target)
+    }
+  }, [camera])
 
   /** 进入/切换跟随：首次进入捕获当前相机相对偏移，切换目标保留原偏移 */
   const enterFollow = useCallback((entityKey: string): void => {
@@ -212,18 +237,33 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     controlsInstance.zoomToCursor = true
     controlsInstance.zoomSpeed = CAMERA_ZOOM_SPEED
     controlsInstance.minDistance = CAMERA_MIN_DISTANCE_M
+    /**
+     * 极角上限阻止左键把相机旋转到地图下方；关闭屏幕空间平移后，右键平移
+     * 与光标定点缩放都以世界水平面求交，target.y 不会随操作漂移到地下。
+     * 两项约束只限定轨道；最终离地高度仍由统一地面保护检查。
+     */
+    controlsInstance.maxPolarAngle = CAMERA_MAX_POLAR_ANGLE
+    controlsInstance.screenSpacePanning = false
     internalControlsRef.current = controlsInstance
     if (controlsRef !== undefined) {
       controlsRef.current = controlsInstance
     }
+    /**
+     * change 在原生滚轮、拖拽与阻尼更新完成后触发，此时再限制最终机位，
+     * 能覆盖光标定点缩放在极角检查之后追加的位移；无需二次推进阻尼。
+     */
+    const onControlsChange = (): void => applyGroundConstraint(controlsInstance)
+    controlsInstance.addEventListener('change', onControlsChange)
+    applyGroundConstraint(controlsInstance)
     return () => {
+      controlsInstance.removeEventListener('change', onControlsChange)
       controlsInstance.dispose()
       internalControlsRef.current = null
       if (controlsRef !== undefined && controlsRef.current === controlsInstance) {
         controlsRef.current = null
       }
     }
-  }, [camera, gl, controlsRef])
+  }, [camera, gl, controlsRef, applyGroundConstraint])
 
   // 取景：bounds 对象身份变化（地图就绪/替换）即重取景并重设距离限制
   useEffect(() => {
@@ -331,15 +371,22 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     }
     const onWheel = (event: WheelEvent): void => {
       userInteractedRef.current = true
-      if (followRef.current === null || !isMainMouse(event)) {
+      if (!isMainMouse(event)) {
         return
       }
-      // 跟随期间缩放相对偏移（不变量 3）；controls 缩放已关闭不会抢占
-      event.preventDefault()
       const controlsNow = internalControlsRef.current
       if (controlsNow === null) {
         return
       }
+      if (followRef.current === null) {
+        /**
+         * 自由浏览的滚轮位移已经由原生监听处理，change 回调负责离地保护。
+         * 不再额外 update：单纯重复极角检查无法保护有实际厚度的地面图层。
+         */
+        return
+      }
+      // 跟随期间缩放相对偏移（不变量 3）；controls 缩放已关闭不会抢占
+      event.preventDefault()
       const { offset } = followRef.current
       const factor = WHEEL_DOLLY_BASE ** (
         (event.deltaY / WHEEL_DOLLY_NOTCH) * CAMERA_ZOOM_SPEED
@@ -391,5 +438,10 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       }
     }
     controlsNow.update()
+    /**
+     * 渲染前再次兜底，覆盖低于 change 事件阈值的小位移以及视口、裁剪面变化。
+     * 该保护不依赖鼠标事件，因此车辆跟随和剩余阻尼也不能把机位带入地面。
+     */
+    applyGroundConstraint(controlsNow)
   })
 }

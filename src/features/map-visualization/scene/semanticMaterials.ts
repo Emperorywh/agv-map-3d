@@ -155,13 +155,13 @@ export function createPulseMaterial(color: string): {
  * [uFadeEndPx, uFadeStartPx] 区间内平滑淡出 alpha——总览距离下 4291 个
  * 节点盘（投影 < 4px）渐隐、路网骨架回归可读，近景完全不受影响。
  * 纯 GPU 实现：不写实例缓冲，不破坏 NodesLayer 的静态上载不变量。
- * vertexColors（P2-8 同心圆台）：最终色 = 顶点色乘数（暗层 <1、发光层 >1
- * 借 ACES 过曝提亮）× 实例色，多层圆台的明暗与辉光由此随节点色相表达，
+ * vertexColors（实心圆台）：最终色 = 顶点色乘数（暗层 <1、发光层 >1
+ * 借 ACES 过曝提亮）× 实例色，圆台的明暗与辉光由此随节点色相表达，
  * 无需额外 Draw Call。
  * 场景等级门控（P0-5.4/5.1）：实例属性 aMinLevel（角色 → 最低可见场景等
  * 级）与共享 uniform uSceneLevel 比较，step 结果乘入淡出系数——总览隐藏
  * 普通节点、近景才显示纯导航控制点与单个库位，全程 GPU 侧完成。
- * depthWrite=true（P2-8）：立体圆台的层间与实例间遮挡由深度测试保证，与
+ * depthWrite=true：立体圆台的层间与实例间遮挡由深度测试保证，与
  * 绘制顺序无关；淡出中间态的深度残留仅出现在投影 ≤3.5px 的节点上，完全
  * 淡出（≤0.003）由 discard 兜底，不产生不可见深度遮挡。
  */
@@ -208,9 +208,13 @@ export function createNodeLodMaterial(options: {
         '#include <project_vertex>',
         [
           '#include <project_vertex>',
-          '// 投影直径(px) = 2r · f · H/2 / (−z_view)，f = projectionMatrix[1].y = 1/tan(fov/2)',
-          'float nodeDepth = max( -mvPosition.z, 0.0001 );',
-          'vNodeFadePx = 2.0 * uNodeRadiusM * projectionMatrix[1].y * uViewportHeightPx * 0.5 / nodeDepth;',
+          '/**',
+          ' * 密集节点的水平缩放来自实例矩阵，淡出必须使用实际显示半径。',
+          ' * 裁剪坐标 w 在正交投影中为 1，在透视投影中为视深，统一两种口径。',
+          ' */',
+          'float nodeScale = max( length( instanceMatrix[0].xyz ), length( instanceMatrix[2].xyz ) );',
+          'float nodeDepth = max( gl_Position.w, 0.0001 );',
+          'vNodeFadePx = 2.0 * uNodeRadiusM * nodeScale * projectionMatrix[1].y * uViewportHeightPx * 0.5 / nodeDepth;',
           '// 场景等级门控：实例最低可见等级 ≤ 当前等级才可见（P0-5.4/5.1）',
           'vRoleVisible = step( aMinLevel, uSceneLevel );',
         ].join('\n'),
@@ -236,7 +240,11 @@ export function createNodeLodMaterial(options: {
         ].join('\n'),
       )
   }
-  material.customProgramCacheKey = () => 'map-node-lod'
+  /**
+   * 实例缩放参与投影后使用独立程序标识，防止旧的固定半径着色器被缓存复用。
+   * 几何矩阵与淡出阈值始终使用同一份节点显示尺度。
+   */
+  material.customProgramCacheKey = () => 'map-node-lod-scaled-v1'
   material.userData.uniforms = uniforms
   return { material, uniforms }
 }

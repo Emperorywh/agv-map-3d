@@ -54,6 +54,11 @@ export type {
 export { MapVisualizationFeature } from './components/MapVisualizationFeature'
 export type { MapVisualizationFeatureProps } from './components/MapVisualizationFeature'
 export { DEFAULT_SHADOW_MAP_SIZE, GRID_Y } from './scene/mapAppearance'
+/**
+ * 公开地面图层的高度包络，让相机保护与地图几何共用同一高度来源。
+ * 外部无需穿过 Feature 边界读取道路、节点等内部外观常量。
+ */
+export { MAP_GROUND_TOP_Y } from './scene/mapAppearance'
 export { useMapVisualization } from './hooks/useMapVisualization'
 export type {
   MapView,

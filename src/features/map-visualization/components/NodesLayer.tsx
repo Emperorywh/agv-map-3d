@@ -6,15 +6,14 @@
  * 职责：以唯一一个 InstancedMesh 渲染地图全部节点站点（当前 4,291 个），
  *       实例矩阵、实例颜色与角色最低可见场景等级来自 buildMapGeometry 的
  *       NodeInstanceData 静态数据，上载一次后不再逐帧修改。几何为「暗色底
- *       座 → 状态色发光外环 → 暗色内台面 → 亮色中心圆盘」的多层同心圆台
- *       堆叠（P2-8：各层亮度经顶点色 × 实例颜色表达，发光层 >1 借 ACES 过
- *       曝提亮）；材质注入两路 GPU 显隐（P1-5）：投影尺寸淡出 + 场景等级
- *       门控（aMinLevel ≤ uSceneLevel 才可见，等级由 SceneDetailController
- *       共享写入）——总览隐藏普通节点与纯导航控制点、作业区显示工位与交叉
- *       节点、近景补齐单个库位标识。材质开启深度写入：圆台层间/实例间的
- *       遮挡由深度测试保证，与绘制顺序无关；淡出残留在投影 ≤3.5px 的尺寸
- *       内不可察。本组件仅把视口高度写入材质 uniform（低频真值，非实例缓
- *       冲写入）。
+ *       座 → 状态色实心柱身」的两层圆台（各层亮度经顶点色 × 实例颜色表达，
+ *       柱身顶面 >1 借 ACES 过曝提亮）；材质注入两路 GPU 显隐（P1-5）：
+ *       投影尺寸淡出 + 场景等级门控（aMinLevel ≤ uSceneLevel 才可见，等级由
+ *       SceneDetailController 共享写入）——总览隐藏普通节点与纯导航控制点、
+ *       作业区显示工位与交叉节点、近景补齐单个库位标识。材质开启深度写入：
+ *       圆台层间/实例间的遮挡由深度测试保证，与绘制顺序无关；淡出残留在
+ *       投影 ≤3.5px 的尺寸内不可察。本组件仅把视口高度写入材质 uniform
+ *       （低频真值，非实例缓冲写入）。
  * 边界：实例数据由 MapGeometry 拥有；本组件拥有圆台截面 geometry、材质与
  *       InstancedMesh 自身的实例属性缓冲，卸载或数据更换时全部显式释放。
  * 关键不变量：
@@ -26,7 +25,7 @@
  *    纯 GPU）；
  * 3. count=0 时同样成立（不创建实例缓冲歧义），地图空数据由上层校验拦截。
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { NodeInstanceData } from '../scene/buildMapGeometry'
@@ -46,11 +45,12 @@ export function NodesLayer({ data, sceneDetail }: NodesLayerProps) {
   )
   useEffect(() => () => disposeNodesMesh(nodes), [nodes])
 
-  // 视口高度 uniform：真实渲染循环随 resize/首帧写入；测试渲染器无循环时
-  // 保持初值 0（节点淡出为 0 尺寸 → discard，不影响任何实例断言）
-  const uniformsRef = useRef<NodeLodUniforms>(nodes.uniforms)
+  /**
+   * 直接更新当前节点资源的视口参数，地图重建后不会继续写入已释放的材质。
+   * 每帧只更新一个 uniform，密集节点的实例缩放仍保持静态。
+   */
   useFrame((state) => {
-    uniformsRef.current.uViewportHeightPx.value = state.size?.height ?? 0
+    nodes.uniforms.uViewportHeightPx.value = state.size?.height ?? 0
   })
 
   // dispose={null}：mesh 及其资源由本组件显式释放，禁止 R3F 二次释放
@@ -76,8 +76,8 @@ function createNodesMesh(
   data: NodeInstanceData,
   sceneLevelUniform: { value: number } | undefined,
 ): NodesResources {
-  // 多层同心圆台合并几何（P2-8）；实例颜色经 instanceColor 进着色器，
-  // 屏幕尺寸淡出与场景等级门控注入见 createNodeLodMaterial
+  // 实心圆台合并几何（暗色底座 + 状态色柱身）；实例颜色经 instanceColor
+  // 进着色器，屏幕尺寸淡出与场景等级门控注入见 createNodeLodMaterial
   const geometry = createNodeStackGeometry()
   const { material, uniforms } = createNodeLodMaterial({
     sceneLevelUniform,

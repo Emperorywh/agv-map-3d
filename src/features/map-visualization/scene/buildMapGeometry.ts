@@ -1,18 +1,15 @@
 /**
  * 物理路径去重、路径几何与节点实例静态数据（SPEC §2.2、§5.1；TASK-004；
- * 实体道路俯视表达：沥青路面 + 双侧路缘 + 黄色中心线 + 方向箭头）。
+ * 道路标线表达：黄色中心线 + 方向箭头，不绘制路面与道路边界）。
  *
  * 职责：
  * 1. dedupePhysicalPaths：把有向逻辑边按「正/反向几何归一后相同」的签名去重，
  *    生成物理路径集合（当前地图 9,265 条逻辑边 → 5,068 条物理路径），并保留
  *    逻辑边 → 物理路径的完整映射（方向、限速与拓扑语义仍留在逻辑边上）；
- * 2. buildMapGeometry：在世界坐标烘焙五份合批静态几何——
- *    a. pathsSurface：链式路面条带 + 断头端圆帽 + 路口补面圆盘；
- *    b. pathEdgeCores：浅色路缘压边条带（道路内部重叠段被空间索引裁掉，
- *       路口只保留联合外缘弧、断头端以半圆弧包边）；
- *    c. pathEdgeHalos：路缘下方较宽的混凝土路肩条带；
- *    d. pathCenterLines：沿每条物理路径连接两个节点的黄色连续中心实线；
- *    e. pathDirectionArrows：按逻辑边方向在各自起点 30% 弧长处绘制的箭头；
+ * 2. buildMapGeometry：在世界坐标烘焙两份合批静态几何——
+ *    a. pathCenterLines：沿每条物理路径连接两个节点的黄色连续中心实线；
+ *    b. pathDirectionArrows：按逻辑方向与局部空间避让绘制的自适应箭头，
+ *       逐顶点烘焙颜色——默认暖白，isBackEdge=true 的方向为红色；
  *    另生成全部节点的实例矩阵、颜色与「最低可见场景等级」（P0-5.4）。
  * 边界：输入必须来自 createMapModel 的只读 MapModel（已校验、有限坐标）；
  *       本模块不进 React、不做拓扑寻路；图层高度等外观常量来自 mapAppearance。
@@ -22,7 +19,7 @@
  * 2. BEZIER 固定采样 BEZIER_SAMPLE_SEGMENTS=24 段（全应用唯一离散化口径，
  *    与逻辑边物理长度共用 sampleCubicBezier）；
  * 3. 物理路径只绘制一条中心实线，但方向按逻辑边去重保留；同一几何上的
- *    正反向逻辑边分别在归一化路径的 30% 与 70% 处生成相反箭头；
+ *    正反向逻辑边优先在 30% 与 70% 处成对布局，空间不足时缩小或整组省略；
  * 4. 节点实例的 minLevels = ROLE_MIN_SCENE_LEVEL[visualRole]（角色缺失回退
  *    landmark=全可见），矩阵与颜色仍与 nodeList 顺序一致。
  */
@@ -36,26 +33,20 @@ import {
 import type { WorldTransform } from '@/shared/spatial'
 import { buildRoadNetwork, type RoadNetwork } from './roadTopology'
 import { ROLE_MIN_SCENE_LEVEL } from './sceneDetail'
+import { PathMarkingLayout, type PathArrowDirectionSpec, type PathArrowPlacement } from './pathMarkingLayout'
 import {
-  JUNCTION_PAD_SCALE,
-  JUNCTION_PAD_SEGMENTS,
   NODE_COLORS,
+  NODE_OUTER_RADIUS_M,
   NODE_Y,
   PATH_CENTER_LINE_WIDTH_M,
   PATH_CENTER_LINE_Y,
+  PATH_DIRECTION_ARROW_BACK_COLOR,
+  PATH_DIRECTION_ARROW_COLOR,
   PATH_DIRECTION_ARROW_HEAD_HALF_WIDTH_M,
   PATH_DIRECTION_ARROW_HEAD_LENGTH_M,
   PATH_DIRECTION_ARROW_LENGTH_M,
-  PATH_DIRECTION_ARROW_POSITION_RATIO,
   PATH_DIRECTION_ARROW_SHAFT_HALF_WIDTH_M,
   PATH_DIRECTION_ARROW_Y,
-  PATH_EDGE_HALO_WIDTH_M,
-  PATH_EDGE_HALO_Y,
-  PATH_EDGE_WIDTH_M,
-  PATH_EDGE_Y,
-  PATH_END_ARC_SEGMENTS,
-  PATH_SURFACE_WIDTH_M,
-  PATH_SURFACE_Y,
 } from './mapAppearance'
 
 /** 一条去重后的物理路径（几何与其覆盖的逻辑边集合） */
@@ -197,10 +188,13 @@ function sampleEdgePoints(edge: MapEdge): PlanePoint2[] {
   )
 }
 
-/** 节点实例静态数据：列主序平移矩阵、RGB 颜色与最低可见场景等级 */
+/**
+ * 节点实例静态数据：列主序矩阵、RGB 颜色与最低可见场景等级。
+ * 矩阵包含密集邻域的水平缩放，真实坐标及圆台高度保持原值。
+ */
 export interface NodeInstanceData {
   readonly count: number
-  /** 列主序 4×4 矩阵数组，长度 16×count；仅含平移（站点为正圆，无朝向） */
+  /** 列主序 4×4 矩阵数组，长度 16×count；平移与 x/z 等比缩放 */
   readonly matrices: Float32Array
   /** RGB 颜色数组，长度 3×count（instanceColor 直读） */
   readonly colors: Float32Array
@@ -210,15 +204,9 @@ export interface NodeInstanceData {
 
 /** 已构建的静态地图几何（GPU 资源由本对象拥有并释放） */
 export interface MapGeometry {
-  /** 路面条带（链式 + 断头端帽 + 路口补面，三角形合批，静态） */
-  readonly pathsSurface: THREE.BufferGeometry
-  /** 浅色路缘压边（含裁剪后的路口外缘弧与断头端弧，三角形合批，静态） */
-  readonly pathEdgeCores: THREE.BufferGeometry
-  /** 混凝土路肩基座条带（三角形合批，静态） */
-  readonly pathEdgeHalos: THREE.BufferGeometry
   /** 节点间黄色连续中心实线（三角形合批，静态） */
   readonly pathCenterLines: THREE.BufferGeometry
-  /** 各逻辑方向起点 30% 弧长处的黄色方向箭头（三角形合批，静态） */
+  /** 避让节点与邻近标记的暖白方向箭头，附带屏幕尺寸淡出属性（静态合批） */
   readonly pathDirectionArrows: THREE.BufferGeometry
   /** 节点实例矩阵/颜色/场景等级（图层据此创建唯一 InstancedMesh） */
   readonly nodeInstances: NodeInstanceData
@@ -235,11 +223,9 @@ export interface MapGeometry {
  * 世界坐标由统一 WorldTransform 变换（原点为地图包围盒中心，已一次定型），
  * 图层高度由 mapAppearance 阶梯直接烘焙进顶点。
  *
- * 道路拓扑（P0-5.3）：链式条带替代逐物理路径条带——二度节点处道路连续、
- * 无端帽叠片；断头端（一度节点）补半径 = 半路宽的圆帽；交叉节点（度数 ≥3）
- * 各补一个半径 = JUNCTION_PAD_SCALE × 半路宽的圆盘补面，链端沿末段延伸
- * 半路宽没入补面。路缘候选轮廓经过道路联合覆盖裁剪：路口只留下外缘弧，
- * 断头端以半圆弧包边，形成连续且不在交叉区域内部重复的实体道路边界。
+ * 道路只以标线表达：黄色中心实线沿物理路径连接节点，方向箭头表达逻辑边
+ * 方向；不绘制路面、路缘与路口补面。道路网络仍按展示级拓扑构建，供诊断
+ * 与测试使用。
  */
 export function buildMapGeometry(
   mapModel: MapModel,
@@ -247,34 +233,30 @@ export function buildMapGeometry(
 ): MapGeometry {
   const physical = dedupePhysicalPaths(mapModel)
   const network = buildRoadNetwork(mapModel, physical)
-  const nodeInstances = buildNodeInstances(mapModel, worldTransform)
+  /**
+   * 节点实例与箭头布局共用同一份显示半径，防止标记避让口径与可见轮廓脱节。
+   * 空间索引仅在此次构建内存活，结果作为静态矩阵和顶点属性上载。
+   */
+  const markingLayout = new PathMarkingLayout(mapModel, worldTransform)
+  const nodeInstances = buildNodeInstances(mapModel, worldTransform, markingLayout)
 
-  const surface = new StripAccumulator()
-  const edgeCores = new StripAccumulator()
-  const edgeHalos = new StripAccumulator()
   const centerLines = new StripAccumulator()
-  const directionArrows = new StripAccumulator()
+  const directionArrows = new ArrowAccumulator()
 
-  buildRoadSurfaceAndEdges(network, worldTransform, surface, edgeCores, edgeHalos)
   buildPathMarkings(
     mapModel,
     physical,
     worldTransform,
     centerLines,
     directionArrows,
+    markingLayout,
   )
 
-  const pathsSurface = surface.toGeometry()
-  const pathEdgeCores = edgeCores.toGeometry()
-  const pathEdgeHalos = edgeHalos.toGeometry()
   const pathCenterLines = centerLines.toGeometry()
   const pathDirectionArrows = directionArrows.toGeometry()
 
   let disposed = false
   return {
-    pathsSurface,
-    pathEdgeCores,
-    pathEdgeHalos,
     pathCenterLines,
     pathDirectionArrows,
     nodeInstances,
@@ -286,9 +268,6 @@ export function buildMapGeometry(
         return
       }
       disposed = true
-      pathsSurface.dispose()
-      pathEdgeCores.dispose()
-      pathEdgeHalos.dispose()
       pathCenterLines.dispose()
       pathDirectionArrows.dispose()
     },
@@ -318,389 +297,59 @@ class StripAccumulator {
   }
 }
 
-/** 链级几何参数（路面、路肩与路缘共用一份世界坐标折线和路口判定） */
-interface ChainBuildContext {
-  readonly halfWidth: number
-  readonly junctionPadRadius: number
-}
-
 /**
- * 路面与两侧边界：逐链构建路面条带（端部延伸没入路口补面/断头端圆帽）、
- * 路肩基座与浅色路缘（路口端截除至候选圆环、断头端接半圆弧），最后补路口
- * 圆盘，并按道路联合覆盖关系裁出真正可见的路口外缘弧。
+ * 箭头附带中心与半长方向向量，供 GPU 按实际屏幕投影长度淡出。
+ * 每枚箭头的顶点重复相同属性，缩放相机时无需重新生成几何。
+ * 顶点色承载箭头颜色（默认暖白 / 反向边红色），同一材质保持单批次绘制。
  */
-function buildRoadSurfaceAndEdges(
-  network: RoadNetwork,
-  worldTransform: WorldTransform,
-  surface: StripAccumulator,
-  edgeCores: StripAccumulator,
-  edgeHalos: StripAccumulator,
-): void {
-  const ctx: ChainBuildContext = {
-    halfWidth: PATH_SURFACE_WIDTH_M / 2,
-    junctionPadRadius: (PATH_SURFACE_WIDTH_M / 2) * JUNCTION_PAD_SCALE,
-  }
-  const junctionNodeIds = new Set(network.junctions.map((j) => j.nodeId))
-  /**
-   * 所有道路中心线先进入空间索引。后续路缘候选段只要落入另一段路面或路口
-   * 补面内部就会被裁掉，最终显示的是道路联合区域的可见外缘，而不是每条
-   * 逻辑支路各自闭合的轮廓。
-   */
-  const worldChains = network.chains.map((chain) => ({
-    chain,
-    points: chain.points.map((p) => worldTransform.toWorldXZ(p.x, p.y)),
-  }))
-  const coverage = createRoadSurfaceCoverage(
-    network,
-    worldTransform,
-    worldChains.map(({ points }) => points),
-    ctx,
-  )
+class ArrowAccumulator extends StripAccumulator {
+  readonly centers: number[] = []
+  readonly spans: number[] = []
+  readonly partnerCenters: number[] = []
+  readonly partnerSpans: number[] = []
+  readonly colors: number[] = []
 
-  for (const { chain, points: worldPoints } of worldChains) {
-    const junctionStart = junctionNodeIds.has(chain.startNodeId)
-    const junctionEnd = junctionNodeIds.has(chain.endNodeId)
-
-    // 路面：交叉端沿末段延伸半路宽，平切口没入路口补面
-    const stripPoints = extendPolylineEnds(
-      worldPoints,
-      junctionStart ? ctx.halfWidth : 0,
-      junctionEnd ? ctx.halfWidth : 0,
-    )
-    appendPolylineStrip(
-      surface,
-      stripPoints,
-      ctx.halfWidth,
-      PATH_SURFACE_Y,
-      { capStart: !junctionStart, capEnd: !junctionEnd },
-    )
-
-    appendChainEdges(
-      ctx,
-      worldPoints,
-      junctionStart,
-      junctionEnd,
-      coverage,
-      edgeCores,
-      edgeHalos,
-    )
-  }
-
-  /**
-   * 路口补面仍完整保留；圆形路缘先作为候选轮廓，与相邻道路重叠的弧段会被
-   * coverage 裁掉，只留下 T 字口、十字口外侧的转角弧，避免节点处出现大量
-   * 相互套叠的封闭圆圈。
-   */
-  for (const junction of network.junctions) {
-    const world = worldTransform.toWorldXZ(junction.x, junction.y)
-    appendDisc(surface, world.x, world.z, ctx.junctionPadRadius, PATH_SURFACE_Y, JUNCTION_PAD_SEGMENTS)
-    const ring: WorldXZ[] = []
-    for (let k = 0; k <= JUNCTION_PAD_SEGMENTS; k += 1) {
-      const angle = (k / JUNCTION_PAD_SEGMENTS) * Math.PI * 2
-      ring.push({
-        x: world.x + Math.cos(angle) * ctx.junctionPadRadius,
-        z: world.z + Math.sin(angle) * ctx.junctionPadRadius,
-      })
-    }
-    appendVisibleEdgePolyline(ring, coverage, edgeCores, edgeHalos)
-  }
-}
-
-/**
- * 一条链两侧的实体路缘：先按路口端截除（截距使边界终点恰好落在路口圆环
- * 上），再用与路面同源的斜接骨架展开 ±halfWidth 得到左右边界折线，分别
- * 按浅色压边/路肩半宽生成条带；断头端以半圆弧连接左右边界端点、包住圆帽。
- */
-function appendChainEdges(
-  ctx: ChainBuildContext,
-  worldPoints: readonly WorldXZ[],
-  junctionStart: boolean,
-  junctionEnd: boolean,
-  coverage: RoadSurfaceCoverage,
-  edgeCores: StripAccumulator,
-  edgeHalos: StripAccumulator,
-): void {
-  // 截距 = √(环半径² − 半路宽²)：边界端点与环上点的距离恰为环半径
-  const trimAt = (isJunction: boolean): number => {
-    if (!isJunction) {
-      return 0
-    }
-    const r = ctx.junctionPadRadius
-    return Math.sqrt(Math.max(r * r - ctx.halfWidth * ctx.halfWidth, 0))
-  }
-  const trimmed = trimPolylineByArc(worldPoints, trimAt(junctionStart), trimAt(junctionEnd))
-  if (trimmed === null || trimmed.length < 2) {
-    return
-  }
-
-  const { joints, jointOffsetX, jointOffsetZ } = stripJointFrames(trimmed, ctx.halfWidth)
-  if (joints.length < 2) {
-    return
-  }
-  const left: WorldXZ[] = []
-  const right: WorldXZ[] = []
-  for (let j = 0; j < joints.length; j += 1) {
-    left.push({ x: joints[j].x + jointOffsetX[j], z: joints[j].z + jointOffsetZ[j] })
-    right.push({ x: joints[j].x - jointOffsetX[j], z: joints[j].z - jointOffsetZ[j] })
-  }
-
-  for (const boundary of [left, right]) {
-    appendVisibleEdgePolyline(boundary, coverage, edgeCores, edgeHalos)
-  }
-
-  // 断头端半圆弧：绕链端点从左边界转到右边界（经过向外方向），包住圆帽
-  if (!junctionStart) {
-    const outward = outwardDirection(trimmed, false)
-    if (outward !== null) {
-      const n = firstSegmentLeftNormal(trimmed)
-      appendVisibleEndArc(joints[0], n, outward, ctx.halfWidth, coverage, edgeCores, edgeHalos)
-    }
-  }
-  if (!junctionEnd) {
-    const outward = outwardDirection(trimmed, true)
-    if (outward !== null) {
-      const n = lastSegmentLeftNormal(trimmed)
-      const end = joints[joints.length - 1]
-      appendVisibleEndArc(end, n, outward, ctx.halfWidth, coverage, edgeCores, edgeHalos)
-    }
+  override toGeometry(): THREE.BufferGeometry {
+    const geometry = super.toGeometry()
+    geometry.setAttribute('aArrowCenter', new THREE.Float32BufferAttribute(this.centers, 3))
+    geometry.setAttribute('aArrowSpan', new THREE.Float32BufferAttribute(this.spans, 3))
+    geometry.setAttribute('aArrowPartnerCenter', new THREE.Float32BufferAttribute(this.partnerCenters, 3))
+    geometry.setAttribute('aArrowPartnerSpan', new THREE.Float32BufferAttribute(this.partnerSpans, 3))
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3))
+    return geometry
   }
 }
 
 const NO_CAPS: PolylineStripCaps = { capStart: false, capEnd: false }
 
-/** 首段左法线（单位）：断头端起点弧的基准方向 */
-function firstSegmentLeftNormal(points: readonly WorldXZ[]): WorldXZ {
-  const a = points[0]
-  for (let i = 1; i < points.length; i += 1) {
-    const dx = points[i].x - a.x
-    const dz = points[i].z - a.z
-    const length = Math.hypot(dx, dz)
-    if (length > 0) {
-      return { x: -dz / length, z: dx / length }
-    }
-  }
-  return { x: 0, z: 0 }
-}
-
-/** 末段左法线（单位）：断头端终点弧的基准方向 */
-function lastSegmentLeftNormal(points: readonly WorldXZ[]): WorldXZ {
-  const b = points[points.length - 1]
-  for (let i = points.length - 2; i >= 0; i -= 1) {
-    const dx = b.x - points[i].x
-    const dz = b.z - points[i].z
-    const length = Math.hypot(dx, dz)
-    if (length > 0) {
-      return { x: -dz / length, z: dx / length }
-    }
-  }
-  return { x: 0, z: 0 }
-}
-
-/**
- * 断头端半圆同样先生成中心轮廓，再经过道路覆盖裁剪；当两个断头端在空间上
- * 靠得很近时，位于联合路面内部的半圆不会重复显现。
- */
-function appendVisibleEndArc(
-  center: WorldXZ,
-  normal: WorldXZ,
-  outward: WorldXZ,
-  radius: number,
-  coverage: RoadSurfaceCoverage,
-  edgeCores: StripAccumulator,
-  edgeHalos: StripAccumulator,
-): void {
-  const segments = PATH_END_ARC_SEGMENTS
-  const arc: WorldXZ[] = []
-  for (let k = 0; k <= segments; k += 1) {
-    const theta = (k / segments) * Math.PI
-    const cos = Math.cos(theta)
-    const sin = Math.sin(theta)
-    const vx = normal.x * cos + outward.x * sin
-    const vz = normal.z * cos + outward.z * sin
-    arc.push({ x: center.x + vx * radius, z: center.z + vz * radius })
-  }
-  appendVisibleEdgePolyline(arc, coverage, edgeCores, edgeHalos)
-}
-
-/** 道路联合区域查询：用于从候选路缘中剔除落在内部的片段 */
-interface RoadSurfaceCoverage {
-  isCovered(x: number, z: number): boolean
-}
-
-interface CoverageSegment {
-  readonly a: WorldXZ
-  readonly b: WorldXZ
-}
-
-/**
- * 建立道路中心段与路口圆盘的均匀网格索引。候选边位于自身道路外缘，查询半径
- * 会向内收一个路缘宽度，因此不会误删自身；被另一条道路覆盖时才判定为内部。
- */
-function createRoadSurfaceCoverage(
-  network: RoadNetwork,
-  worldTransform: WorldTransform,
-  chains: readonly (readonly WorldXZ[])[],
-  ctx: ChainBuildContext,
-): RoadSurfaceCoverage {
-  const inset = Math.max(PATH_EDGE_WIDTH_M * 0.9, 0.04)
-  const roadRadius = Math.max(ctx.halfWidth - inset, 0)
-  const junctionRadius = Math.max(ctx.junctionPadRadius - inset, 0)
-  const cellSize = Math.max(ctx.junctionPadRadius, 0.25)
-  const segmentBuckets = new Map<string, CoverageSegment[]>()
-  const junctionBuckets = new Map<string, WorldXZ[]>()
-  const cellKey = (x: number, z: number): string =>
-    `${Math.floor(x / cellSize)},${Math.floor(z / cellSize)}`
-  const addSegment = (segment: CoverageSegment): void => {
-    const minX = Math.floor((Math.min(segment.a.x, segment.b.x) - roadRadius) / cellSize)
-    const maxX = Math.floor((Math.max(segment.a.x, segment.b.x) + roadRadius) / cellSize)
-    const minZ = Math.floor((Math.min(segment.a.z, segment.b.z) - roadRadius) / cellSize)
-    const maxZ = Math.floor((Math.max(segment.a.z, segment.b.z) + roadRadius) / cellSize)
-    for (let gx = minX; gx <= maxX; gx += 1) {
-      for (let gz = minZ; gz <= maxZ; gz += 1) {
-        const key = `${gx},${gz}`
-        const bucket = segmentBuckets.get(key)
-        if (bucket === undefined) {
-          segmentBuckets.set(key, [segment])
-        } else {
-          bucket.push(segment)
-        }
-      }
-    }
-  }
-  for (const points of chains) {
-    for (let i = 1; i < points.length; i += 1) {
-      addSegment({ a: points[i - 1], b: points[i] })
-    }
-  }
-  for (const junction of network.junctions) {
-    const point = worldTransform.toWorldXZ(junction.x, junction.y)
-    const minX = Math.floor((point.x - junctionRadius) / cellSize)
-    const maxX = Math.floor((point.x + junctionRadius) / cellSize)
-    const minZ = Math.floor((point.z - junctionRadius) / cellSize)
-    const maxZ = Math.floor((point.z + junctionRadius) / cellSize)
-    for (let gx = minX; gx <= maxX; gx += 1) {
-      for (let gz = minZ; gz <= maxZ; gz += 1) {
-        const key = `${gx},${gz}`
-        const bucket = junctionBuckets.get(key)
-        if (bucket === undefined) {
-          junctionBuckets.set(key, [point])
-        } else {
-          bucket.push(point)
-        }
-      }
-    }
-  }
-  const roadRadiusSq = roadRadius * roadRadius
-  const junctionRadiusSq = junctionRadius * junctionRadius
-  return {
-    isCovered(x: number, z: number): boolean {
-      const key = cellKey(x, z)
-      for (const segment of segmentBuckets.get(key) ?? []) {
-        if (pointSegmentDistanceSq(x, z, segment.a, segment.b) < roadRadiusSq) {
-          return true
-        }
-      }
-      for (const junction of junctionBuckets.get(key) ?? []) {
-        const dx = x - junction.x
-        const dz = z - junction.z
-        if (dx * dx + dz * dz < junctionRadiusSq) {
-          return true
-        }
-      }
-      return false
-    },
-  }
-}
-
-/**
- * 点到线段的平方距离；使用平方口径避免路缘裁剪的高频查询反复开平方。
- */
-function pointSegmentDistanceSq(
-  x: number,
-  z: number,
-  a: WorldXZ,
-  b: WorldXZ,
-): number {
-  const dx = b.x - a.x
-  const dz = b.z - a.z
-  const lengthSq = dx * dx + dz * dz
-  if (lengthSq <= 1e-12) {
-    return (x - a.x) ** 2 + (z - a.z) ** 2
-  }
-  const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / lengthSq))
-  const px = a.x + dx * t
-  const pz = a.z + dz * t
-  return (x - px) ** 2 + (z - pz) ** 2
-}
-
-/**
- * 把候选路缘按约 0.16m 的步长切片，只合批未落入道路内部的连续片段。浅色
- * 压边与路肩复用同一批可见片段，保证两层轮廓完全贴合且没有内部交叉线。
- */
-function appendVisibleEdgePolyline(
-  points: readonly WorldXZ[],
-  coverage: RoadSurfaceCoverage,
-  edgeCores: StripAccumulator,
-  edgeHalos: StripAccumulator,
-): void {
-  const sampleStepM = 0.16
-  let run: WorldXZ[] = []
-  const flush = (): void => {
-    if (run.length >= 2) {
-      appendPolylineStrip(edgeCores, run, PATH_EDGE_WIDTH_M / 2, PATH_EDGE_Y, NO_CAPS)
-      appendPolylineStrip(edgeHalos, run, PATH_EDGE_HALO_WIDTH_M / 2, PATH_EDGE_HALO_Y, NO_CAPS)
-    }
-    run = []
-  }
-  for (let i = 1; i < points.length; i += 1) {
-    const a = points[i - 1]
-    const b = points[i]
-    const length = Math.hypot(b.x - a.x, b.z - a.z)
-    const slices = Math.max(1, Math.ceil(length / sampleStepM))
-    for (let slice = 0; slice < slices; slice += 1) {
-      const t0 = slice / slices
-      const t1 = (slice + 1) / slices
-      const p0 = { x: a.x + (b.x - a.x) * t0, z: a.z + (b.z - a.z) * t0 }
-      const p1 = { x: a.x + (b.x - a.x) * t1, z: a.z + (b.z - a.z) * t1 }
-      const covered = coverage.isCovered((p0.x + p1.x) / 2, (p0.z + p1.z) / 2)
-      if (covered) {
-        flush()
-      } else {
-        if (run.length === 0) {
-          run.push(p0)
-        }
-        run.push(p1)
-      }
-    }
-  }
-  flush()
-}
-
 /** 归一化物理路径上的逻辑行进方向：1 为 points 首端到末端，-1 为反向 */
 type PhysicalPathDirection = 1 | -1
 
-interface PolylineDirectionSample {
-  readonly point: WorldXZ
-  /** 按物理路径归一化顺序计算的单位切线 */
-  readonly tangent: WorldXZ
-}
-
 /**
  * 构建真实道路标线：中心实线按物理路径去重绘制，保证两个节点之间只有一条
- * 连续黄色连接；箭头则恢复同一物理路径承载的全部不同逻辑方向，使双向边在
- * 各自起点量起的 30% 弧长处得到两个相反标记。
+ * 连续黄色连接；箭头优先处理空间受限的短路径，并按局部空间调整尺寸与位置。
+ * 两个逻辑方向成组保留或省略，不能把双向道路显示成单向。
  */
 function buildPathMarkings(
   mapModel: MapModel,
   physical: PhysicalPathIndex,
   worldTransform: WorldTransform,
   centerLines: StripAccumulator,
-  directionArrows: StripAccumulator,
+  directionArrows: ArrowAccumulator,
+  markingLayout: PathMarkingLayout,
 ): void {
-  for (const path of physical.physicalPaths) {
-    const worldPoints = path.points.map((point) =>
+  const paths = physical.physicalPaths.map((path) => {
+    const points = path.points.map((point) =>
       worldTransform.toWorldXZ(point.x, point.y),
     )
+    let length = 0
+    for (let i = 1; i < points.length; i += 1) {
+      length += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z)
+    }
+    return { path, points, length }
+  }).sort((a, b) => a.length - b.length || a.path.index - b.path.index)
+
+  for (const { path, points: worldPoints } of paths) {
 
     /**
      * 中心线端点不做圆帽外扩，严格停在两个节点中心；节点图层位于其上方，
@@ -714,38 +363,38 @@ function buildPathMarkings(
       NO_CAPS,
     )
 
-    for (const direction of collectPhysicalPathDirections(mapModel, path)) {
-      const ratio = direction === 1
-        ? PATH_DIRECTION_ARROW_POSITION_RATIO
-        : 1 - PATH_DIRECTION_ARROW_POSITION_RATIO
-      const sample = samplePolylineDirection(worldPoints, ratio)
-      if (sample === null) {
-        continue
-      }
+    const placements = markingLayout.placeArrows(
+      worldPoints,
+      collectPhysicalPathDirections(mapModel, path),
+    )
+    for (let i = 0; i < placements.length; i += 1) {
+      const placement = placements[i]
       emitDirectionArrow(
         directionArrows,
-        sample.point,
-        {
-          x: sample.tangent.x * direction,
-          z: sample.tangent.z * direction,
-        },
+        placement.center,
+        placement.forward,
+        placement.scale,
+        placements[1 - i] ?? placement,
+        placement.backEdge,
       )
     }
   }
 }
 
 /**
- * 从物理路径覆盖的逻辑边恢复方向集合。几何归一化可能把代表边反转，因此
- * 不能依赖 isBackEdge；改用逻辑边起点与物理路径首点的坐标关系判定。重复的
- * 同向边只保留一个方向标记，避免箭头在完全相同的位置叠加。
+ * 从物理路径覆盖的逻辑边恢复方向集合及其颜色语义。几何归一化可能把代表边
+ * 反转，因此朝向不能依赖 isBackEdge，改用逻辑边起点与物理路径首点的坐标
+ * 关系判定；isBackEdge 只用于把该方向的箭头染成红色（任一覆盖边为反向边
+ * 即视为反向方向）。重复的同向边只保留一个方向标记，避免箭头在完全相同
+ * 的位置叠加。
  */
 function collectPhysicalPathDirections(
   mapModel: MapModel,
   path: PhysicalPath,
-): readonly PhysicalPathDirection[] {
+): readonly PathArrowDirectionSpec[] {
   const CoordEpsilon = 1e-6
   const first = path.points[0]
-  const directions = new Set<PhysicalPathDirection>()
+  const backEdgeByDirection = new Map<PhysicalPathDirection, boolean>()
   for (const edgeId of path.logicalEdgeIds) {
     const edge = mapModel.edges.get(edgeId)
     if (edge === undefined) {
@@ -754,55 +403,13 @@ function collectPhysicalPathDirections(
     const startsAtFirst =
       Math.abs(edge.sx - first.x) < CoordEpsilon &&
       Math.abs(edge.sy - first.y) < CoordEpsilon
-    directions.add(startsAtFirst ? 1 : -1)
-  }
-  return [...directions]
-}
-
-/**
- * 按真实折线弧长采样位置与切线。贝塞尔路径已经按统一的 24 段离散，因此
- * 这里的 30% 是可见道路长度的 30%，不会因控制点分布不均而偏向曲线某一端。
- */
-function samplePolylineDirection(
-  points: readonly WorldXZ[],
-  ratio: number,
-): PolylineDirectionSample | null {
-  if (points.length < 2) {
-    return null
-  }
-  const cumulative: number[] = [0]
-  for (let index = 1; index < points.length; index += 1) {
-    cumulative.push(
-      cumulative[index - 1] +
-        Math.hypot(
-          points[index].x - points[index - 1].x,
-          points[index].z - points[index - 1].z,
-        ),
+    const direction: PhysicalPathDirection = startsAtFirst ? 1 : -1
+    backEdgeByDirection.set(
+      direction,
+      (backEdgeByDirection.get(direction) ?? false) || edge.isBackEdge,
     )
   }
-  const total = cumulative[cumulative.length - 1]
-  if (total <= 1e-6) {
-    return null
-  }
-  const targetArc = total * Math.min(Math.max(ratio, 0), 1)
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const segmentLength = cumulative[index + 1] - cumulative[index]
-    if (segmentLength <= 1e-6 || targetArc > cumulative[index + 1]) {
-      continue
-    }
-    const t = (targetArc - cumulative[index]) / segmentLength
-    return {
-      point: {
-        x: points[index].x + (points[index + 1].x - points[index].x) * t,
-        z: points[index].z + (points[index + 1].z - points[index].z) * t,
-      },
-      tangent: {
-        x: (points[index + 1].x - points[index].x) / segmentLength,
-        z: (points[index + 1].z - points[index].z) / segmentLength,
-      },
-    }
-  }
-  return null
+  return [...backEdgeByDirection].map(([direction, backEdge]) => ({ direction, backEdge }))
 }
 
 /**
@@ -811,15 +418,27 @@ function samplePolylineDirection(
  * 轮廓在箭杆与箭头交界处是凹多边形，必须分别三角化矩形箭杆和三角箭头；
  * 禁止使用三角扇，否则扇面会跨过凹角并把单向箭头错误填充成对称菱形。
  */
+const DEFAULT_ARROW_RGB = new THREE.Color(PATH_DIRECTION_ARROW_COLOR)
+const BACK_ARROW_RGB = new THREE.Color(PATH_DIRECTION_ARROW_BACK_COLOR)
+
 function emitDirectionArrow(
-  sink: StripAccumulator,
+  sink: ArrowAccumulator,
   center: WorldXZ,
   forward: WorldXZ,
+  scale: number,
+  partner: PathArrowPlacement,
+  backEdge: boolean,
 ): void {
-  const halfLength = PATH_DIRECTION_ARROW_LENGTH_M / 2
-  const shaft = PATH_DIRECTION_ARROW_SHAFT_HALF_WIDTH_M
-  const head = PATH_DIRECTION_ARROW_HEAD_HALF_WIDTH_M
-  const headStart = halfLength - PATH_DIRECTION_ARROW_HEAD_LENGTH_M
+  /** 顶点色在构建期烘焙：默认暖白，反向边（isBackEdge=true）红色警示 */
+  const arrowRgb = backEdge ? BACK_ARROW_RGB : DEFAULT_ARROW_RGB
+  /**
+   * 长度、箭杆与箭头宽度同步缩放，短边不会出现宽度不变的胖箭头。
+   * 中心与半长向量写入同批顶点属性，供远景细节淡出使用。
+   */
+  const halfLength = PATH_DIRECTION_ARROW_LENGTH_M * scale / 2
+  const shaft = PATH_DIRECTION_ARROW_SHAFT_HALF_WIDTH_M * scale
+  const head = PATH_DIRECTION_ARROW_HEAD_HALF_WIDTH_M * scale
+  const headStart = halfLength - PATH_DIRECTION_ARROW_HEAD_LENGTH_M * scale
   const outline: readonly (readonly [number, number])[] = [
     [-shaft, -halfLength],
     [shaft, -halfLength],
@@ -833,6 +452,15 @@ function emitDirectionArrow(
   const lateralZ = -forward.x
   const base = sink.positions.length / 3
   for (const [lateral, longitudinal] of outline) {
+    sink.centers.push(center.x, PATH_DIRECTION_ARROW_Y, center.z)
+    sink.spans.push(forward.x * halfLength, 0, forward.z * halfLength)
+    sink.colors.push(arrowRgb.r, arrowRgb.g, arrowRgb.b)
+    /**
+     * 双向箭头同时保存对方的投影参考，两枚使用相同的最小投影长度淡出。
+     * 单向路径以自身为参考，避免在斜视或远近变化时把双向边误显成单向。
+     */
+    sink.partnerCenters.push(partner.center.x, PATH_DIRECTION_ARROW_Y, partner.center.z)
+    sink.partnerSpans.push(partner.forward.x * halfLength, 0, partner.forward.z * halfLength)
     sink.positions.push(
       center.x + lateralX * lateral + forward.x * longitudinal,
       PATH_DIRECTION_ARROW_Y,
@@ -850,151 +478,6 @@ function emitDirectionArrow(
   )
 }
 
-/**
- * 沿首末段方向把折线两端各延伸指定长度（米）：返回新数组，原数组不变。
- * 延伸点与相邻段共线，条带在该端只是变长；首末段退化（零长度）时不延伸。
- */
-function extendPolylineEnds(
-  worldPoints: readonly WorldXZ[],
-  extendStartM: number,
-  extendEndM: number,
-): readonly WorldXZ[] {
-  if (extendStartM === 0 && extendEndM === 0) {
-    return worldPoints
-  }
-  const points = [...worldPoints]
-  if (extendStartM > 0) {
-    const first = outwardDirection(points, false)
-    if (first !== null) {
-      points[0] = {
-        x: points[0].x - first.x * extendStartM,
-        z: points[0].z - first.z * extendStartM,
-      }
-    }
-  }
-  if (extendEndM > 0) {
-    const last = outwardDirection(points, true)
-    if (last !== null) {
-      points[points.length - 1] = {
-        x: points[points.length - 1].x + last.x * extendEndM,
-        z: points[points.length - 1].z + last.z * extendEndM,
-      }
-    }
-  }
-  return points
-}
-
-/**
- * 折线端部的向外延伸方向：fromEnd=false 取首个与端点不重合的点指向链内
- * 的方向；fromEnd=true 取末端的对应方向。全部点与端点重合时返回 null。
- */
-function outwardDirection(
-  points: readonly WorldXZ[],
-  fromEnd: boolean,
-): WorldXZ | null {
-  const n = points.length
-  if (n < 2) {
-    return null
-  }
-  if (!fromEnd) {
-    const p0 = points[0]
-    for (let i = 1; i < n; i += 1) {
-      const dx = points[i].x - p0.x
-      const dz = points[i].z - p0.z
-      const length = Math.hypot(dx, dz)
-      if (length > 0) {
-        return { x: dx / length, z: dz / length }
-      }
-    }
-    return null
-  }
-  const pn = points[n - 1]
-  for (let i = n - 2; i >= 0; i -= 1) {
-    const dx = pn.x - points[i].x
-    const dz = pn.z - points[i].z
-    const length = Math.hypot(dx, dz)
-    if (length > 0) {
-      return { x: dx / length, z: dz / length }
-    }
-  }
-  return null
-}
-
-/**
- * 按弧长截除折线两端：返回 [from, total − end] 弧长窗口内的顶点序列
- * （窗口端点为插值点）；窗口退化（长度 < 1e-4）时返回 null。
- */
-function trimPolylineByArc(
-  points: readonly WorldXZ[],
-  trimStartM: number,
-  trimEndM: number,
-): WorldXZ[] | null {
-  const cumulative: number[] = [0]
-  for (let i = 1; i < points.length; i += 1) {
-    cumulative.push(
-      cumulative[i - 1] +
-        Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z),
-    )
-  }
-  const total = cumulative[cumulative.length - 1]
-  const from = Math.min(Math.max(trimStartM, 0), total)
-  const to = Math.min(Math.max(total - trimEndM, from), total)
-  if (to - from < 1e-4) {
-    return null
-  }
-  const result: WorldXZ[] = [pointAtArc(points, cumulative, from)]
-  for (let i = 1; i < points.length - 1; i += 1) {
-    if (cumulative[i] > from && cumulative[i] < to) {
-      result.push(points[i])
-    }
-  }
-  result.push(pointAtArc(points, cumulative, to))
-  return result
-}
-
-/** 弧长处的插值点（cumulative 与 points 同长；超出总长时取末点） */
-function pointAtArc(
-  points: readonly WorldXZ[],
-  cumulative: readonly number[],
-  arc: number,
-): WorldXZ {
-  for (let i = 0; i < cumulative.length - 1; i += 1) {
-    const segLength = cumulative[i + 1] - cumulative[i]
-    if (arc <= cumulative[i + 1] && segLength > 0) {
-      const t = (arc - cumulative[i]) / segLength
-      return {
-        x: points[i].x + (points[i + 1].x - points[i].x) * t,
-        z: points[i].z + (points[i + 1].z - points[i].z) * t,
-      }
-    }
-  }
-  return points[points.length - 1]
-}
-
-/** 追加一个贴地圆盘（三角扇）：路口补面使用 */
-function appendDisc(
-  sink: StripAccumulator,
-  centerX: number,
-  centerZ: number,
-  radius: number,
-  y: number,
-  segments: number,
-): void {
-  const center = sink.positions.length / 3
-  sink.positions.push(centerX, y, centerZ)
-  for (let k = 0; k < segments; k += 1) {
-    const angle = (k / segments) * Math.PI * 2
-    sink.positions.push(
-      centerX + Math.cos(angle) * radius,
-      y,
-      centerZ + Math.sin(angle) * radius,
-    )
-  }
-  for (let k = 0; k < segments; k += 1) {
-    sink.indices.push(center, center + 1 + k, center + 1 + ((k + 1) % segments))
-  }
-}
-
 /** 条带端帽选项：起点/终点是否补半径 = 半路宽的圆片（盖住断头端） */
 interface PolylineStripCaps {
   readonly capStart: boolean
@@ -1010,8 +493,7 @@ interface StripJointFrames {
 
 /**
  * 计算折线条带的斜接骨架：关节展开方向取相邻段法线平均，并按 1/cos(半角)
- * 补偿斜接长度（钳制 3×halfWidth 防止近回折处的退化放大）。路面条带与
- * 路肩及路缘条带共用同一骨架，保证两层实体边界精确贴合路面边缘。
+ * 补偿斜接长度（钳制 3×halfWidth 防止近回折处的退化放大）。
  */
 function stripJointFrames(
   worldPoints: readonly WorldXZ[],
@@ -1142,6 +624,7 @@ function appendPolylineStrip(
 function buildNodeInstances(
   mapModel: MapModel,
   worldTransform: WorldTransform,
+  markingLayout: PathMarkingLayout,
 ): NodeInstanceData {
   const count = mapModel.nodeList.length
   const matrices = new Float32Array(count * 16)
@@ -1153,10 +636,15 @@ function buildNodeInstances(
     const node = mapModel.nodeList[i]
     const world = worldTransform.toWorldXZ(node.x, node.y)
     const m = i * 16
-    // 列主序单位矩阵，仅平移（节点是正圆站点，不使用可能为 null 的 angle）
-    matrices[m] = 1
+    /**
+     * 仅压缩密集节点的水平半径；高度与业务坐标保持原值。
+     * 实例矩阵是静态数据，包围球和拾取继续使用 Three.js 的实例变换。
+     */
+    const radius = markingLayout.nodes.get(node.id)?.radius ?? NODE_OUTER_RADIUS_M
+    const scale = radius / NODE_OUTER_RADIUS_M
+    matrices[m] = scale
     matrices[m + 5] = 1
-    matrices[m + 10] = 1
+    matrices[m + 10] = scale
     matrices[m + 12] = world.x
     matrices[m + 13] = NODE_Y
     matrices[m + 14] = world.z

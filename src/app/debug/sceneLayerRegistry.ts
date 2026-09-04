@@ -38,12 +38,6 @@ export interface DebugLayerSpec {
 
 /** 调试图层清单：与 map-visualization / fleet-monitoring 图层命名同步 */
 export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
-  { key: 'roadSurface', label: '路面', objectNames: ['map-path-surface'] },
-  {
-    key: 'roadEdges',
-    label: '道路路缘',
-    objectNames: ['map-path-edge-core', 'map-path-edge-halo'],
-  },
   /**
    * 黄色中心实线与箭头共用同一道路标线语义，调试时必须同步显隐，避免只剩
    * 箭头或只剩实线而误判几何构建结果。

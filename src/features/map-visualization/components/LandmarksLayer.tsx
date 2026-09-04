@@ -72,6 +72,7 @@ import {
   NAME_QUAD_Y,
   NODE_COLORS,
   PARK_GLYPH_HEIGHT_M,
+  PARK_GLYPH_OFFSET_Z_M,
   PARK_SLAB_HALO_LIFT_M,
   PARK_SLAB_HALO_OPACITY,
   PARK_SLAB_HEIGHT_M,
@@ -299,7 +300,7 @@ function createLandmarkResources(
       if (cell === undefined) {
         continue
       }
-      inputs.push({ x: anchor.x, z: anchor.z, cell, heightM: PARK_GLYPH_HEIGHT_M })
+      inputs.push({ x: anchor.x, z: anchor.z + PARK_GLYPH_OFFSET_Z_M, cell, heightM: PARK_GLYPH_HEIGHT_M })
     }
     if (inputs.length > 0) {
       const namesGeometry = buildNameQuadGeometry(inputs, NAME_QUAD_Y)

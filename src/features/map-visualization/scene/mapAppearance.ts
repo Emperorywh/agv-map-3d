@@ -7,9 +7,9 @@
  * 边界：只包含数值与颜色常量，不创建任何 Three.js 对象、不含业务语义推导；
  *       车辆与标签外观属 fleet-monitoring 的 fleetAppearance。
  * 关键不变量：
- * 1. 图层高度阶梯（GRID_Y → PATH_SURFACE_Y → PATH_EDGE_Y → NODE_Y →
- *    NAME_QUAD_Y）单调递增且间隔足够小（厘米级）：静态贴花靠微小高度差
- *    避免 z-fighting，在米制地图尺度下肉眼不可见；
+ * 1. 图层高度阶梯（GRID_Y → PATH_CENTER_LINE_Y → PATH_DIRECTION_ARROW_Y →
+ *    NODE_Y → NAME_QUAD_Y）单调递增且间隔足够小（厘米级）：静态贴花靠微小
+ *    高度差避免 z-fighting，在米制地图尺度下肉眼不可见；
  * 2. 颜色语言沿用原型参考：蓝绿 work 站点、青色 charge、紫色 park、灰色
  *    未知兜底（SPEC §2.1 默认表现）；
  * 3. 名称距离显隐（NEAR/FAR）为平滑过渡区间：近于 NEAR 全显、远于 FAR 全隐、
@@ -31,53 +31,17 @@ export const SCENE_FOG_DENSITY_PER_DIAGONAL = 0.25
 
 /** 图层高度阶梯（世界 y，单位米；见关键不变量 1） */
 export const GRID_Y = 0.02
-export const PATH_SURFACE_Y = 0.04
-export const PATH_EDGE_HALO_Y = 0.052
-export const PATH_EDGE_Y = 0.058
 export const PATH_CENTER_LINE_Y = 0.064
 export const PATH_DIRECTION_ARROW_Y = 0.068
 export const NODE_Y = 0.08
-/** 名称四边形：高于节点圆台顶（NODE_Y + NODE_TOP_M），文字不被节点遮挡 */
-export const NAME_QUAD_Y = 0.19
+/** 名称四边形：高于节点圆台顶（P2-2 停车 slab 抬升后节点顶 =
+ *  PARK_SLAB_HEIGHT_M + NODE_Y + NODE_TOP_M = 0.22），文字不被节点遮挡 */
+export const NAME_QUAD_Y = 0.24
 
-/* ==================== 物理路径（实体道路俯视表达） ====================
- * 路网按真实道路的层次表达：暗色沥青路面、两侧混凝土路肩与浅色路缘，
- * 中央黄色实线负责连接节点，叠加的箭头负责表达逻辑边方向。路口轮廓会裁掉
- * 落在相邻路面内的弧段，只留下道路联合区域真正可见的外缘。
+/* ==================== 物理路径（标线表达） ====================
+ * 道路只以标线表达：中央黄色实线负责连接节点，叠加的箭头负责表达逻辑边
+ * 方向；不绘制路面、路缘、路肩与路口补面。
  */
-/**
- * 路面条带宽度（米）：地图内相邻工位支路的中心距最小约 1.5m，路宽必须留出
- * 明确的暗缝，否则相邻 U 形支路会黏成蓝色线团。1.2m 仍宽于 0.7m 车体，
- * 同时保持「路 > 车 > 节点」的尺度关系。
- */
-export const PATH_SURFACE_WIDTH_M = 1.2
-/**
- * 路面色：带少量暖灰的沥青色，比背景稳定高一个明度台阶，又不会抢过
- * 黄色中心标线与节点状态色。
- */
-export const PATH_SURFACE_COLOR = '#292b2d'
-
-/**
- * 路缘顶部浅色压边：细线模拟实体路缘受光面，宽度保持克制，避免相邻支路
- * 的边界在密集库位区黏连。
- */
-export const PATH_EDGE_WIDTH_M = 0.055
-export const PATH_EDGE_COLOR = '#d7d2c3'
-export const PATH_EDGE_BOOST = 1
-/**
- * 路肩基座宽度、颜色与不透明度：较宽的中灰条带从沥青路面外侧托住浅色
- * 路缘，形成可辨识的实体高度层次；内部重叠边仍在几何构建阶段被裁掉。
- */
-export const PATH_EDGE_HALO_WIDTH_M = 0.18
-export const PATH_EDGE_HALO_COLOR = '#696b68'
-export const PATH_EDGE_HALO_OPACITY = 1
-
-/** 路口补面半径 = 半路宽 × 该系数：同半径圆环仅保留未被相邻路面覆盖的外弧 */
-export const JUNCTION_PAD_SCALE = 1.12
-/** 路口补面圆盘离散段数（候选圆形路缘与补面使用同一段数对齐） */
-export const JUNCTION_PAD_SEGMENTS = 24
-/** 断头端半圆包边弧的离散段数 */
-export const PATH_END_ARC_SEGMENTS = 10
 
 /**
  * 节点间黄色中心实线：每条去重后的物理路径各绘制一次，完整保留直线与
@@ -88,8 +52,8 @@ export const PATH_MARKING_COLOR = '#f2c94c'
 export const PATH_MARKING_BOOST = 1
 
 /**
- * 方向箭头位于每个逻辑方向起点量起的 30% 弧长处。双向逻辑边共享同一条
- * 物理路径时，会自然得到位于 30% 与 70% 的两个反向箭头，互不覆盖。
+ * 方向箭头优先位于每个逻辑方向起点量起的 30% 弧长处。
+ * 密集区域按可用弧长缩放并避让节点和已放置箭头，30% 只作为布局偏好。
  */
 export const PATH_DIRECTION_ARROW_POSITION_RATIO = 0.3
 export const PATH_DIRECTION_ARROW_LENGTH_M = 0.34
@@ -97,11 +61,28 @@ export const PATH_DIRECTION_ARROW_SHAFT_HALF_WIDTH_M = 0.04
 export const PATH_DIRECTION_ARROW_HEAD_HALF_WIDTH_M = 0.14
 export const PATH_DIRECTION_ARROW_HEAD_LENGTH_M = 0.17
 /**
+ * 标记之间保留实际世界间隙；箭头依次尝试较小尺寸，空间不足时整组省略。
+ * 双向标记必须成对保留，避免只剩一枚箭头而误导通行方向。
+ */
+export const PATH_MARKING_CLEARANCE_M = 0.035
+export const PATH_DIRECTION_ARROW_SCALES = [1, 0.8, 0.6, 0.45, 0.3, 0.2] as const
+/**
+ * 箭头投影长度低于 3px 时隐藏、达到 7px 时完全显示。
+ * 只按屏幕尺寸淡出，不把小箭头强行放大，以免缩远后重新挤成一团。
+ */
+export const PATH_DIRECTION_ARROW_FADE_END_PX = 3
+export const PATH_DIRECTION_ARROW_FADE_START_PX = 7
+/**
  * 方向箭头采用真实道路常见的暖白标线，与黄色中心实线建立明确的色相差异；
  * 轻微提亮用于抵消远景缩小后的亮度损失，不使用透明或发光混合。
  */
 export const PATH_DIRECTION_ARROW_COLOR = '#fff4d6'
 export const PATH_DIRECTION_ARROW_BOOST = 1.08
+/**
+ * 反向逻辑边（isBackEdge=true）的方向箭头改为红色警示，与默认暖白箭头区分；
+ * 箭头颜色在几何构建时烘焙为逐顶点色，材质BOOST仍统一作用于两种颜色。
+ */
+export const PATH_DIRECTION_ARROW_BACK_COLOR = '#ff4d4f'
 
 /**
  * 节点站点圆盘半径与离散段数（一个 InstancedMesh 渲染全部节点，SPEC §5.1）。
@@ -115,6 +96,11 @@ export const NODE_CIRCLE_SEGMENTS = 20
 export const NODE_BASE_MARGIN_M = 0.04
 /** 节点整体外半径（底座外沿，米）：屏幕尺寸淡出的投影口径 */
 export const NODE_OUTER_RADIUS_M = NODE_RADIUS_M + NODE_BASE_MARGIN_M
+/**
+ * 节点外半径最多占最近邻距离的 32%，为两节点间标线留出至少 36% 的空间。
+ * 只缩小显示实例，不移动真实坐标；孤立节点继续使用默认半径。
+ */
+export const NODE_NEIGHBOR_RADIUS_RATIO = 0.32
 
 /* ==================== 节点实心圆台 ====================
  * 节点是单层实心圆台：暗色底座 → 状态色实心柱身（顶外沿倒角过曝提亮），
@@ -246,8 +232,10 @@ export const PARK_SLAB_HALO_SIZE_RATIO = 1.35
 export const PARK_SLAB_HALO_LIFT_M = 0.006
 export const PARK_SLAB_HALO_OPACITY = 0.14
 
-/** 名称图集：字体大小/族、单元内边距、画布宽度与高度上限（2 的幂，保证 mipmap） */
-export const MAP_NAME_FONT_PX = 20
+/** 名称图集：字体大小/族、单元内边距、画布宽度与高度上限（2 的幂，保证 mipmap）
+ *  字体 96px：图集现仅服务停车 P 字形（P0-5 移除仓库名称后），字形四边形世界
+ *  高 1m，低分辨率源图放大后描边糊成深色块——96px 保证近景 P 清锐可读 */
+export const MAP_NAME_FONT_PX = 96
 export const MAP_NAME_FONT_FAMILY =
   '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
 export const MAP_NAME_PADDING_PX = 6
@@ -260,7 +248,15 @@ export const PARK_GLYPH_COLOR = '#ffffff'
 export const NAME_STROKE_COLOR = 'rgba(8, 10, 14, 0.9)'
 
 /** 名称四边形世界高度（米）：宽度 = 单元宽高比 × 高度，随文字长度自适应 */
-export const PARK_GLYPH_HEIGHT_M = 0.8
+export const PARK_GLYPH_HEIGHT_M = 1.0
+
+/**
+ * 停车字形沿 +z 的锚点偏移（米）：字形四边形以节点为中心平铺时，节点圆台
+ * （顶 = PARK_SLAB_HEIGHT_M + NODE_Y + NODE_TOP_M）恰好落在字形中央，默认
+ * 45° 机位下圆台会遮住字形主体。+z 朝向默认可读侧，偏移 0.2m 让白色 P 完整
+ * 露在 slab 前半幅（slab 足迹 ±0.7m，字形 z ∈ [−0.3, +0.7]）。
+ */
+export const PARK_GLYPH_OFFSET_Z_M = 0.2
 
 /**
  * 地标名称距离显隐区间（米）：近于 near 全显，远于 far 隐藏。
@@ -269,3 +265,17 @@ export const PARK_GLYPH_HEIGHT_M = 0.8
  */
 export const LANDMARK_NAME_FADE_NEAR_M = 30
 export const LANDMARK_NAME_FADE_FAR_M = 70
+
+/**
+ * 地面图层的最高世界高度：标线、节点圆台和停车贴花都属于地面包络。
+ * 相机离地保护使用真实渲染高度，而不是假设所有图层都落在 y=0；充电桩等
+ * 竖直地标不属于这个包络，避免它们限制整张地图的近景观察。
+ */
+export const MAP_GROUND_TOP_Y = Math.max(
+  GRID_Y,
+  PATH_CENTER_LINE_Y,
+  PATH_DIRECTION_ARROW_Y,
+  PARK_SLAB_HEIGHT_M + NODE_Y + NODE_TOP_M,
+  PARK_SLAB_HEIGHT_M + PARK_SLAB_HALO_LIFT_M,
+  NAME_QUAD_Y,
+)
