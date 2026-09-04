@@ -27,7 +27,7 @@
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { MapModel } from '@/features/map-visualization'
 import {
-  createUnmappedProtocolAdapter,
+  createDispatcherProtocolAdapter,
   createWebSocketVehicleDataSource,
   type VehicleDataSource,
   type WebSocketDataSourceOptions,
@@ -53,7 +53,7 @@ export interface SelectVehicleDataSourceOptions {
   mapModel?: MapModel
   /** 诊断通道；缺省时仅构造、不上报 */
   diagnostics?: DiagnosticsReporter
-  /** 协议适配器注入点；缺省用「未映射」默认适配器（真实映射属 TASK-021） */
+  /** 协议适配器注入点；缺省用调度监控真实协议适配器（mapId 延迟绑定透传） */
   adapter?: WebSocketProtocolAdapter
   /** WebSocket 工厂注入点；测试用假 socket 替换 */
   socketFactory?: WebSocketFactory
@@ -83,7 +83,9 @@ export function selectVehicleDataSource(
     const wsOptions: WebSocketDataSourceOptions = {
       wsUrl: config.wsUrl,
       mapId,
-      adapter: options.adapter ?? createUnmappedProtocolAdapter(),
+      // 默认绑定调度监控真实协议适配器（订阅帧 = 裸地图 ID，全量快照推送）；
+      // injection 点仍允许测试以假适配器替换
+      adapter: options.adapter ?? createDispatcherProtocolAdapter({ mapId, diagnostics }),
     }
     if (options.socketFactory !== undefined) {
       wsOptions.socketFactory = options.socketFactory

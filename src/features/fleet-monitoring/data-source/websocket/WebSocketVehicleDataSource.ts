@@ -723,6 +723,10 @@ export function createWebSocketVehicleDataSource(
         for (const item of buffered) {
           emitEvent(buildEvent(item.message, item.sequence, item.receivedAt))
         }
+        // 绑定落地后补发快照/订阅请求：连接可能先于绑定打开，open 时点的
+        // encodeSnapshotRequest 因上下文缺失返回 null；依赖订阅帧的协议（如
+        // 以地图 ID 订阅的调度监控）在此刻补发，已发过的协议重复发送幂等。
+        requestSnapshotInternal()
       },
       (error: unknown) => {
         enterErrorState(

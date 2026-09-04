@@ -98,3 +98,8 @@ export type {
   ProtocolErrorCode,
   WebSocketProtocolAdapter,
 } from './data-source/websocket/protocolAdapter'
+export {
+  DISPATCHER_PROTOCOL_SCHEMA_VERSION,
+  createDispatcherProtocolAdapter,
+} from './data-source/websocket/dispatcherProtocolAdapter'
+export type { DispatcherProtocolAdapterOptions } from './data-source/websocket/dispatcherProtocolAdapter'

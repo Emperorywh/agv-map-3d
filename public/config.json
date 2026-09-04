@@ -1,7 +1,7 @@
 {
-  "dataSource": "mock",
+  "dataSource": "ws",
   "mapUrl": "./json/map.json",
-  "wsUrl": null,
+  "wsUrl": "ws://10.11.2.67:8888/websocket/getDispatcherMonitor?accept-language=zh-CN",
   "maxVehicles": 256,
   "staleAfterMs": 10000,
   "renderer": {

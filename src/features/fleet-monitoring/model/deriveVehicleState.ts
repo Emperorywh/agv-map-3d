@@ -71,6 +71,9 @@ function deriveConnectivity(raw: string | null): VehicleConnectivity {
 /**
  * operation 按固定优先级短路判定（SPEC §2.6 判定顺序 1～7）：
  * 故障 > 暂停 > 充电 > 交通等待 > 执行订单 > 已知空闲 > 无法识别。
+ * vehicleProcStatus 的已知枚举按调度系统协议语义映射（PROCESSING=执行任务、
+ * CHARGE=充电任务；线上推送的车辆负载不带 orderState，执行中判定以过程
+ * 状态为准）。
  */
 function deriveOperation(snapshot: VehicleSnapshot): VehicleOperation {
   if (snapshot.rawErrorEntries.length > 0) {
@@ -79,13 +82,16 @@ function deriveOperation(snapshot: VehicleSnapshot): VehicleOperation {
   if (snapshot.paused) {
     return 'PAUSED'
   }
-  if (snapshot.battery.charging) {
+  if (snapshot.battery.charging || snapshot.vehicleProcStatus === 'CHARGE') {
     return 'CHARGING'
   }
   if (snapshot.vehicleProcStatus === 'TRAFFIC') {
     return 'TRAFFIC_WAIT'
   }
-  if (snapshot.orderState === 'PROCESSING') {
+  if (
+    snapshot.orderState === 'PROCESSING' ||
+    snapshot.vehicleProcStatus === 'PROCESSING'
+  ) {
     return 'EXECUTING'
   }
   if (
