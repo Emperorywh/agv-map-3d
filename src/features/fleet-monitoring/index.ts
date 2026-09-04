@@ -40,6 +40,12 @@ export type {
   VehicleVelocity,
 } from './model/types'
 export { createVehicleEntityKey, DEFAULT_VEHICLE_DIMENSION } from './model/types'
+/**
+ * 状态字典从功能公开入口导出，预览和业务接入共用十一种中文状态。
+ * 规范化函数同时接受英文键，调用方无需自行维护第二份映射。
+ */
+export { RobotStatus, normalizeRobotStatus } from './model/robotStatus'
+export type { RobotStatusKey } from './model/robotStatus'
 export { validateVehicle } from './model/validateVehicle'
 export type { ValidateVehicleResult, VehicleInvalidReason } from './model/validateVehicle'
 export {

@@ -120,12 +120,23 @@ export interface VehicleSnapshot {
 
 /* ==================== 正交派生维度（SPEC §2.6） ==================== */
 
-export type VehicleConnectivity = 'ONLINE' | 'OFFLINE' | 'UNKNOWN'
+/**
+ * 连接中断单独保留，区别于主动离线与无法识别的连接信息。
+ * 渲染层据此显示独立状态色，同时继续保留数据过期的最高优先级。
+ */
+export type VehicleConnectivity = 'ONLINE' | 'OFFLINE' | 'CONNECTION_BROKEN' | 'UNKNOWN'
 
 export type VehicleFreshness = 'FRESH' | 'STALE'
 
 export type VehicleOperation =
   | 'FAULT'
+  /**
+   * 在线、避障与抱闸均为独立业务状态。
+   * 不能合并为空闲、交管或暂停，否则大灯与标签会丢失状态差异。
+   */
+  | 'ONLINE'
+  | 'AVOIDING'
+  | 'BRAKED'
   | 'PAUSED'
   | 'CHARGING'
   | 'TRAFFIC_WAIT'
@@ -145,8 +156,11 @@ export interface VehicleAlert {
   readonly type: VehicleAlertType
 }
 
-/** 主状态显示投影：STALE 冻结灰 > 断连深灰 > FRESH 时业务状态色（SPEC §2.6） */
-export type VehiclePrimaryDisplayState = 'STALE' | 'DISCONNECTED' | VehicleOperation
+/**
+ * 主状态优先显示数据过期，其次区分连接中断和离线，最后显示新鲜业务状态。
+ * 原有 DISCONNECTED 继续承载离线或未知连接，避免改变既有协议兜底。
+ */
+export type VehiclePrimaryDisplayState = 'STALE' | 'DISCONNECTED' | 'CONNECTION_BROKEN' | VehicleOperation
 
 /** 主状态 + 副徽标（STALE/断连时保留最后已知业务状态） */
 export interface VehicleDisplayState {

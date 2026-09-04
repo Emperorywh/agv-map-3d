@@ -36,7 +36,7 @@ export function VehicleInstances({ runtime, worldTransform, resources, table, ba
 }
 
 /**
- * 所有矩阵以零缩放初始化，空槽位绝不出现在原点；动态颜色缓冲只分配给灯带。
+ * 所有矩阵以零缩放初始化，空槽位绝不出现在原点；动态颜色缓冲只分配给灯光部件。
  * 拾取部件携带相同批次号，加载模型或点击载货纸箱仍映射到同一车辆实体。
  */
 function createBatches(resources: VehicleResources, count: number): FleetBatchMeshes[] {
@@ -49,7 +49,12 @@ function createBatches(resources: VehicleResources, count: number): FleetBatchMe
       mesh.matrixAutoUpdate = false
       mesh.frustumCulled = false
       mesh.castShadow = !INSTANCE_COLOR_PARTS.has(kind) && kind !== 'shadow'
-      mesh.receiveShadow = kind !== 'shadow'
+      /**
+       * 投光贴片在道路透明层之后绘制，不投射或接收实时阴影，也不参与拾取。
+       * 保留材质深度测试，让车身、货物与实体设施正常遮挡光斑。
+       */
+      mesh.receiveShadow = kind !== 'shadow' && kind !== 'statusGround'
+      if (kind === 'statusGround') mesh.renderOrder = 8
       mesh.instanceMatrix.array.fill(0)
       for (let i = 0; i < SLOT_BATCH_CAPACITY; i += 1) mesh.instanceMatrix.array[i * 16 + 15] = 1
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)

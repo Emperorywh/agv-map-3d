@@ -12,8 +12,8 @@
  *    一致：STALE 冻结灰、DISCONNECTED 深灰、FRESH 业务色（SPEC §2.6）；
  *    状态不得只靠颜色表达——方向由 +x 方向楔表达、故障由旋转警示灯表达、
  *    文字由图集化标签表达（TASK-011）；
- * 2. 充电色与地图 charge 节点同色系（#31d9e8），执行色与 work 节点同色系，
- *    保持全场景色彩语义统一；
+ * 2. 车辆灯带、地面投光与标签共用业务指定的状态配色，
+ *    未指定的在线、连接中断与数据未知状态沿用现有颜色；
  * 3. 部件固定高度为厘米级经验值（与当前车宽 0.7m 量级协调），不随车辆
  *    长宽缩放——每车尺寸只进入矩阵的 x/z 分量；
  * 4. 警示灯只在 FAULT（FRESH + ONLINE）时旋转闪烁；OFFLINE/STALE 熄灭
@@ -23,6 +23,8 @@
  * 6. 标签边框配色（选中白 / L1 黄 / L2 红）为告警语义在标签内的表达口径；
  *    透明贴花按 renderOrder 分层：假阴影(0.012) → 标签(10/11)，互不 z-fight。
  */
+
+import type { VehiclePrimaryDisplayState } from '../model/types'
 
 /** 图层高度：车辆贴花 lowest 优先级低于地图名称层，假阴影贴地避免 z-fighting */
 export const VEHICLE_SHADOW_Y = 0.012
@@ -104,31 +106,55 @@ export const BEACON_SPIN_RAD_PER_S = 4.5
 export const BEACON_BLINK_HZ = 1.6
 /** 闪烁亮度下限（占比）：最暗时仍可辨认为红色信标 */
 export const BEACON_BLINK_MIN_BRIGHTNESS = 0.25
-export const BEACON_FAULT_COLOR = '#ff2d2d'
 /** 熄灭色仅用于诊断调试参考；熄灭表达为零缩放矩阵（不变量 4） */
 export const BEACON_OFF_COLOR = '#3a3f47'
 
 /**
- * 主状态只作用于局部指示灯和标签，浅灰车壳不再消费这份颜色表。
- * 继续保留过期灰、离线深灰和故障红的投影语义，普通运行采用蓝绿色。
+ * 按业务提供的色值配置状态灯，内部派生状态映射到对应的 RobotStatus。
+ * 大灯、地面光斑与标签共用此表，历史名称保留以兼容现有调用点。
  */
-export const SHELL_STATE_COLORS: Record<string, string> = {
+export const SHELL_STATE_COLORS: Record<VehiclePrimaryDisplayState, string> = {
   // FRESH 业务操作状态
-  FAULT: '#e5484d',
-  PAUSED: '#c084fc',
-  CHARGING: '#31d9e8',
-  TRAFFIC_WAIT: '#f5a524',
-  EXECUTING: '#10b8a7',
-  IDLE: '#538d9a',
+  FAULT: '#590016',
+  ONLINE: '#4aa3ff',
+  AVOIDING: '#FBC02D',
+  BRAKED: '#FF0000',
+  PAUSED: '#38D2D2',
+  CHARGING: '#C8C81A',
+  TRAFFIC_WAIT: '#9F7AEA',
+  EXECUTING: '#48BB78',
+  IDLE: '#4299E1',
   UNKNOWN: '#9aa1ac',
   // 数据不可信投影（最后业务状态只作副徽标，属 TASK-011 标签）
   STALE: '#6f7680',
-  DISCONNECTED: '#3f444d',
+  DISCONNECTED: '#98A2B2',
+  CONNECTION_BROKEN: '#98a9d8',
 }
 
-/** 取主状态对应的车体色；未知键回退 UNKNOWN 灰（纵深防御） */
+/**
+ * 故障信标直接复用异常状态色，避免与同车大灯、地面投光出现色彩分歧。
+ * 保留既有闪烁节奏，仅让配色跟随统一的业务颜色表。
+ */
+export const BEACON_FAULT_COLOR = SHELL_STATE_COLORS.FAULT
+
+/**
+ * 状态色查表只接受自身属性，未知键继续回退灰色。
+ * 保留字符串入口供既有标签与预览使用，不让对象原型属性混入颜色。
+ */
 export function shellColorOf(primary: string): string {
-  return SHELL_STATE_COLORS[primary] ?? SHELL_STATE_COLORS.UNKNOWN
+  return Object.hasOwn(SHELL_STATE_COLORS, primary)
+    ? SHELL_STATE_COLORS[primary as VehiclePrimaryDisplayState] : SHELL_STATE_COLORS.UNKNOWN
+}
+
+/**
+ * 状态文字与配色共用主状态键，近景标签使用中文辅助识别相近色系。
+ * 离线与连接中断独立命名，过期继续作为数据可信度提示保留。
+ */
+export const VEHICLE_STATE_LABELS: Record<VehiclePrimaryDisplayState, string> = {
+  ONLINE: '在线', IDLE: '空闲', TRAFFIC_WAIT: '交管', EXECUTING: '执行中',
+  CHARGING: '充电', AVOIDING: '避障', FAULT: '异常', BRAKED: '抱闸',
+  DISCONNECTED: '离线', CONNECTION_BROKEN: '连接中断', PAUSED: '暂停',
+  STALE: '数据过期', UNKNOWN: '未知',
 }
 
 /* ==================== 车辆标签外观（SPEC §5.1、§6.4、§7.2；TASK-011） ==================== */

@@ -5,18 +5,23 @@
 import type { VehicleDataSource, VehicleDataEvent, SourceStatus } from '@/features/fleet-monitoring/data-source/contract'
 import { validateVehicle } from '@/features/fleet-monitoring/model/validateVehicle'
 import type { VehicleSnapshot } from '@/features/fleet-monitoring/model/types'
+import { RobotStatus, type RobotStatusKey } from '@/features/fleet-monitoring'
 
 export interface PreviewSettings {
   count: number
   theta: number
   loaded: boolean
-  state: 'EXECUTING' | 'CHARGING' | 'FAULT' | 'OFFLINE' | 'STALE'
+  /**
+   * 预览覆盖完整业务枚举，沿用真实协议的车辆过程字段。
+   * 过期仍由停止快照自然触发，便于观察状态色如何退为灰色。
+   */
+  state: RobotStatusKey | 'STALE'
   procedural: boolean
   moving: boolean
 }
 
 export function createPreviewSource(): VehicleDataSource & { configure(settings: PreviewSettings): void } {
-  let settings: PreviewSettings = { count: 1, theta: 0, loaded: false, state: 'EXECUTING', procedural: false, moving: false }
+  let settings: PreviewSettings = { count: 1, theta: 0, loaded: false, state: 'PROCESSING', procedural: false, moving: false }
   const listeners = new Set<(event: VehicleDataEvent) => void>()
   const statusListeners = new Set<(status: SourceStatus) => void>()
   let timer: ReturnType<typeof setInterval> | undefined
@@ -29,6 +34,11 @@ export function createPreviewSource(): VehicleDataSource & { configure(settings:
      * 切换控件时先发送最后一帧，再让真实运行时在十秒后进入过期状态。
      */
     if (silent) return
+    /**
+     * 直接发送中文枚举值，预览可以覆盖中文状态到模型灯光的完整链路。
+     * 异常仅通过过程状态表达，确保没有故障列表时也能正确显示异常红灯。
+     */
+    const process = settings.state === 'STALE' ? 'PROCESSING' : settings.state
     const vehicles: VehicleSnapshot[] = []
     const now = performance.now()
     for (let i = 0; i < settings.count; i += 1) {
@@ -39,10 +49,11 @@ export function createPreviewSource(): VehicleDataSource & { configure(settings:
         agvKey: `preview-${i}`, agvName: `AGV ${String(i + 1).padStart(3, '0')}`,
         agvDimension: { length: settings.procedural ? 1.35 : 1.8, width: settings.procedural ? 0.85 : 0.7, loadLength: 1.6, loadWidth: 0.7, centerOffset: 0.25 },
         agvPosition: { x: cx - 0.25 * Math.cos(theta), y: -cz - 0.25 * Math.sin(theta), theta, localizationScore: 1 },
-        batteryState: { batteryCharge: 78, batteryHealth: 100, batteryVoltage: 48, charging: settings.state === 'CHARGING' },
-        connectionState: settings.state === 'OFFLINE' ? 'OFFLINE' : 'ONLINE', orderState: 'PROCESSING',
-        loaded: settings.loaded, paused: false,
-        errorEntryList: settings.state === 'FAULT' ? [{ message: '样板故障' }] : [],
+        batteryState: { batteryCharge: 78, batteryHealth: 100, batteryVoltage: 48, charging: process === 'CHARGE' },
+        connectionState: process === 'OFFLINE' || process === 'CONNECTIONBROKEN' ? RobotStatus[process] : RobotStatus.ONLINE,
+        vehicleProcStatus: RobotStatus[process], orderState: process === 'PROCESSING' ? 'PROCESSING' : null,
+        loaded: settings.loaded, paused: process === 'PAUSED',
+        errorEntryList: [],
       }, 'industrial-preview')
       if (result.ok) vehicles.push(result.snapshot)
     }

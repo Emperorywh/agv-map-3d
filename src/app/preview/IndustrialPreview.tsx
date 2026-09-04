@@ -19,6 +19,7 @@ import type { WorldTransform } from '@/shared/spatial'
 import { createPreviewSource, type PreviewSettings } from './previewSource'
 import './industrialPreview.css'
 import { SAMPLE_LAYOUT } from './sampleLayout'
+import { RobotStatus } from '@/features/fleet-monitoring'
 const transform: WorldTransform = { origin: { x: 0, y: 0 }, toWorldXZ: (x, y) => ({ x, z: -y }), angleToWorldYRotation: (theta) => theta }
 const bounds = { minWorldX: -32, maxWorldX: 32, minWorldZ: -32, maxWorldZ: 32, centerWorldX: 0, centerWorldZ: 0, diagonal: Math.hypot(64, 64) }
 const views = {
@@ -37,7 +38,11 @@ const previewShadows = { type: THREE.PCFShadowMap }
 
 export default function IndustrialPreview() {
   const source = useMemo(createPreviewSource, [])
-  const [settings, setSettings] = useState<PreviewSettings>({ count: 1, theta: 0, loaded: false, state: 'EXECUTING', procedural: false, moving: false })
+  /**
+   * 初始状态使用业务枚举键，控件与样板数据源共用完整的十一种状态。
+   * 切换后无需重新加载模型，即可观察灯面、地面光斑与呼吸节奏。
+   */
+  const [settings, setSettings] = useState<PreviewSettings>({ count: 1, theta: 0, loaded: false, state: 'PROCESSING', procedural: false, moving: false })
   const [view, setView] = useState<keyof typeof views>('中景')
   const [metrics, setMetrics] = useState('等待渲染')
   const [following, setFollowing] = useState<string | null>(null)
@@ -68,7 +73,10 @@ export default function IndustrialPreview() {
       <p>同地坪 · 同材质环境 · 米制尺寸</p>
       <div className="industrial-controls">{(['近景', '中景', '远景'] as const).map((name) => <button key={name} aria-pressed={view === name} onClick={() => setView(name)}>{name}</button>)}</div>
       <label>运行状态<select value={settings.state} onChange={(event) => setSettings({ ...settings, state: event.target.value as PreviewSettings['state'] })}>
-        <option value="EXECUTING">普通运行</option><option value="CHARGING">充电</option><option value="FAULT">故障</option><option value="OFFLINE">离线</option><option value="STALE">数据过期（等待 10 秒）</option>
+        {/* 状态选项直接来自业务字典，新增状态时不再手工维护第二份清单。
+            数据过期作为独立验证项保留，用于观察旧状态的降亮处理。 */}
+        {Object.entries(RobotStatus).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        <option value="STALE">数据过期（等待 10 秒）</option>
       </select></label>
       <label><input type="checkbox" checked={settings.loaded} onChange={(event) => setSettings({ ...settings, loaded: event.target.checked })} />车辆载货</label>
       <label><input type="checkbox" checked={settings.procedural} onChange={(event) => setSettings({ ...settings, procedural: event.target.checked })} />异尺寸程序回退</label>

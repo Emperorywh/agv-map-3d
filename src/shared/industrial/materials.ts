@@ -17,8 +17,12 @@ export function createIndustrialMaterials() {
   }
 }
 
+/**
+ * 灯面以自发光为主，减弱环境反射，避免白色照明冲淡不同状态的颜色。
+ * 关闭灯面的色调压缩，实例亮度与地面投光使用同一状态颜色和动画包络。
+ */
 export function createStatusMaterial(): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.65, roughness: 0.34 })
+  const material = new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xffffff, emissiveIntensity: 1.2, roughness: 0.34, toneMapped: false })
   material.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `
       #include <emissivemap_fragment>

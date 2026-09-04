@@ -1,7 +1,7 @@
 /**
  * 车辆资源与业务位姿解耦：精修模型保持原始米制比例，程序模型按实际尺寸适配。
  * 车体中心仅在世界位姿函数中应用一次偏移，所有部件共享同一个中心和朝向。
- * 几何和材质属于资源所有者；各批次只拥有实例缓冲，状态颜色只进入灯带。
+ * 几何和材质属于资源所有者；各批次只拥有实例缓冲，状态颜色进入灯带与地面投光。
  */
 import * as THREE from 'three'
 import type { WorldTransform } from '@/shared/spatial'
@@ -10,13 +10,18 @@ import { createIndustrialMaterials, createStatusMaterial } from '@/shared/indust
 import type { VehicleDisplayState, VehicleSnapshot } from '../model/types'
 import { GLB_MATERIAL_PARTS, type GlbPartKind, type IndustrialModel } from './industrialVehicleModel'
 import { INDUSTRIAL_AGV_MODEL, usesIndustrialModel } from './vehicleModelConfig'
+import { createStatusLightGround } from './vehicleStatusLights'
 
-export type VehiclePartKind = 'chassis' | 'shell' | 'wedge' | 'platform' | 'pallet' | 'cargo' | 'tape' | 'beacon' | 'wheels' | 'metal' | 'bumper' | 'status' | 'shadow' | GlbPartKind
+/**
+ * 地面投光作为整车部件共享分配、移动与删除流程。
+ * 这样资源恢复或车辆离场时不会留下独立光斑。
+ */
+export type VehiclePartKind = 'chassis' | 'shell' | 'wedge' | 'platform' | 'pallet' | 'cargo' | 'tape' | 'beacon' | 'wheels' | 'metal' | 'bumper' | 'status' | 'statusGround' | 'shadow' | GlbPartKind
 export const VEHICLE_PART_KINDS: readonly VehiclePartKind[] = [
-  'chassis', 'shell', 'wedge', 'platform', 'pallet', 'cargo', 'tape', 'beacon', 'wheels', 'metal', 'bumper', 'status', 'shadow',
+  'chassis', 'shell', 'wedge', 'platform', 'pallet', 'cargo', 'tape', 'beacon', 'wheels', 'metal', 'bumper', 'status', 'statusGround', 'shadow',
   ...Object.values(GLB_MATERIAL_PARTS),
 ]
-export const INSTANCE_COLOR_PARTS: ReadonlySet<VehiclePartKind> = new Set(['status', 'glbStatus', 'beacon'])
+export const INSTANCE_COLOR_PARTS: ReadonlySet<VehiclePartKind> = new Set(['status', 'glbStatus', 'statusGround', 'beacon'])
 export const PICKABLE_PARTS: ReadonlySet<VehiclePartKind> = new Set(['shell', 'glbPaint', 'glbPlatform', 'cargo'])
 export const LOAD_PARTS: ReadonlySet<VehiclePartKind> = new Set(['pallet', 'cargo', 'tape'])
 const PROCEDURAL_PARTS = new Set<VehiclePartKind>(['chassis', 'shell', 'wedge', 'platform', 'wheels', 'metal', 'bumper', 'status'])
@@ -70,6 +75,11 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
     metal: at(0, 0.098, length, 1, width),
     bumper: at(0, 0.16, length, 0.05, width),
     status: at(0, 0.277, length, 0.018, width),
+    /**
+     * 投光略高于道路导引面，保持深度测试以接受车辆和设施遮挡。
+     * 使用真实车体长宽，不随接口申报尺寸拉伸精修模型的照地范围。
+     */
+    statusGround: at(0, 0.082, bodyLength, 1, bodyWidth),
     shadow: at(0, 0.002, bodyLength * 1.01, 1, bodyWidth * 1.06),
   }
 }
@@ -124,6 +134,11 @@ export function createVehicleResources(model?: IndustrialModel): VehicleResource
   }
   add('bumper', joinGeometry([-1, 1].map((side) => industrialBox(0.018, 1, 0.82, 0.004).translate(side * 0.49, 0, 0))), materials.rubber)
   add('status', joinGeometry([-1, 1].flatMap((side) => [-1, 1].map((z) => industrialBox(0.005, 1, 0.15, 0.001).translate(side * 0.5, 0, z * 0.30)))), statusMaterial)
+  /**
+   * 地面光斑与模型资源一同创建和释放，整队只持有一份几何与材质。
+   * 无外部纹理依赖，加载占位和上下文恢复阶段也能显示状态照地。
+   */
+  parts.statusGround = createStatusLightGround()
   const shadow = new THREE.CircleGeometry(0.5, 32)
   shadow.rotateX(-Math.PI / 2)
   add('shadow', shadow, new THREE.MeshBasicMaterial({ color: '#111820', transparent: true, opacity: 0.12, depthWrite: false }))

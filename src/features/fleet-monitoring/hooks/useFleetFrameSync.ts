@@ -1,7 +1,7 @@
 /**
  * 车队脏槽位的唯一帧消费者，继续使用原有槽位分配、删除清场和批次扩容机制。
  * 模型资源就绪后全程展示精修模型，不再按相机距离分档；资源换代触发全量回填。
- * 载货部件始终遵守有效性和载荷状态，颜色仅写局部状态灯。
+ * 载货部件始终遵守有效性和载荷状态，颜色同步写入局部状态灯与地面投光。
  */
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
@@ -10,6 +10,8 @@ import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 import type { FleetRuntime } from '../model/createFleetRuntime'
 import type { InstanceSlotTable } from '../model/instanceSlots'
+import type { VehiclePrimaryDisplayState } from '../model/types'
+import { STATUS_LIGHT_STYLES, statusLightBrightness } from '../scene/vehicleStatusLights'
 import {
   shellColorOf,
   BEACON_BLINK_HZ,
@@ -80,6 +82,11 @@ interface FrameSyncController {
   colorDirty: boolean[][]
   /** FAULT 激活信标实体键集合（display 差维护，动画消费） */
   beaconKeys: Set<string>
+  /**
+   * 只维护需要呼吸动画的车辆，常亮车辆继续仅在显示差变化时更新。
+   * 与信标集合一同在删除和全量重建时清理，防止槽位复用串色。
+   */
+  pulsingLightKeys: Set<string>
   /** 硬上限溢出告警置位标记：未渲染数回 0 后复位，允许再次告警 */
   overflowReported: boolean
   /** 待全量重写标记（批次挂载/重挂载后置位） */
@@ -111,6 +118,7 @@ export function useFleetFrameSync({
       matrixDirty: [],
       colorDirty: [],
       beaconKeys: new Set<string>(),
+      pulsingLightKeys: new Set<string>(),
       overflowReported: false,
       // 首帧即全量重写：不依赖身份 effect 先于首个 useFrame 执行
       pendingFullRewrite: true,
@@ -184,6 +192,7 @@ function tickFrame(
   // —— 删除：释放槽位 + 零缩放清场；槽位转派时对补录实体立即全量写入 ——
   for (const key of dirty.removed) {
     controller.beaconKeys.delete(key)
+    controller.pulsingLightKeys.delete(key)
     const result = table.release(key)
     if (result.admitted !== null) {
       writeVehicleFull(controller, runtime, table, worldTransform, batches, result.admitted)
@@ -207,6 +216,21 @@ function tickFrame(
   // —— FAULT 信标动画：仅激活集合内的槽位逐帧写旋转矩阵与脉动颜色 ——
   for (const key of controller.beaconKeys) {
     animateBeacon(controller, runtime, table, worldTransform, batches, key, controller.elapsed)
+  }
+
+  /**
+   * 灯面与照地共用一个呼吸包络，只更新活跃车辆的颜色缓冲。
+   * 不逐帧重建实例矩阵、材质或光源，常亮状态没有额外动画开销。
+   */
+  for (const key of controller.pulsingLightKeys) {
+    const entity = runtime.get(key)
+    const slot = table.get(key)
+    if (entity === undefined || slot === undefined || slot.batch >= batches.length ||
+      !entity.snapshot.positionValid || !entity.snapshot.dimensionValid) {
+      controller.pulsingLightKeys.delete(key)
+      continue
+    }
+    writeStatusLightColors(controller, batches, slot.batch, slot.slot, entity.displayState.primary)
   }
 
   // 批次扩容上抛（在脏处理之后检查：全量重写与位姿懒分配都可能扩批）；
@@ -243,6 +267,7 @@ function rewriteAll(
   batches: readonly FleetBatchMeshes[],
 ): void {
   controller.beaconKeys.clear()
+  controller.pulsingLightKeys.clear()
   for (let b = 0; b < batches.length; b += 1) {
     const capacity = batches[b].parts.chassis.instanceMatrix.array.length / 16
     for (let s = 0; s < capacity; s += 1) {
@@ -342,7 +367,10 @@ function writeVehiclePose(
   }
 }
 
-/** 显示写入：外壳/楔实例颜色、平台/托盘可见性与信标集合维护 */
+/**
+ * 显示变化同步更新灯面、地面光斑与载货部件。
+ * 呼吸与故障信标各自维护活跃集合，离线或过期立即退出旧动画。
+ */
 function writeVehicleDisplay(
   controller: FrameSyncController,
   runtime: FleetRuntime,
@@ -360,16 +388,21 @@ function writeVehicleDisplay(
   if (slot === undefined || slot.batch >= batches.length) {
     // 无可见槽位（非法车或硬上限等待）：只需保证不留在信标激活集合
     controller.beaconKeys.delete(key)
+    controller.pulsingLightKeys.delete(key)
     return
   }
 
   /**
-   * 外壳和底盘保持物理材质，主状态只写入程序灯带和精修灯带的实例颜色。
-   * 过期、离线沿用原有投影语义显示暗灰，不把最后业务状态误显示为在线。
+   * 外壳和底盘保持物理材质，主状态同步写入两套灯带与地面光斑。
+   * 状态变化立即覆盖旧颜色，退出呼吸时也恢复对应的常亮或低亮参数。
    */
-  scratchColor.set(shellColorOf(entity.displayState.primary))
-  writePartColor(controller, batches, slot.batch, slot.slot, 'status', scratchColor, 1)
-  writePartColor(controller, batches, slot.batch, slot.slot, 'glbStatus', scratchColor, 1)
+  const primary = entity.displayState.primary
+  writeStatusLightColors(controller, batches, slot.batch, slot.slot, primary)
+  if (layout.visible && STATUS_LIGHT_STYLES[primary].pulseHz > 0) {
+    controller.pulsingLightKeys.add(key)
+  } else {
+    controller.pulsingLightKeys.delete(key)
+  }
 
   // 平台/托盘/纸箱可见性：loadState 属显示差，变化时重写三者矩阵
   const pose = computeVehicleWorldPose(entity.snapshot, worldTransform)
@@ -390,6 +423,25 @@ function writeVehicleDisplay(
     controller.beaconKeys.delete(key)
     zeroPartMatrix(controller, batches, slot.batch, slot.slot, 'beacon')
   }
+}
+
+/**
+ * 灯面和地面投光共享主状态颜色，用独立亮度系数控制近景灯面与周边可见范围。
+ * 共用临时颜色对象，状态切换和动画都不会创建逐车材质或临时三维对象。
+ */
+function writeStatusLightColors(
+  controller: FrameSyncController,
+  batches: readonly FleetBatchMeshes[],
+  batchIndex: number,
+  slotIndex: number,
+  primary: VehiclePrimaryDisplayState,
+): void {
+  const style = STATUS_LIGHT_STYLES[primary]
+  const brightness = statusLightBrightness(primary, controller.elapsed)
+  scratchColor.set(shellColorOf(primary))
+  writePartColor(controller, batches, batchIndex, slotIndex, 'status', scratchColor, brightness * style.lamp)
+  writePartColor(controller, batches, batchIndex, slotIndex, 'glbStatus', scratchColor, brightness * style.lamp)
+  writePartColor(controller, batches, batchIndex, slotIndex, 'statusGround', scratchColor, brightness * style.ground)
 }
 
 /** FAULT 信标动画帧：rotation.y = rotY + t·自旋，亮度按正弦脉动 */

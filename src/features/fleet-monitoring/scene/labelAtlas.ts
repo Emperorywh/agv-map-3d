@@ -8,7 +8,7 @@
  * 2. createVehicleLabelAtlas：真实 2048×2048 Canvas 工厂——256 个 256×64
  *    名称槽（8 列 × 32 行），名称增加或变化只重绘目标单元，flush 每帧至多
  *    触发一次纹理上载；中文名称可用（与地图名称同一字体栈）；
- * 3. createVehicleBadgeAtlas：7 个业务状态芯片的固定小图集——启动时一次性
+ * 3. createVehicleBadgeAtlas：完整业务状态芯片的固定小图集——启动时一次性
  *    栅格化、全批次共享、永不重绘；chipUvOf 提供状态 → 图集 UV 的纯查表。
  * 边界：本模块是车辆标签的唯一栅格化入口；不使用 DOM/drei Html/每车独立
  *       Sprite 或材质；地图名称图集属 map-visualization（两者互不共享）。
@@ -27,7 +27,7 @@
 import * as THREE from 'three'
 import { StructuredError } from '@/shared/diagnostics'
 import type { VehicleOperation } from '../model/types'
-import { LABEL_FONT_FAMILY, shellColorOf } from './fleetAppearance'
+import { LABEL_FONT_FAMILY, shellColorOf, VEHICLE_STATE_LABELS } from './fleetAppearance'
 
 /** 名称图集几何：2048×2048 画布容纳 256 个 256×64 名称槽（8 列 × 32 行） */
 export const LABEL_ATLAS_SIZE = 2048
@@ -221,13 +221,19 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
 
 /* ==================== 状态芯片副徽标图集（固定内容，全批次共享） ==================== */
 
-/** 芯片图集几何：1024×32 画布，8 个 128×32 单元（7 个业务状态 + 1 备用） */
-export const BADGE_ATLAS_W_PX = 1024
+/**
+ * 扩展为十六个状态单元，新增在线、避障、抱闸后仍保留空位。
+ * 单元大小保持不变，现有标签着色器继续按查表得到的矩形采样。
+ */
+export const BADGE_ATLAS_W_PX = 2048
 export const BADGE_ATLAS_H_PX = 32
 export const BADGE_CELL_W_PX = 128
 const BADGE_CELL_COUNT = BADGE_ATLAS_W_PX / BADGE_CELL_W_PX
 
-/** 芯片图集的固定状态次序（下标即单元序号；第 8 格留空备用） */
+/**
+ * 固定次序保留原有七个状态槽，新增业务状态放在尾部。
+ * 中英文显示均从共享状态字典获得，避免颜色与文字各自维护。
+ */
 const BADGE_OPERATIONS: readonly VehicleOperation[] = [
   'FAULT',
   'PAUSED',
@@ -236,6 +242,9 @@ const BADGE_OPERATIONS: readonly VehicleOperation[] = [
   'EXECUTING',
   'IDLE',
   'UNKNOWN',
+  'ONLINE',
+  'AVOIDING',
+  'BRAKED',
 ]
 
 const BADGE_ZERO_UV: readonly [number, number, number, number] = [0, 0, 0, 0]
@@ -295,7 +304,11 @@ export function createVehicleBadgeAtlas(): VehicleBadgeAtlas {
     context.textAlign = 'center'
     context.textBaseline = 'middle'
     context.fillStyle = '#ffffff'
-    context.fillText(operation, x0 + BADGE_CELL_W_PX / 2, BADGE_ATLAS_H_PX / 2)
+    /**
+     * 使用中文状态名称辅助区分相近色系，保留既有副徽标布局。
+     * 灯光颜色与文字来自同一状态键，避免展示内部英文派生名。
+     */
+    context.fillText(VEHICLE_STATE_LABELS[operation], x0 + BADGE_CELL_W_PX / 2, BADGE_ATLAS_H_PX / 2)
     context.restore()
   }
 

@@ -58,7 +58,11 @@ export function labelImportanceRank(input: LabelImportanceInput): number | null 
   if (input.primary === 'STALE') {
     return 2
   }
-  if (input.primary === 'DISCONNECTED') {
+  /**
+   * 连接中断与离线采用相同的标签优先级。
+   * 主状态颜色继续分别表达，不将中断当作普通在线车辆过滤。
+   */
+  if (input.primary === 'DISCONNECTED' || input.primary === 'CONNECTION_BROKEN') {
     return 3
   }
   for (const alert of input.alerts) {
@@ -95,7 +99,7 @@ export function isFarImportantRank(rank: number | null): rank is number {
 /**
  * 标签边框告警级（SPEC §7.3）：L2 红含 FAULT/STALE/OFFLINE（断连投影）、
  * CRITICAL_BATTERY 与 INVALID_DATA；L1 黄含 LOW_BATTERY 与 LOW_LOCALIZATION；
- * L2 优先于 L1。多告警并存时不丢失最高级。
+ * L2 优先于 L1。连接中断同样属于断连告警，多告警并存时不丢失最高级。
  */
 export function labelAlertLevel(
   primary: VehiclePrimaryDisplayState,
@@ -104,7 +108,8 @@ export function labelAlertLevel(
   if (
     primary === 'FAULT' ||
     primary === 'STALE' ||
-    primary === 'DISCONNECTED'
+    primary === 'DISCONNECTED' ||
+    primary === 'CONNECTION_BROKEN'
   ) {
     return 2
   }
@@ -122,13 +127,13 @@ export function labelAlertLevel(
 
 /**
  * 状态芯片文本取值：FRESH 显示业务主状态；STALE/断连显示最后已知业务状态
- * （副徽标）；业务状态 UNKNOWN 无信息可言，返回 null（芯片隐藏）。
+ * （副徽标）；连接中断沿用同一规则，UNKNOWN 返回 null 隐藏芯片。
  */
 export function labelChipOf(
   primary: VehiclePrimaryDisplayState,
   secondary: VehicleOperation | null,
 ): VehicleOperation | null {
-  if (primary === 'STALE' || primary === 'DISCONNECTED') {
+  if (primary === 'STALE' || primary === 'DISCONNECTED' || primary === 'CONNECTION_BROKEN') {
     return secondary
   }
   return primary === 'UNKNOWN' ? null : primary
