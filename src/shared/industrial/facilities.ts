@@ -39,6 +39,8 @@ export function createChargingCabinet(config: CabinetConfig = CABINET_CONFIG): F
   for (const side of [-1, 1]) add(materials.metal, w * 0.065, h * 0.065, 0.012, side * w * 0.09, h * 0.28, d * 0.61)
   add(materials.metal, w * 0.03, h * 0.12, 0.013, w * 0.31, h * 0.48, d * 0.535)
   const light = new THREE.MeshStandardMaterial({ color: '#10b9ac', emissive: '#10b9ac', emissiveIntensity: 0.45, roughness: 0.4 })
+  // 命名指示灯材质：地图图层（P2-1）据此识别注入目标，补充总览淡出与呼吸脉冲
+  light.name = 'charge-cabinet-indicator'
   add(light, w * 0.10, h * 0.018, 0.006, -w * 0.19, h * 0.685, d * 0.556)
   return finish(groups, [...Object.values(materials), light])
 }

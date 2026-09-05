@@ -1,9 +1,12 @@
 /**
  * 地标位置继续来自地图语义节点，停车底板保留，P 字标交由节点几何统一绘制。
- * 工业充电柜保留实体和指示灯，并在柜门、背面及顶面补充同源闪电标识。
+ * 工业充电柜保留实体和指示灯，并在柜门、背面及顶面补充同源闪电标识；
+ * 柜体、标识与指示灯共享投影尺寸淡出（P2-1 总览 LOD），指示灯按低频呼吸
+ * 脉动（装饰动画开关只门控脉冲，不隐藏业务语义对象）。
  * 几何、材质与实例缓冲由本组件统一释放，地图与上下文换代时重新创建。
  */
 import { useEffect, useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { MapModel } from '../model/types'
 import type { WorldTransform } from '@/shared/spatial'
@@ -13,6 +16,17 @@ import { joinGeometry } from '@/shared/industrial/geometry'
 import type { MapNameAtlas } from '../scene/mapNameAtlas'
 import { createNodeSymbolGeometry } from '../scene/nodeSymbolGeometry'
 import {
+  createScreenSizeFadeUniforms,
+  injectBrightnessPulse,
+  injectScreenSizeFade,
+  type PulseUniforms,
+  type ScreenSizeFadeUniforms,
+} from '../scene/semanticMaterials'
+import {
+  CHARGE_FADE_END_PX,
+  CHARGE_FADE_START_PX,
+  CHARGE_LIGHT_MIN_BRIGHTNESS,
+  CHARGE_LIGHT_PERIOD_S,
   NODE_COLORS,
   NODE_SYMBOL_LIFT_M,
   PARK_SLAB_HALO_LIFT_M,
@@ -29,7 +43,7 @@ export interface LandmarksLayerProps {
    * 图集缺失时，停车与充电的语义标识仍然完整可见。
    */
   readonly nameAtlas: MapNameAtlas | null
-  /** 保留既有能力接口；工业柜体指示灯恒定，不受装饰动画开关影响 */
+  /** 装饰动画能力开关（SPEC §6.5）：只门控充电指示灯呼吸，不隐藏柜体 */
   readonly decorationsEnabled: boolean
 }
 
@@ -40,6 +54,9 @@ interface LandmarkResources {
   parkSlabs: THREE.InstancedMesh
   parkHalos: THREE.InstancedMesh
   charging: ReturnType<typeof instanceFacility>
+  /** 充电元素共享的淡出/呼吸 uniforms：帧驱动逐帧写入（P2-1） */
+  chargeFadeUniforms: ScreenSizeFadeUniforms
+  chargePulseUniforms: PulseUniforms
   /** 创建的全部 geometry/material（不含外部图集纹理），释放责任清单 */
   owned: { dispose(): void }[]
 }
@@ -71,8 +88,30 @@ export function LandmarksLayer({
       <primitive key={`park-slabs-${resources.id}`} object={resources.parkSlabs} dispose={null} />
       <primitive key={`park-halos-${resources.id}`} object={resources.parkHalos} dispose={null} />
       <primitive key={`charging-${resources.id}`} object={resources.charging.group} dispose={null} />
+      <ChargeUniformsDriver
+        fadeUniforms={resources.chargeFadeUniforms}
+        pulseUniforms={resources.chargePulseUniforms}
+      />
     </>
   )
+}
+
+/**
+ * 充电元素帧驱动（P2-1）：视口高度与呼吸相位每帧写入共享 uniforms，不进
+ * React state。资源换代后新驱动绑定新 uniforms，旧对象随材质释放不再被写。
+ */
+function ChargeUniformsDriver({
+  fadeUniforms,
+  pulseUniforms,
+}: {
+  fadeUniforms: ScreenSizeFadeUniforms
+  pulseUniforms: PulseUniforms
+}) {
+  useFrame((state) => {
+    fadeUniforms.uViewportHeightPx.value = state.size?.height ?? 0
+    pulseUniforms.uTime.value = state.clock.elapsedTime
+  })
+  return null
 }
 
 /** 上载静态实例数据并创建全部地标 GPU 对象（一次构建、静态不再改写） */
@@ -80,7 +119,6 @@ function createLandmarkResources(
   data: LandmarkData,
   decorationsEnabled: boolean,
 ): LandmarkResources {
-  void decorationsEnabled
   const owned: { dispose(): void }[] = []
   const id = ++landmarkResourcesSeq
 
@@ -128,8 +166,34 @@ function createLandmarkResources(
   owned.push(charging, cabinet)
 
   /**
+   * 充电元素总览 LOD 与呼吸脉冲（P2-1）：柜体受光材质、柜面闪电标识与指示
+   * 灯共享同一组淡出 uniforms（世界尺寸 = 柜体高度），59 处充电柜在总览同步
+   * 渐隐、中近景完整呈现；指示灯额外复合低频呼吸（decorationsEnabled 门控，
+   * 关闭时恒定全亮）。淡出按 alpha 调制，柜体保持深度写入以维持遮挡关系。
+   */
+  const chargeFadeUniforms = createScreenSizeFadeUniforms(CABINET_CONFIG.height)
+  chargeFadeUniforms.uFadeStartPx.value = CHARGE_FADE_START_PX
+  chargeFadeUniforms.uFadeEndPx.value = CHARGE_FADE_END_PX
+  const chargePulseUniforms: PulseUniforms = {
+    uTime: { value: 0 },
+    uPulseEnabled: { value: decorationsEnabled ? 1 : 0 },
+    uPulsePeriod: { value: CHARGE_LIGHT_PERIOD_S },
+    uPulseMin: { value: CHARGE_LIGHT_MIN_BRIGHTNESS },
+  }
+  for (const part of cabinet.parts) {
+    part.material.transparent = true
+    if (part.material.name === 'charge-cabinet-indicator') {
+      injectScreenSizeFade(part.material, chargeFadeUniforms, 'map-charge-cabinet')
+      injectBrightnessPulse(part.material, chargePulseUniforms, 'map-charge-cabinet-pulse')
+    } else {
+      injectScreenSizeFade(part.material, chargeFadeUniforms, 'map-charge-cabinet')
+    }
+  }
+
+  /**
    * 柜体会遮住节点顶面的闪电，因此同一图形也贴在柜门、背面和柜顶。
    * 三面合成一个静态实例批次；标识不发光，不把设施类型误表达成充电状态。
+   * 标识与柜体共享淡出 uniforms，总览同步隐现保持语义成组。
    */
   if (data.chargeCount > 0) {
     const { width, depth, height } = CABINET_CONFIG
@@ -145,7 +209,11 @@ function createLandmarkResources(
     top.rotateX(-Math.PI / 2)
     top.translate(0, height + NODE_SYMBOL_LIFT_M, 0)
     const signsGeometry = joinGeometry([front, back, top])
-    const signsMaterial = new THREE.MeshBasicMaterial({ color: '#146b71' })
+    const signsMaterial = new THREE.MeshBasicMaterial({
+      color: '#146b71',
+      transparent: true,
+    })
+    injectScreenSizeFade(signsMaterial, chargeFadeUniforms, 'map-charge-fade')
     const signs = new THREE.InstancedMesh(signsGeometry, signsMaterial, data.chargeCount)
     signs.name = 'map-charge-symbols'
     uploadStaticInstances(signs, data.chargeCount, data.chargeMatrices, null)
@@ -162,6 +230,8 @@ function createLandmarkResources(
     parkSlabs,
     parkHalos,
     charging,
+    chargeFadeUniforms,
+    chargePulseUniforms,
     owned,
   }
 }

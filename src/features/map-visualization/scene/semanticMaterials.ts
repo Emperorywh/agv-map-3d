@@ -1,28 +1,29 @@
 /**
  * 语义图层补丁材质（SPEC §2.3、§5.1、§6.5；TASK-005；P2-1 充电 LOD）。
  *
- * 职责：为名称四边形、充电呼吸灯与节点实例层提供基于 MeshBasicMaterial
- *       的材质工厂，通过 onBeforeCompile 注入最小 GLSL：
+ * 职责：为名称四边形与节点实例层提供基于 MeshBasicMaterial 的材质工厂，并
+ *       提供可注入既有材质的最小 GLSL 补丁助手，全部经 onBeforeCompile 完成：
  *       - createNameFadeMaterial：按「片元世界坐标到相机距离」平滑淡出名称
  *         （近于 near 全显、远于 far 全隐），实现地标名称的远近显隐，
  *         全程 GPU 侧完成，无逐帧 CPU 写入；
- *       - createPulseMaterial：呼吸灯亮度按时间正弦脉动，uPulseEnabled=0 时
- *         恒定全亮——装饰动画能力开关（可被 TASK-014 质量控制关闭）；
  *       - createNodeLodMaterial：节点盘按投影尺寸淡出（P1-5 shader LOD），
  *         总览回归路网骨架，近景不受影响；
- *       - createChargeFadeMaterial / createChargeFadePulseMaterial（P2-1）：
- *         充电立柱/光环/闪电贴花的投影尺寸淡出（与节点同思路、以世界尺寸
- *         直推投影），底环版复合亮度脉冲。
+ *       - createScreenSizeFadeUniforms / injectScreenSizeFade（P2-1）：充电柜
+ *         与柜面闪电标识的投影尺寸淡出——工业充电柜的受光材质由设施工厂创建，
+ *         淡出以注入方式补充，不复制材质；
+ *       - injectBrightnessPulse（P2-1）：亮度按时间正弦脉动，uPulseEnabled=0
+ *         时恒定全亮——装饰动画能力开关（可被 TASK-014 质量控制关闭）。
  * 边界：只封装材质与注入 uniforms；几何、实例与释放责任归图层组件。注入点
- *       为 three r185 meshbasic 着色器的 <common>/<project_vertex>/
- *       <worldpos_vertex>/<opaque_fragment> chunk，cameraPosition 由 three
- *       内建 uniform 提供。
+ *       为 three r185 meshbasic / meshstandard 着色器共有的 <common>/
+ *       <project_vertex>/<worldpos_vertex>/<opaque_fragment> chunk，
+ *       cameraPosition 由 three 内建 uniform 提供。
  * 关键不变量：
- * 1. uniforms 对象在材质创建时即存在并挂在 material.userData.uniforms：调用方
- *    （useFrame/测试）可在着色器首次编译前后随时读写，不需要感知编译状态；
- * 2. 各材质设置 customProgramCacheKey，避免不同注入共享同一编译缓存；
+ * 1. uniforms 对象在材质创建/注入时即存在并挂在 material.userData.uniforms：
+ *    调用方（useFrame）可在着色器首次编译前后随时读写，不需要感知编译状态；
+ * 2. 各材质设置 customProgramCacheKey，避免不同注入共享同一编译缓存；注入
+ *    助手链式保留既有 onBeforeCompile，同一材质可复合多套注入；
  * 3. 名称材质透明但不写深度（depthWrite=false），淡出只作用于 alpha，不产生
- *    深度残留；呼吸灯只调制 rgb 亮度，alpha 恒为 1。
+ *    深度残留；脉冲只调制 rgb 亮度，alpha 恒为 1。
  */
 import * as THREE from 'three'
 import { NODE_SYMBOL_COLOR } from './mapAppearance'
@@ -83,7 +84,7 @@ export function createNameFadeMaterial(
   return material
 }
 
-/** 呼吸灯材质注入的 uniforms（userData.uniforms 中可读写） */
+/** 亮度脉冲注入的 uniforms（userData.uniforms 中可读写） */
 export interface PulseUniforms {
   /** 单调累计秒（useFrame 写入）；仅影响脉动相位 */
   readonly uTime: { value: number }
@@ -104,50 +105,6 @@ export interface NodeLodUniforms {
   readonly uFadeEndPx: { value: number }
   /** 场景细节等级（P0-5.1）：由场景控制器共享写入，与角色最低等级比较 */
   readonly uSceneLevel: { value: number }
-}
-
-/** 呼吸灯材质：恒定色相、正弦亮度脉动；返回材质与可写 uniforms */
-export function createPulseMaterial(color: string): {
-  material: THREE.MeshBasicMaterial
-  uniforms: PulseUniforms
-} {
-  const uniforms: PulseUniforms = {
-    uTime: { value: 0 },
-    uPulseEnabled: { value: 1 },
-    uPulsePeriod: { value: 1 },
-    uPulseMin: { value: 0 },
-  }
-  const material = new THREE.MeshBasicMaterial({ color })
-  material.name = 'map-charge-pulse'
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = uniforms.uTime
-    shader.uniforms.uPulseEnabled = uniforms.uPulseEnabled
-    shader.uniforms.uPulsePeriod = uniforms.uPulsePeriod
-    shader.uniforms.uPulseMin = uniforms.uPulseMin
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        [
-          '#include <common>',
-          'uniform float uTime;',
-          'uniform float uPulseEnabled;',
-          'uniform float uPulsePeriod;',
-          'uniform float uPulseMin;',
-        ].join('\n'),
-      )
-      .replace(
-        '#include <opaque_fragment>',
-        [
-          '#include <opaque_fragment>',
-          'float pulseWave = 0.5 + 0.5 * sin( uTime * 6.28318530718 / max( uPulsePeriod, 0.001 ) );',
-          'float pulseBrightness = mix( 1.0, uPulseMin + ( 1.0 - uPulseMin ) * pulseWave, uPulseEnabled );',
-          'gl_FragColor.rgb *= pulseBrightness;',
-        ].join('\n'),
-      )
-  }
-  material.customProgramCacheKey = () => 'map-charge-pulse'
-  material.userData.uniforms = uniforms
-  return { material, uniforms }
 }
 
 /**
@@ -270,9 +227,9 @@ export function createNodeLodMaterial(options: {
   return { material, uniforms }
 }
 
-/** 充电元素屏幕尺寸 LOD 淡出注入的 uniforms（userData.uniforms 中可读写） */
+/** 屏幕尺寸 LOD 淡出注入的 uniforms（userData.uniforms 中可读写） */
 export interface ScreenSizeFadeUniforms {
-  /** 参与淡出判定的世界尺寸（米；充电组取立柱高度，组内同步隐现） */
+  /** 参与淡出判定的世界尺寸（米；充电组取柜体高度，组内同步隐现） */
   readonly uWorldSizeM: { value: number }
   /** 视口高度（像素；LandmarksLayer 逐帧写入共享的同一 uniforms 对象） */
   readonly uViewportHeightPx: { value: number }
@@ -280,42 +237,36 @@ export interface ScreenSizeFadeUniforms {
   readonly uFadeEndPx: { value: number }
 }
 
-export interface ChargeFadeMaterialOptions {
-  /** 基础色（与 map 互斥使用；默认白） */
-  readonly color?: string
-  /** 图集纹理（闪电贴花等）；null/省略 = 纯色 */
-  readonly map?: THREE.Texture | null
-  /** 基础透明度（默认 1） */
-  readonly opacity?: number
-}
-
-/**
- * 充电元素 LOD 淡出材质（P2-1/8.4）：与节点 LOD（createNodeLodMaterial）
- * 同款 shader 淡出，但以「世界尺寸」直接参与投影推导——立柱/光环/闪电贴花
- * 传入同一 uWorldSizeM（立柱高度）与共享 uniforms 对象，59 处充电元素在
- * 总览同步渐隐、中近景完整呈现，避免成排发光体抢戏。
- */
-export function createChargeFadeMaterial(
-  options: ChargeFadeMaterialOptions = {},
-): {
-  material: THREE.MeshBasicMaterial
-  uniforms: ScreenSizeFadeUniforms
-} {
-  const uniforms: ScreenSizeFadeUniforms = {
-    uWorldSizeM: { value: 1 },
+/** 创建一组屏幕尺寸淡出 uniforms（世界尺寸 = 充电元素的世界高度，米） */
+export function createScreenSizeFadeUniforms(
+  worldSizeM: number,
+): ScreenSizeFadeUniforms {
+  return {
+    uWorldSizeM: { value: worldSizeM },
     uViewportHeightPx: { value: 0 },
     uFadeStartPx: { value: 7 },
     uFadeEndPx: { value: 2.5 },
   }
-  const material = new THREE.MeshBasicMaterial({
-    color: options.color ?? '#ffffff',
-    map: options.map ?? null,
-    transparent: true,
-    opacity: options.opacity ?? 1,
-    depthWrite: false,
-  })
-  material.name = 'map-charge-fade'
-  material.onBeforeCompile = (shader) => {
+}
+
+/**
+ * 向既有材质注入屏幕尺寸 LOD 淡出（P2-1/8.4）：与节点 LOD
+ * （createNodeLodMaterial）同款投影推导，但以「世界尺寸」直推投影像素。
+ * 工业充电柜的受光材质由设施工厂创建，淡出以注入方式补充、不复制材质；
+ * 柜体与柜面闪电标识共享同一 uniforms 对象，59 处充电元素在总览同步渐隐、
+ * 中近景完整呈现，避免成排设施抢戏。
+ * 注入链式保留材质既有的 onBeforeCompile（先淡出后脉冲的复合顺序由此保证）；
+ * MeshBasic 与 MeshStandard 着色器都具备 <project_vertex>/<opaque_fragment>
+ * chunk，同一助手可服务 Unlit 贴花与受光柜体。
+ */
+export function injectScreenSizeFade(
+  material: THREE.Material,
+  uniforms: ScreenSizeFadeUniforms,
+  cacheKey: string,
+): void {
+  const injectPrevious = material.onBeforeCompile
+  material.onBeforeCompile = (shader, renderer) => {
+    injectPrevious.call(material, shader, renderer)
     shader.uniforms.uWorldSizeM = uniforms.uWorldSizeM
     shader.uniforms.uViewportHeightPx = uniforms.uViewportHeightPx
     shader.uniforms.uFadeStartPx = uniforms.uFadeStartPx
@@ -359,43 +310,30 @@ export function createChargeFadeMaterial(
         ].join('\n'),
       )
   }
-  material.customProgramCacheKey = () => 'map-charge-fade'
-  material.userData.uniforms = uniforms
-  return { material, uniforms }
+  material.customProgramCacheKey = () => cacheKey
+  material.userData.uniforms = {
+    ...(material.userData.uniforms as Record<string, unknown> | undefined),
+    ...uniforms,
+  }
 }
 
-/** 充电淡出 + 脉冲复合材质的 uniforms（两套注入共用一个对象） */
-export type ChargeFadePulseUniforms = ScreenSizeFadeUniforms & PulseUniforms
-
 /**
- * 充电底环材质（P2-1）：LOD 淡出 + 正弦亮度脉冲复合注入——底环随呼吸灯同
- * 周期脉动（uTime/uPulseEnabled 由图层逐帧写入），总览与立柱同步淡出。
+ * 向既有材质注入正弦亮度脉冲（P2-1）：gl_FragColor.rgb 按时间调制，最暗
+ * uPulseMin、最亮 1；uPulseEnabled=0 时恒定全亮（装饰动画能力开关）。
+ * 只作用于 rgb，alpha 恒为 1——与淡出注入（作用于 alpha）互不干扰，可复合。
  */
-export function createChargeFadePulseMaterial(
-  color: string,
-  pulsePeriodS: number,
-  pulseMinBrightness: number,
-): {
-  material: THREE.MeshBasicMaterial
-  uniforms: ChargeFadePulseUniforms
-} {
-  const fade = createChargeFadeMaterial({ color })
-  const pulseUniforms: PulseUniforms = {
-    uTime: { value: 0 },
-    uPulseEnabled: { value: 1 },
-    uPulsePeriod: { value: pulsePeriodS },
-    uPulseMin: { value: pulseMinBrightness },
-  }
-  const material = fade.material
-  material.name = 'map-charge-fade-pulse'
-  material.side = THREE.DoubleSide
-  const injectFade = material.onBeforeCompile
+export function injectBrightnessPulse(
+  material: THREE.Material,
+  uniforms: PulseUniforms,
+  cacheKey: string,
+): void {
+  const injectPrevious = material.onBeforeCompile
   material.onBeforeCompile = (shader, renderer) => {
-    injectFade(shader, renderer)
-    shader.uniforms.uTime = pulseUniforms.uTime
-    shader.uniforms.uPulseEnabled = pulseUniforms.uPulseEnabled
-    shader.uniforms.uPulsePeriod = pulseUniforms.uPulsePeriod
-    shader.uniforms.uPulseMin = pulseUniforms.uPulseMin
+    injectPrevious.call(material, shader, renderer)
+    shader.uniforms.uTime = uniforms.uTime
+    shader.uniforms.uPulseEnabled = uniforms.uPulseEnabled
+    shader.uniforms.uPulsePeriod = uniforms.uPulsePeriod
+    shader.uniforms.uPulseMin = uniforms.uPulseMin
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
@@ -411,13 +349,15 @@ export function createChargeFadePulseMaterial(
         '#include <opaque_fragment>',
         [
           '#include <opaque_fragment>',
-          'float ringPulseWave = 0.5 + 0.5 * sin( uTime * 6.28318530718 / max( uPulsePeriod, 0.001 ) );',
-          'float ringPulseBrightness = mix( 1.0, uPulseMin + ( 1.0 - uPulseMin ) * ringPulseWave, uPulseEnabled );',
-          'gl_FragColor.rgb *= ringPulseBrightness;',
+          'float pulseWave = 0.5 + 0.5 * sin( uTime * 6.28318530718 / max( uPulsePeriod, 0.001 ) );',
+          'float pulseBrightness = mix( 1.0, uPulseMin + ( 1.0 - uPulseMin ) * pulseWave, uPulseEnabled );',
+          'gl_FragColor.rgb *= pulseBrightness;',
         ].join('\n'),
       )
   }
-  material.customProgramCacheKey = () => 'map-charge-fade-pulse'
-  material.userData.uniforms = { ...fade.uniforms, ...pulseUniforms }
-  return { material, uniforms: material.userData.uniforms as ChargeFadePulseUniforms }
+  material.customProgramCacheKey = () => cacheKey
+  material.userData.uniforms = {
+    ...(material.userData.uniforms as Record<string, unknown> | undefined),
+    ...uniforms,
+  }
 }

@@ -173,46 +173,22 @@ export const BACKGROUND_VIGNETTE_STRENGTH = 0
 
 /* ==================== TASK-005 地图业务语义图层 ==================== */
 
-/** 充电桩立柱尺寸（宽×深×高，米）与颜色（青色，与 charge 节点同色系） */
-export const CHARGE_PILE_WIDTH_M = 0.4
-export const CHARGE_PILE_DEPTH_M = 0.28
-export const CHARGE_PILE_HEIGHT_M = 0.9
-export const CHARGE_PILE_COLOR = '#2fd3e2'
-
-/** 充电桩底部光环：内半径略小于节点圆盘（r=0.25），外半径露出青色圆环 */
-export const CHARGE_RING_INNER_M = 0.3
-export const CHARGE_RING_OUTER_M = 0.6
-export const CHARGE_RING_COLOR = '#31d9e8'
-export const CHARGE_RING_OPACITY = 0.4
-
-/** 低频呼吸灯：灯球直径、呼吸周期（秒）与最暗亮度（装饰动画可整体关闭） */
-export const CHARGE_LIGHT_SIZE_M = 0.16
-export const CHARGE_LIGHT_PERIOD_S = 2.4
-export const CHARGE_LIGHT_MIN_BRIGHTNESS = 0.25
-export const CHARGE_LIGHT_COLOR = '#5cf0ff'
-
-/* ==================== 充电桩表达增强（P2-1/8.4） ==================== */
-
 /**
- * 桩身闪电贴花（P2-1）：单格 Canvas 图集 + 桩身四面贴花四边形。方形贴花、
- * 柱面外扩间距防 z-fighting；Canvas 不可用（无头测试环境）时贴花整体降级
- * 为不创建（缺贴花不缺充电桩语义）。
- */
-export const CHARGE_BOLT_CELL_PX = 128
-export const CHARGE_BOLT_HEIGHT_M = 0.34
-export const CHARGE_BOLT_COLOR = '#8df6ff'
-export const CHARGE_BOLT_FACE_OFFSET_M = 0.006
-
-/**
- * 充电元素总览 LOD（P2-1/8.4）：59 处充电桩的立柱/光环/贴花在总览成排发光
- * 抢戏，与节点 LOD（P1-5）同款 shader 淡出——按「立柱高度」的投影尺寸在
- * [end, start] 像素区间平滑淡出，桩/环/贴花同步隐现保持语义成组。
+ * 充电设施总览 LOD（P2-1/8.4）：59 处充电柜的柜体与柜面闪电标识在总览成排
+ * 抢戏，与节点 LOD（P1-5）同款 shader 淡出——按「柜体高度」（CABINET_
+ * CONFIG.height）的投影尺寸在 [end, start] 像素区间平滑淡出，柜体/标识/
+ * 指示灯同步隐现保持语义成组。
  */
 export const CHARGE_FADE_START_PX = 7
 export const CHARGE_FADE_END_PX = 2.5
 
-/** 底环脉冲（P2-1）：与呼吸灯同周期随动呼吸，最暗亮度高于灯球（环是弱陪衬） */
-export const CHARGE_RING_PULSE_MIN_BRIGHTNESS = 0.55
+/**
+ * 充电柜指示灯呼吸脉冲（P2-1）：低频呼吸周期与最暗亮度（装饰动画可整体
+ * 关闭）。工业充电柜没有独立呼吸灯球，面板指示灯是充电呼吸感的唯一载体，
+ * 脉冲只调制亮度、不改变色相与业务语义。
+ */
+export const CHARGE_LIGHT_PERIOD_S = 2.4
+export const CHARGE_LIGHT_MIN_BRIGHTNESS = 0.25
 
 /** 停车点 slab 足迹边长（紫色） */
 export const PARK_PAD_SIZE_M = 1.4

@@ -65,7 +65,12 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
     // 程序外壳为实心近似，顶面需低于独立平台，防止平台被壳体遮住。
     // 精修模型的顶面凹槽已在资产中建好，不使用这组回退矩阵。
     shell: at(0, 0.235, length, 0.19, width),
-    wedge: at(length / 2 + 0.001, 0.25, 0.012, 0.06, width * 0.40),
+    /**
+     * 车行方向箭头（P2-7）：外壳顶面前段的「➤」薄贴片，俯视即可读出车头
+     * 朝向。鼻尖略收在壳体鼻点之内，底面抬高 1mm 避让壳顶面深度冲突，
+     * 顶面低于平台顶保持部件层次；精修模式隐藏本部件（资产自带形态）。
+     */
+    wedge: at(length * 0.455, 0.335, length * 0.08, 0.008, width * 0.40),
     platform: at(0, platformTop - 0.012, length * 0.82, 0.024, width * 0.80),
     pallet: at(0, platformTop + palletHeight / 2, loadLength * 0.8, palletHeight, loadWidth * 0.8),
     cargo: at(0, platformTop + palletHeight + cargoHeight / 2, loadLength * 0.78, cargoHeight, loadWidth * 0.78),
@@ -105,6 +110,24 @@ export function computeVehicleWorldPose(snapshot: VehicleSnapshot, worldTransfor
 }
 
 /**
+ * 车行方向箭头（P2-7）：俯视「➤」轮廓的薄棱柱——鼻尖朝 +x、两翼全宽、
+ * 尾部中央凹口。几何归一化到 [-0.5,0.5]³，实例矩阵按车体尺寸非等比缩放，
+ * 与其他部件槽位共享同一中心与朝向口径。
+ */
+function createDirectionArrowGeometry(): THREE.BufferGeometry {
+  const shape = new THREE.Shape([
+    new THREE.Vector2(0.5, 0),
+    new THREE.Vector2(-0.5, 0.5),
+    new THREE.Vector2(-0.15, 0),
+    new THREE.Vector2(-0.5, -0.5),
+  ])
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false })
+  geometry.translate(0, 0, -0.5)
+  geometry.rotateX(-Math.PI / 2)
+  return geometry
+}
+
+/**
  * 程序回退采用实际几何圆角及分离轮毂、防撞条、传感器窗口，资源供整队复用。
  * 轮胎高度固定，水平轮距随尺寸变化；所有轮胎最低点始终为零米。
  */
@@ -115,7 +138,7 @@ export function createVehicleResources(model?: IndustrialModel): VehicleResource
   const add = (kind: VehiclePartKind, geometry: THREE.BufferGeometry, material: THREE.Material) => { parts[kind] = { geometry, material } }
   add('chassis', industrialBox(1, 1, 1, 0.035, 1), materials.chassis)
   add('shell', industrialBox(1, 1, 1, 0.075, 1), materials.paint)
-  add('wedge', industrialBox(1, 1, 1, 0.06, 1), materials.rubber)
+  add('wedge', createDirectionArrowGeometry(), materials.rubber)
   add('platform', industrialBox(1, 1, 1, 0.04, 1), materials.platform)
   add('pallet', createPalletGeometry(), materials.wood)
   add('cargo', createCartonGeometry(), materials.cardboard)
