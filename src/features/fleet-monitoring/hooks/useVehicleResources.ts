@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createVehicleResources, type VehicleResources } from '../scene/createVehicleGeometry'
 import { loadIndustrialVehicleModel } from '../scene/industrialVehicleModel'
+import { loadShelfModel } from '@/shared/industrial/shelfModel'
 
 export function useVehicleResources(generation: number): VehicleResources {
   const fallback = useMemo(() => { void generation; return createVehicleResources() }, [generation])
@@ -20,9 +21,22 @@ export function useVehicleResources(generation: number): VehicleResources {
   useEffect(() => {
     let active = true
     let resources: VehicleResources | null = null
-    void loadIndustrialVehicleModel().then((model) => {
-      if (!active) { model.dispose(); return }
-      resources = createVehicleResources(model)
+    /**
+     * 车体与满载架独立加载，任一资源失败只影响自身，继续保留对应程序回退。
+     * 两项完成后统一交接所有权，卸载后完成的资源立即释放，不遗留标签贴图。
+     */
+    void Promise.allSettled([loadIndustrialVehicleModel(), loadShelfModel('loaded')]).then(([vehicleResult, shelfResult]) => {
+      const model = vehicleResult.status === 'fulfilled' ? vehicleResult.value : undefined
+      const shelf = shelfResult.status === 'fulfilled' ? shelfResult.value : undefined
+      if (!active) { model?.dispose(); shelf?.dispose(); return }
+      if (vehicleResult.status === 'rejected') console.warn('工业 AGV 模型不可用，继续使用程序模型', vehicleResult.reason)
+      if (shelfResult.status === 'rejected') console.warn('满载货架不可用，继续使用托盘纸箱', shelfResult.reason)
+      /**
+       * 资源构造成功才转移所有权，构造异常时回收已解析的原始模型。
+       * 防止几何创建失败后留下尚未交给车队管理的内嵌贴图。
+       */
+      try { resources = createVehicleResources(model, shelf) }
+      catch (error) { model?.dispose(); shelf?.dispose(); throw error }
       setLoaded({ generation, resources })
     }).catch((error: unknown) => {
       if (active) console.warn('工业 AGV 模型不可用，继续使用程序模型', error)

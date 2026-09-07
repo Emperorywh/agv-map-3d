@@ -88,6 +88,10 @@ function createBatches(resources: VehicleResources, count: number, quality: Rend
       else mesh.raycast = () => {}
       parts[kind] = mesh
     }
-    return { parts, modelReady: resources.modelReady }
+    /**
+     * 车体和货架就绪状态随批次换代传入帧同步，触发全车队载荷矩阵回填。
+     * 模型加载完成前后继续复用同一车辆业务槽位。
+     */
+    return { parts, modelReady: resources.modelReady, shelfReady: resources.shelfReady }
   })
 }

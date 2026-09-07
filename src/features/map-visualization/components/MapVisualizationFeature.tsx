@@ -63,6 +63,7 @@ import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { LandmarksLayer } from './LandmarksLayer'
 import { GroundLayer } from './GroundLayer'
 import { FactoryLayer } from './FactoryLayer'
+import { ShelvesLayer } from './ShelvesLayer'
 import { SceneBloom } from './SceneBloom'
 
 export interface MapVisualizationFeatureProps {
@@ -165,6 +166,9 @@ export function MapVisualizationFeature({
             bounds={factoryLayout.bounds}
           />
           <FactoryLayer key={`factory-${view.version}`} layout={factoryLayout} />
+          {/* 货架沿边缘节点外围整齐摆放，复用厂房边界保留通行与检修净空。
+              与地图资源代共同重建，原始 GLB 只作为只读资产加载。 */}
+          <ShelvesLayer key={`shelves-${view.version}`} mapModel={view.mapModel} worldTransform={view.worldTransform} layout={factoryLayout} />
           <PhysicalPathsLayer
             key={`paths-${view.version}`}
             geometry={view.geometry}

@@ -37,6 +37,11 @@ export interface FleetBatchMeshes {
    * 未加载和恢复过程中使用程序模型，槽位与车辆映射保持一致。
    */
   readonly modelReady: boolean
+  /**
+   * 满载货架资源与批次同代，决定完整货架和程序载荷的互斥显示。
+   * 位姿、载货状态和故障动画均使用同一布局输入。
+   */
+  readonly shelfReady: boolean
 }
 
 export interface UseFleetFrameSyncOptions {
@@ -325,7 +330,7 @@ function writeVehiclePose(
   if (entity === undefined) {
     return
   }
-  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true)
+  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true, batches[0]?.shelfReady === true)
   let slot = table.get(key)
   if (!layout.visible) {
     // 非法坐标/尺寸：不放置车体也不占用新槽位；已持槽位整车清零
@@ -383,7 +388,7 @@ function writeVehicleDisplay(
   if (entity === undefined) {
     return
   }
-  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true)
+  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true, batches[0]?.shelfReady === true)
   const slot = table.get(key)
   if (slot === undefined || slot.batch >= batches.length) {
     // 无可见槽位（非法车或硬上限等待）：只需保证不留在信标激活集合
@@ -404,10 +409,13 @@ function writeVehicleDisplay(
     controller.pulsingLightKeys.delete(key)
   }
 
-  // 平台/托盘/纸箱可见性：loadState 属显示差，变化时重写三者矩阵
+  /**
+   * 载荷变化也必须使用部件可见性规则，完整货架与回退纸箱不能同时写入。
+   * 即使车辆停着不动，卸货或重新载货也会立即更新全部载荷部件。
+   */
   const pose = computeVehicleWorldPose(entity.snapshot, worldTransform)
   for (const kind of LOAD_PARTS) {
-    if (layout.visible && layout.loaded) {
+    if (vehiclePartVisible(kind, layout)) {
       writePlacementMatrix(controller, batches, slot.batch, slot.slot, kind, layout[kind], pose, 0)
     } else {
       zeroPartMatrix(controller, batches, slot.batch, slot.slot, kind)
@@ -460,7 +468,7 @@ function animateBeacon(
     controller.beaconKeys.delete(key)
     return
   }
-  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true)
+  const layout = computeVehiclePartLayout(entity.snapshot, entity.displayState, batches[0]?.modelReady === true, batches[0]?.shelfReady === true)
   if (!layout.visible || !layout.beaconActive) {
     // 故障恢复或整车非法：移出激活集合并熄灭
     controller.beaconKeys.delete(key)

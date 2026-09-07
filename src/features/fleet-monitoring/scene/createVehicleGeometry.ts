@@ -11,19 +11,25 @@ import type { VehicleDisplayState, VehicleSnapshot } from '../model/types'
 import { GLB_MATERIAL_PARTS, type GlbPartKind, type IndustrialModel } from './industrialVehicleModel'
 import { INDUSTRIAL_AGV_MODEL, usesIndustrialModel } from './vehicleModelConfig'
 import { createStatusLightGround } from './vehicleStatusLights'
+import { SHELF_MATERIAL_PARTS, type ShelfModel, type ShelfPartKind } from '@/shared/industrial/shelfModel'
 
 /**
  * 地面投光作为整车部件共享分配、移动与删除流程。
  * 这样资源恢复或车辆离场时不会留下独立光斑。
  */
-export type VehiclePartKind = 'chassis' | 'shell' | 'wedge' | 'platform' | 'pallet' | 'cargo' | 'tape' | 'beacon' | 'wheels' | 'metal' | 'bumper' | 'status' | 'statusGround' | 'shadow' | GlbPartKind
+export type VehiclePartKind = 'chassis' | 'shell' | 'wedge' | 'platform' | 'pallet' | 'cargo' | 'tape' | 'beacon' | 'wheels' | 'metal' | 'bumper' | 'status' | 'statusGround' | 'shadow' | GlbPartKind | ShelfPartKind
 export const VEHICLE_PART_KINDS: readonly VehiclePartKind[] = [
   'chassis', 'shell', 'wedge', 'platform', 'pallet', 'cargo', 'tape', 'beacon', 'wheels', 'metal', 'bumper', 'status', 'statusGround', 'shadow',
   ...Object.values(GLB_MATERIAL_PARTS),
+  ...Object.values(SHELF_MATERIAL_PARTS),
 ]
 export const INSTANCE_COLOR_PARTS: ReadonlySet<VehiclePartKind> = new Set(['status', 'glbStatus', 'statusGround', 'beacon'])
-export const PICKABLE_PARTS: ReadonlySet<VehiclePartKind> = new Set(['shell', 'glbPaint', 'glbPlatform', 'cargo'])
-export const LOAD_PARTS: ReadonlySet<VehiclePartKind> = new Set(['pallet', 'cargo', 'tape'])
+/**
+ * 满载货架沿用车辆实例槽位与拾取映射，点击架体或料箱仍选中所属车辆。
+ * 所有货架部件进入载荷集合，卸货、无效状态与删除均由原帧同步统一清理。
+ */
+export const PICKABLE_PARTS: ReadonlySet<VehiclePartKind> = new Set(['shell', 'glbPaint', 'glbPlatform', 'cargo', ...Object.values(SHELF_MATERIAL_PARTS)])
+export const LOAD_PARTS: ReadonlySet<VehiclePartKind> = new Set(['pallet', 'cargo', 'tape', ...Object.values(SHELF_MATERIAL_PARTS)])
 const PROCEDURAL_PARTS = new Set<VehiclePartKind>(['chassis', 'shell', 'wedge', 'platform', 'wheels', 'metal', 'bumper', 'status'])
 
 export interface PartPlacement {
@@ -31,20 +37,25 @@ export interface PartPlacement {
   readonly sx: number; readonly sy: number; readonly sz: number
 }
 export type VehiclePartLayout = Record<VehiclePartKind, PartPlacement> & {
-  readonly visible: boolean; readonly loaded: boolean; readonly beaconActive: boolean; readonly industrial: boolean
+  readonly visible: boolean; readonly loaded: boolean; readonly beaconActive: boolean; readonly industrial: boolean; readonly shelfReady: boolean
 }
 export interface VehicleWorldPose { readonly cx: number; readonly cz: number; readonly rotY: number }
 export interface VehicleResources {
   readonly parts: Record<VehiclePartKind, { geometry: THREE.BufferGeometry; material: THREE.Material; lodGeometries?: THREE.BufferGeometry[] }>
   readonly modelReady: boolean
+  /**
+   * 货架独立于车体模型加载，失败时保留已有托盘纸箱回退。
+   * 资源切换后全量刷新槽位，避免新旧载荷重叠。
+   */
+  readonly shelfReady: boolean
   dispose(): void
 }
 
 /**
  * 精修模型不做非等比缩放；对应部件与程序回退互斥显示，载货仅复用一套实例。
- * 平台始终保留，托盘底面直接接触平台顶面，纸箱底面直接接触托盘面。
+ * 平台始终保留，货架脚底直接接触承载面；加载期间仍使用托盘纸箱回退。
  */
-export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState: VehicleDisplayState, modelReady = true): VehiclePartLayout {
+export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState: VehicleDisplayState, modelReady = true, shelfReady = false): VehiclePartLayout {
   const { length, width, loadLength, loadWidth } = snapshot.dimension
   const industrial = modelReady && usesIndustrialModel(snapshot)
   const at = (x: number, y: number, sx: number, sy: number, sz: number, z = 0): PartPlacement => ({ x, y, z, sx, sy, sz })
@@ -55,8 +66,15 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
   const palletHeight = 0.10
   const cargoHeight = 0.24
   const glb = Object.fromEntries(Object.values(GLB_MATERIAL_PARTS).map((kind) => [kind, at(0, 0, 1, 1, 1)])) as Record<GlbPartKind, PartPlacement>
+  /**
+   * 货架原点位于脚底中心，原始一米宽、半米深的底座可直接放到车体承载面。
+   * 不按接口载荷尺寸拉伸资产；运行时只抬升到平台高度，并复用整车中心和转向。
+   */
+  const shelf = Object.fromEntries(Object.values(SHELF_MATERIAL_PARTS).map((kind) => [kind, at(0, platformTop, 1, 1, 1)])) as Record<ShelfPartKind, PartPlacement>
   return {
     ...glb,
+    ...shelf,
+    shelfReady,
     visible: snapshot.positionValid && snapshot.dimensionValid,
     loaded: snapshot.loaded === true,
     beaconActive: displayState.primary === 'FAULT',
@@ -91,9 +109,14 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
 
 export function vehiclePartVisible(kind: VehiclePartKind, layout: VehiclePartLayout): boolean {
   if (!layout.visible) return false
+  /**
+   * 完整货架与原托盘纸箱互斥显示，载荷状态未知或空载时两者都隐藏。
+   * 同一判断同时供位姿更新和显示状态更新使用，防止仅切换载货状态时出现重叠。
+   */
+  if (kind.startsWith('shelf')) return layout.loaded && layout.shelfReady
   if (kind.startsWith('glb')) return layout.industrial
   if (PROCEDURAL_PARTS.has(kind)) return !layout.industrial
-  if (LOAD_PARTS.has(kind)) return layout.loaded
+  if (LOAD_PARTS.has(kind)) return layout.loaded && !layout.shelfReady
   if (kind === 'beacon') return layout.beaconActive
   return true
 }
@@ -131,7 +154,7 @@ function createDirectionArrowGeometry(): THREE.BufferGeometry {
  * 程序回退采用实际几何圆角及分离轮毂、防撞条、传感器窗口，资源供整队复用。
  * 轮胎高度固定，水平轮距随尺寸变化；所有轮胎最低点始终为零米。
  */
-export function createVehicleResources(model?: IndustrialModel): VehicleResources {
+export function createVehicleResources(model?: IndustrialModel, shelf?: ShelfModel): VehicleResources {
   const materials = createIndustrialMaterials()
   const statusMaterial = createStatusMaterial()
   const parts = {} as VehicleResources['parts']
@@ -168,9 +191,17 @@ export function createVehicleResources(model?: IndustrialModel): VehicleResource
   for (const kind of Object.values(GLB_MATERIAL_PARTS)) {
     parts[kind] = model?.parts[kind] ?? { geometry: new THREE.BufferGeometry(), material: materials.paint }
   }
+  /**
+   * 整队共用一份满载架几何和原材质，每辆车仅增加实例矩阵。
+   * 未就绪时建立空部件以保持槽位结构稳定，内嵌标签贴图随资源统一回收。
+   */
+  for (const kind of Object.values(SHELF_MATERIAL_PARTS)) {
+    parts[kind] = shelf?.parts[kind] ?? { geometry: new THREE.BufferGeometry(), material: materials.paint }
+  }
   return {
     parts,
     modelReady: model !== undefined,
+    shelfReady: shelf !== undefined,
     dispose() {
       /**
        * 精修与中远景几何都由整队资源所有者释放，批次只释放自身拷贝。
@@ -178,8 +209,13 @@ export function createVehicleResources(model?: IndustrialModel): VehicleResource
        */
       const geometries = new Set(Object.values(parts).flatMap((part) => [part.geometry, ...(part.lodGeometries ?? [])]))
       const ownedMaterials = new Set([...Object.values(materials), ...Object.values(parts).map((part) => part.material)])
+      const textures = new Set<THREE.Texture>()
+      for (const material of ownedMaterials) for (const value of Object.values(material)) {
+        if (value instanceof THREE.Texture) textures.add(value)
+      }
       for (const geometry of geometries) geometry.dispose()
       for (const material of ownedMaterials) material.dispose()
+      for (const texture of textures) texture.dispose()
     },
   }
 }

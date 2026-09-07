@@ -168,10 +168,10 @@ export const LABEL_ASPECT = 2
 /** 标签世界宽度：由名称单元宽高比推出（帧同步与测试共用同一事实源） */
 export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
 /**
- * 标签锚点高于工业平台、托盘和纸箱顶面，避免载货时遮住箱体。
- * 屏幕尺寸由帧同步层限制，靠近车辆也不会出现巨幅标签。
+ * 满载架顶面约为一点五五米，锚点额外容纳半个标签高度及间隙。
+ * 所有车辆共用稳定高度，载卸货时标签不跳动；屏幕尺寸仍由帧同步限制。
  */
-export const LABEL_ANCHOR_Y_M = 1.3
+export const LABEL_ANCHOR_Y_M = 2.15
 
 /**
  * 浅白半透明底板搭配蓝色信息，贴近参考图的轻量悬浮效果。
