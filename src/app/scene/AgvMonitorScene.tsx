@@ -86,6 +86,11 @@ export interface AgvMonitorSceneProps {
    */
   startedAt?: number
   /**
+   * 地图、实例与相机全部就绪后通知应用收起加载动画。
+   * 仅传递一次性状态，不让面板订阅场景内部的高频数据。
+   */
+  onReady?: () => void
+  /**
    * DEBUG MODE 门控（开发宪法 §8）：仅开发环境由 App 按 ?debug=与会话记忆
    * 计算后注入；默认 false（生产与测试渲染器永不挂载）。
    */
@@ -115,6 +120,7 @@ export function AgvMonitorScene({
   onContextRecoverySettled,
   diagnostics,
   startedAt,
+  onReady,
   debugPanelEnabled = false,
 }: AgvMonitorSceneProps) {
   // 相机命令出口：车辆双击跟随请求的唯一转交通道（组合层桥接，不经过
@@ -237,13 +243,14 @@ export function AgvMonitorScene({
       return
     }
     appInteractiveReportedRef.current = true
+    onReady?.()
     diagnostics?.report('BOOTSTRAP_STAGE_APP_INTERACTIVE', 'info', '启动阶段耗时', {
       stage: 'appInteractive',
       ...(startedAt === undefined
         ? {}
         : { durationMs: performance.now() - startedAt }),
     })
-  }, [readySignals, diagnostics, startedAt])
+  }, [readySignals, diagnostics, startedAt, onReady])
 
   return (
     <group name="agv-monitor-scene">

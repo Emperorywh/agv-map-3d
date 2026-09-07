@@ -8,17 +8,16 @@
 //       源仍在 MapModel 就绪（阶段 3 完成）后创建；就绪后以地图视图描述符 +
 //       数据源装配唯一全屏 Canvas 内的场景组合根 AgvMonitorScene。地图阶段
 //       失败时按指数退避在后台自动重试（清屏色不变，地图上下文 promise 在
-//       首个成功地图兑现），配置阶段失败为终态（保持清屏色，不渲染任何错
-//       误 DOM）。config.renderer（maxDpr/shadowMapSize）经 props 传入场景，
+//       首个成功地图兑现），配置阶段失败为终态并由加载层提示重新加载。
+//       config.renderer（maxDpr/shadowMapSize）经 props 传入场景，
 //       由 Canvas 与地图灯光直接消费。TASK-016：经 Canvas onCreated 捕
 //       获渲染器并交给 useWebGLContextRecovery 监听上下文丢失/恢复——丢失即
 //       preventDefault 并随恢复期暂停帧提交，恢复后递增 GPU 资源代驱动各
 //       Feature 按确定顺序重建，重建结算成功才恢复渲染；连续三次失败记录结
 //       构化错误并永久停止渲染。
 // 关键不变量（SPEC §7.1 / §7.4 / D2）：
-// 1. 整个应用自始至终只挂载一个 Canvas，尺寸 100vw × 100dvh；Canvas 外无
-//    任何 DOM 覆盖层（无加载/错误/进度/连接状态 UI；上下文恢复失败后页面
-//    仍只有原 Canvas，无 DOM 兜底、不自动刷新）；
+// 1. 整个应用自始至终只挂载一个 Canvas，尺寸 100vw × 100dvh；画布外
+//    由独立辅助层显示启动状态与性能指标，保持原有场景生命周期；
 // 2. 启动可取消：effect 清理中止进行中的启动流程、拒绝地图上下文 promise
 //    并清除重试计时器，StrictMode 的 setup→cleanup→setup 只保留最后一次流
 //    程的结果；
@@ -39,7 +38,7 @@
 //    持 never（暂停帧提交/停止渲染）；数据源与运行时在恢复期间照常归并最
 //    新快照，恢复成功后首帧全量对齐；恢复状态是低频事件，进入 React state
 //    合法。
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas } from '@react-three/fiber'
 import { RENDER_QUALITY, RenderQualityContext } from '@/shared/rendering/renderQuality'
@@ -63,6 +62,7 @@ import {
 import { selectVehicleDataSource } from './bootstrap/selectVehicleDataSource'
 import { resolveDebugPanelEnabled } from './debug/debugGate'
 import { AgvMonitorScene } from './scene/AgvMonitorScene'
+import { LoadingOverlay, PerformancePanel } from './overlays/MonitorOverlays'
 import { useWebGLContextRecovery, type ContextRecoveryRenderer } from './webgl/useWebGLContextRecovery'
 
 /** 启动重试基础间隔与上限（毫秒）：指数退避 1s→2s→4s…≤30s */
@@ -71,12 +71,12 @@ const STARTUP_RETRY_MAX_MS = 30000
 
 /**
  * 启动状态机（SPEC §10.3；TASK-017 引入 config-ready 并行窗口）：
- * - pending：config 加载中，页面保持清屏色；
+ * - pending：config 加载中，页面显示配置加载动画；
  * - config-ready：阶段 1 完成、地图加载中（阶段 2/3）。携带配置与地图上下
  *   文 promise——WS 数据源在本阶段创建（与地图下载并行初始化）；
  * - ready：地图就绪（阶段 3 完成），携带场景描述符（含 bootstrap 种子）、
  *   配置与地图上下文；Mock 数据源在本阶段创建；
- * - config-failed：配置阶段终态失败，保持清屏色，无自动重试（SPEC §7.4）。
+ * - config-failed：配置阶段终态失败，加载层提供手动重试入口，无自动重试。
  */
 type StartupState =
   | { phase: 'pending' }
@@ -106,6 +106,13 @@ type StartupState =
 
 export function App() {
   const [startup, setStartup] = useState<StartupState>({ phase: 'pending' })
+  /**
+   * 加载层等待场景的完整就绪信号，地图下载成功不等于已经可以操作。
+   * 重试状态仅用于提示，原有后台退避和数据源生命周期保持不变。
+   */
+  const [sceneReady, setSceneReady] = useState(false)
+  const [mapRetrying, setMapRetrying] = useState(false)
+  const markSceneReady = useCallback(() => setSceneReady(true), [])
   // 诊断通道仅创建一次，同时供启动编排、重试与数据源选择上报使用
   const diagnostics = useMemo(() => createDiagnosticsReporter(), [])
   // 启动起点（TASK-017）：appInteractive 阶段耗时的计时原点（B3 口径中的
@@ -203,6 +210,7 @@ export function App() {
           }
           resolveMapContext?.(mapResult.mapModel.mapId)
           resolveMapContext = null
+          setMapRetrying(false)
           // 地图阶段完成（阶段 3）：就绪即构建一次描述符对象（引用稳定，
           // 场景 Hook 以其字段为依赖）
           setStartup({
@@ -231,7 +239,8 @@ export function App() {
           }
           const structured = asStartupError(error)
           if (structured.code.startsWith('CONFIG_')) {
-            // 配置失败为终态：无有效配置就无法知道地图地址，保持清屏色
+            // 配置失败为终态：无有效配置就无法知道地图地址。
+            // 加载层停止动画，允许用户修复配置后手动重新加载。
             rejectContext(error)
             setStartup({ phase: 'config-failed' })
             return
@@ -239,6 +248,7 @@ export function App() {
           // 地图阶段失败：清屏色保持，地图上下文 promise 保持待定（重试链
           // 内部消化，WS 数据源的绑定不受单次失败影响），指数退避重试
           attempt += 1
+          setMapRetrying(true)
           const delayMs = Math.min(
             STARTUP_RETRY_BASE_MS * 2 ** (attempt - 1),
             STARTUP_RETRY_MAX_MS,
@@ -341,7 +351,21 @@ export function App() {
    * 同一上下文供地图和车辆读取，避免每层独立推导预算造成画质不一致。
    */
   const quality = RENDER_QUALITY[startup.phase === 'ready' ? startup.config.renderer.qualityPreset : 'balanced']
+  /**
+   * 恢复异常优先于启动提示，终态失败停止动画并提供手动重新加载入口。
+   * 成功状态由场景回调确认，性能面板只在前台且渲染运行时展示实时数值。
+   */
+  const loadingFailed = startup.phase === 'config-failed' || recovery.phase === 'stopped'
+  const loadingMessage = startup.phase === 'config-failed' ? '配置加载失败，请检查配置后重新加载。'
+    : recovery.phase === 'stopped' ? '图形上下文恢复失败，请重新加载。'
+    : recovery.phase !== 'running' ? '正在恢复图形上下文…'
+    : sceneReady ? null
+    : mapRetrying ? '地图加载暂未成功，正在自动重试…'
+    : startup.phase === 'pending' ? '正在读取运行配置…'
+    : startup.phase === 'config-ready' ? '正在加载地图数据…'
+    : '正在构建地图、车辆与相机…'
   return (
+    <>
     <Canvas
       style={{ width: '100vw', height: '100dvh' }}
       /* 像素比同时遵守设备、配置及画质档上限，限制多通道的平方级像素成本。
@@ -377,10 +401,14 @@ export function App() {
         onContextRecoverySettled={settleContextRecovery}
         diagnostics={diagnostics}
         startedAt={startedAtRef.current}
+        onReady={markSceneReady}
         debugPanelEnabled={debugPanelEnabled}
       />
       </RenderQualityContext.Provider>
     </Canvas>
+    <LoadingOverlay message={loadingMessage} failed={loadingFailed} />
+    <PerformancePanel active={sceneReady && pageVisible && recovery.phase === 'running'} debugPanelEnabled={debugPanelEnabled} />
+    </>
   )
 }
 

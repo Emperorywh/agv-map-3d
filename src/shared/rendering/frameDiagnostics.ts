@@ -1,10 +1,11 @@
 /**
- * 显式通过网址参数 perf=1 开启完整帧采样，默认没有统计或控制台刷屏开销。
+ * 完整帧采样为常驻性能面板提供每秒一次的快照，不触发场景逐帧更新。
+ * 网址参数 perf=1 额外开放原有全局诊断入口，供开发取证使用。
  * 主画面、阴影、透射、反射及后处理统一累计，避免只读取最后一个通道的数据。
  */
 import type { WebGLRenderer } from 'three'
 
-interface FrameMetrics {
+export interface FrameMetrics {
   fps: number
   frameMs: number
   p95FrameMs: number
@@ -18,12 +19,28 @@ interface FrameMetrics {
   multiDraw: boolean
 }
 
+/**
+ * 面板订阅独立快照，避免性能数值更新传播到三维场景组合根。
+ * 快照只在整秒采样完成或资源释放时更换，满足外部存储的稳定引用要求。
+ */
+let snapshot: FrameMetrics | null = null
+const listeners = new Set<() => void>()
+export const getFrameMetrics = () => snapshot
+export function subscribeFrameMetrics(listener: () => void) {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
+function publishFrameMetrics(metrics: FrameMetrics | null) {
+  snapshot = metrics
+  listeners.forEach((listener) => listener())
+}
+
 declare global {
   interface Window { __AGV_PERFORMANCE__?: FrameMetrics }
 }
 
 export function createFrameDiagnostics(renderer: WebGLRenderer) {
-  if (new URLSearchParams(window.location.search).get('perf') !== '1') return null
+  const exposeGlobal = new URLSearchParams(window.location.search).get('perf') === '1'
   const previousAutoReset = renderer.info.autoReset
   renderer.info.autoReset = false
   const frames: number[] = []
@@ -34,6 +51,18 @@ export function createFrameDiagnostics(renderer: WebGLRenderer) {
   let totalMs = 0
   let published: FrameMetrics | undefined
   const multiDraw = renderer.extensions.has('WEBGL_multi_draw')
+  /**
+   * 切换前后台后丢弃首个间隔，避免暂停时间污染统计。
+   * 正常前台的慢帧仍计入，低于四帧每秒时也能显示真实负载。
+   */
+  let skipInterval = true
+  const resetSamples = () => {
+    frames.length = 0
+    cpuMs = calls = triangles = totalMs = 0
+    skipInterval = true
+    publishFrameMetrics(null)
+  }
+  document.addEventListener('visibilitychange', resetSamples)
 
   return {
     /**
@@ -42,9 +71,10 @@ export function createFrameDiagnostics(renderer: WebGLRenderer) {
      */
     begin() { renderer.info.reset(); startedAt = performance.now() },
     end(delta: number) {
-      if (delta <= 0 || delta > 0.25) {
+      if (skipInterval || delta <= 0 || !Number.isFinite(delta) || document.hidden) {
         frames.length = 0
         cpuMs = calls = triangles = totalMs = 0
+        skipInterval = false
         return
       }
       const frameMs = delta * 1000
@@ -69,7 +99,8 @@ export function createFrameDiagnostics(renderer: WebGLRenderer) {
         samples: count,
         multiDraw,
       }
-      window.__AGV_PERFORMANCE__ = published
+      if (exposeGlobal) window.__AGV_PERFORMANCE__ = published
+      publishFrameMetrics(published)
       frames.length = 0
       cpuMs = calls = triangles = totalMs = 0
     },
@@ -78,7 +109,9 @@ export function createFrameDiagnostics(renderer: WebGLRenderer) {
      * 严格模式重新挂载不会把新所有者的诊断快照误删。
      */
     dispose() {
+      document.removeEventListener('visibilitychange', resetSamples)
       renderer.info.autoReset = previousAutoReset
+      if (snapshot === published) publishFrameMetrics(null)
       if (window.__AGV_PERFORMANCE__ === published) delete window.__AGV_PERFORMANCE__
     },
   }

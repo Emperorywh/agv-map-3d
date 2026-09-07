@@ -25,7 +25,7 @@ export function SceneBloom({ generation }: { generation: number }) {
   const drawingSize = useRef(new THREE.Vector2())
   /**
    * 性能统计覆盖整个外层帧，包含镜像嵌套渲染和后处理的绘制调用。
-   * 只在用户显式开启 perf 参数时工作，普通监控页面保持无统计开销。
+   * 每秒发布一次面板快照，逐帧数据留在采样器内部。
    */
   const diagnostics = useRef<ReturnType<typeof createFrameDiagnostics>>(null)
   useEffect(() => {

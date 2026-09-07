@@ -1,0 +1,211 @@
+/*
+ * 深色工业监控辅助层沿用场景底色，以青绿色强调运行状态。
+ * 独立定位不改变画布大小，性能面板允许指针穿透以保留地图操作。
+ */
+.monitor-loading,
+.monitor-performance {
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: #e3edef;
+  box-sizing: border-box;
+}
+
+.monitor-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: #0b0d10f5;
+}
+
+.monitor-loading__content {
+  width: min(320px, calc(100vw - 48px));
+  text-align: center;
+}
+
+.monitor-loading__symbol {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 28px;
+}
+
+.monitor-loading__symbol span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #284342;
+  border-top: 2px solid #73dbc8;
+  border-radius: 50%;
+  animation: monitor-orbit 1.2s linear infinite;
+}
+
+.monitor-loading__symbol i {
+  position: absolute;
+  inset: 23px;
+  border: 1px solid #73dbc8;
+  transform: rotate(45deg);
+  background: #73dbc820;
+}
+
+.monitor-loading__eyebrow {
+  color: #73dbc8;
+  font-size: 11px;
+  letter-spacing: 3px;
+}
+
+.monitor-loading h1 {
+  margin: 12px 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+
+.monitor-loading p {
+  margin: 0;
+  min-height: 22px;
+  color: #99a8af;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.monitor-loading__track {
+  height: 2px;
+  margin: 28px auto 0;
+  width: 180px;
+  overflow: hidden;
+  background: #263235;
+}
+
+.monitor-loading__track span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: #73dbc8;
+  animation: monitor-scan 1.5s ease-in-out infinite;
+}
+
+.monitor-loading button {
+  margin-top: 24px;
+  padding: 8px 20px;
+  border: 1px solid #526a6b;
+  border-radius: 4px;
+  background: #172426;
+  color: #e3edef;
+  font: inherit;
+  cursor: pointer;
+}
+
+.monitor-loading button:hover,
+.monitor-loading button:focus-visible {
+  border-color: #73dbc8;
+  outline: 2px solid #73dbc850;
+  outline-offset: 3px;
+}
+
+.monitor-loading--failed .monitor-loading__symbol span {
+  animation: none;
+  border-color: #d0a16b;
+}
+
+.monitor-performance {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 10;
+  width: 218px;
+  padding: 14px 16px;
+  border: 1px solid #64808140;
+  border-top: 2px solid #73dbc8;
+  border-radius: 4px;
+  background: #0e161bea;
+  box-shadow: 0 6px 24px #00000026;
+  pointer-events: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.monitor-performance__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.monitor-performance__status {
+  margin-left: auto;
+  color: #93aaa9;
+  font-size: 10px;
+}
+
+/*
+ * 只让显隐按钮接收指针事件，其余面板区域继续透传地图操作。
+ * 收起后保留紧凑入口和清晰的键盘焦点，展开与收起共用同一个按钮。
+ */
+.monitor-performance__toggle {
+  padding: 4px 8px;
+  border: 1px solid #64808160;
+  border-radius: 3px;
+  background: #172426;
+  color: #bcece2;
+  font: inherit;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.monitor-performance__toggle:hover { background: #263d3d; }
+.monitor-performance__toggle:focus-visible { outline: 2px solid #73dbc8; outline-offset: 3px; }
+
+.monitor-performance__fps {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 12px;
+  color: #73dbc8;
+}
+
+.monitor-performance__fps strong {
+  font: 500 34px/1.1 Consolas, monospace;
+}
+
+.monitor-performance dl {
+  margin: 0;
+  border-top: 1px solid #64808130;
+  padding-top: 8px;
+}
+
+.monitor-performance dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 23px;
+}
+
+.monitor-performance dt { color: #99a8af; }
+.monitor-performance dd { margin: 0; font-family: Consolas, monospace; }
+
+/*
+ * 开发调试面板占用右上区域时向左避让，窄屏移到右下方。
+ * 小屏缩减留白，并遵循系统的减少动态效果偏好。
+ */
+.monitor-performance--debug { right: 428px; }
+
+@media (max-width: 680px) {
+  .monitor-performance { top: 10px; right: 10px; width: 196px; padding: 10px 12px; }
+  .monitor-performance--debug { top: auto; bottom: max(10px, env(safe-area-inset-bottom)); }
+}
+
+/*
+ * 收起尺寸覆盖桌面和窄屏的固定宽度，减少对场景的遮挡。
+ * 定位继续沿用原有右上角及开发调试面板的避让规则。
+ */
+.monitor-performance.monitor-performance--collapsed { width: auto; padding: 6px; }
+
+@keyframes monitor-orbit { to { transform: rotate(360deg); } }
+@keyframes monitor-scan { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .monitor-loading__symbol span,
+  .monitor-loading__track span { animation: none; }
+}
