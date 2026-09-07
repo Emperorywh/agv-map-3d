@@ -1,0 +1,489 @@
+{
+  "blender": "5.2.1 LTS",
+  "files": {
+    "empty": {
+      "path": "C:\\code\\agv-map-3d\\assets\\agv_shelf_20260907_01\\shelf_empty.glb",
+      "bytes": 198048,
+      "bounds_blender_xyz_m": {
+        "min": [
+          -0.5,
+          -0.25,
+          0.0
+        ],
+        "max": [
+          0.5,
+          0.25,
+          0.8999999761581421
+        ],
+        "size": [
+          1.0,
+          0.5,
+          0.8999999761581421
+        ]
+      },
+      "triangles": 3580,
+      "material_count": 2,
+      "materials": {
+        "PowderCoat_OffWhite.001": {
+          "metallic": 0.0,
+          "roughness": 0.47999998927116394,
+          "textured": false
+        },
+        "Foot_Rubber.001": {
+          "metallic": 0.0,
+          "roughness": 0.8199999928474426,
+          "textured": false
+        }
+      },
+      "mesh_objects": 2,
+      "bin_count": 0,
+      "shared_bin_meshes": 0,
+      "embedded_images": 0,
+      "root_origin": [
+        0,
+        0,
+        0
+      ],
+      "front_blender": "-Y",
+      "front_gltf": "+Z",
+      "duplicate_faces": 0,
+      "degenerate_faces": 0,
+      "topology": {
+        "Rack_FrameAndDecks.001": {
+          "boundary_edges": 0,
+          "nonmanifold_nonboundary": 8
+        },
+        "Rack_RubberFeet.001": {
+          "boundary_edges": 0,
+          "nonmanifold_nonboundary": 0
+        }
+      },
+      "bin_contacts": [],
+      "cavity_and_front_raycast": [],
+      "rack_component_checks": {
+        "BaseCrossMember_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00026363446787636087
+        },
+        "BaseCrossMember_2": {
+          "closed": true,
+          "signed_volume_m3": 0.00026363446787636087
+        },
+        "BaseRail_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "BaseRail_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "BaseRail_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "BaseRail_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "Deck_L01": {
+          "closed": true,
+          "signed_volume_m3": 0.0012405589606778109
+        },
+        "Deck_L02": {
+          "closed": true,
+          "signed_volume_m3": 0.0012405589470584205
+        },
+        "Deck_L03": {
+          "closed": true,
+          "signed_volume_m3": 0.0012495590103709375
+        },
+        "DeckFrame_L01_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L01_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L01_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L01_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L02_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L02_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L02_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L02_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L03_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007192108114208512
+        },
+        "DeckFrame_L03_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007192108114208512
+        },
+        "DeckFrame_L03_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L03_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "Post_1_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Post_1_2": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Post_2_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Post_2_2": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Foot_1_1": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        },
+        "Foot_1_2": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        },
+        "Foot_2_1": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        },
+        "Foot_2_2": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        }
+      }
+    },
+    "loaded": {
+      "path": "C:\\code\\agv-map-3d\\assets\\agv_shelf_20260907_01\\shelf_loaded.glb",
+      "bytes": 353360,
+      "bounds_blender_xyz_m": {
+        "min": [
+          -0.5,
+          -0.25,
+          0.0
+        ],
+        "max": [
+          0.5,
+          0.25,
+          1.1200000047683716
+        ],
+        "size": [
+          1.0,
+          0.5,
+          1.1200000047683716
+        ]
+      },
+      "triangles": 23614,
+      "material_count": 4,
+      "materials": {
+        "Bin_MatteGraphite.001": {
+          "metallic": 0.0,
+          "roughness": 0.6499999761581421,
+          "textured": false
+        },
+        "Label_Ivory.001": {
+          "metallic": 0.0,
+          "roughness": 0.7599999904632568,
+          "textured": true
+        },
+        "PowderCoat_OffWhite.002": {
+          "metallic": 0.0,
+          "roughness": 0.47999998927116394,
+          "textured": false
+        },
+        "Foot_Rubber.002": {
+          "metallic": 0.0,
+          "roughness": 0.8199999928474426,
+          "textured": false
+        }
+      },
+      "mesh_objects": 11,
+      "bin_count": 9,
+      "shared_bin_meshes": 1,
+      "embedded_images": 1,
+      "root_origin": [
+        0,
+        0,
+        0
+      ],
+      "front_blender": "-Y",
+      "front_gltf": "+Z",
+      "duplicate_faces": 0,
+      "degenerate_faces": 0,
+      "topology": {
+        "Bin_L01_C01.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L01_C02.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L01_C03.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L02_C01.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L02_C02.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L02_C03.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L03_C01.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L03_C02.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Bin_L03_C03.001": {
+          "boundary_edges": 4,
+          "nonmanifold_nonboundary": 0
+        },
+        "Rack_FrameAndDecks.002": {
+          "boundary_edges": 0,
+          "nonmanifold_nonboundary": 8
+        },
+        "Rack_RubberFeet.002": {
+          "boundary_edges": 0,
+          "nonmanifold_nonboundary": 0
+        }
+      },
+      "bin_contacts": [
+        {
+          "name": "Bin_L01_C01.001",
+          "bottom_gap_m": -5.364418020903372e-09,
+          "overhead_clearance_m": 0.0835000214576721
+        },
+        {
+          "name": "Bin_L01_C02.001",
+          "bottom_gap_m": -5.364418020903372e-09,
+          "overhead_clearance_m": 0.0835000214576721
+        },
+        {
+          "name": "Bin_L01_C03.001",
+          "bottom_gap_m": -5.364418020903372e-09,
+          "overhead_clearance_m": 0.0835000214576721
+        },
+        {
+          "name": "Bin_L02_C01.001",
+          "bottom_gap_m": -7.152557324197062e-09,
+          "overhead_clearance_m": 0.08350003814697271
+        },
+        {
+          "name": "Bin_L02_C02.001",
+          "bottom_gap_m": -7.152557324197062e-09,
+          "overhead_clearance_m": 0.08350003814697271
+        },
+        {
+          "name": "Bin_L02_C03.001",
+          "bottom_gap_m": -7.152557324197062e-09,
+          "overhead_clearance_m": 0.08350003814697271
+        },
+        {
+          "name": "Bin_L03_C01.001",
+          "bottom_gap_m": -2.384185793236071e-08,
+          "overhead_clearance_m": null
+        },
+        {
+          "name": "Bin_L03_C02.001",
+          "bottom_gap_m": -2.384185793236071e-08,
+          "overhead_clearance_m": null
+        },
+        {
+          "name": "Bin_L03_C03.001",
+          "bottom_gap_m": -2.384185793236071e-08,
+          "overhead_clearance_m": null
+        }
+      ],
+      "cavity_and_front_raycast": [
+        {
+          "inner_floor_local_z": 0.0040000081062316895,
+          "normal": [
+            -0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "front_label_local_y": -0.20806090533733368,
+          "normal": [
+            -0.0,
+            -0.9998989105224609,
+            -0.014216506853699684
+          ]
+        }
+      ],
+      "rack_component_checks": {
+        "BaseCrossMember_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00026363446787636087
+        },
+        "BaseCrossMember_2": {
+          "closed": true,
+          "signed_volume_m3": 0.00026363446787636087
+        },
+        "BaseRail_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "BaseRail_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "BaseRail_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "BaseRail_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "Deck_L01": {
+          "closed": true,
+          "signed_volume_m3": 0.0012405589606778109
+        },
+        "Deck_L02": {
+          "closed": true,
+          "signed_volume_m3": 0.0012405589470584205
+        },
+        "Deck_L03": {
+          "closed": true,
+          "signed_volume_m3": 0.0012495590103709375
+        },
+        "DeckFrame_L01_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L01_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L01_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L01_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L02_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L02_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0006760557962588106
+        },
+        "DeckFrame_L02_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L02_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L03_FB_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007192108114208512
+        },
+        "DeckFrame_L03_FB_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007192108114208512
+        },
+        "DeckFrame_L03_Side_-1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "DeckFrame_L03_Side_1": {
+          "closed": true,
+          "signed_volume_m3": 0.00031643070673158697
+        },
+        "Post_1_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Post_1_2": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Post_2_1": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Post_2_2": {
+          "closed": true,
+          "signed_volume_m3": 0.0007782571105670636
+        },
+        "Foot_1_1": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        },
+        "Foot_1_2": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        },
+        "Foot_2_1": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        },
+        "Foot_2_2": {
+          "closed": true,
+          "signed_volume_m3": 7.180356277042667e-06
+        }
+      }
+    }
+  },
+  "checks": {
+    "independent_blender_reimport": true,
+    "same_rack_geometry_and_materials": true,
+    "root_and_orientation": true,
+    "bin_count_and_shared_mesh": true,
+    "bin_floor_contacts": true,
+    "inner_cavity_and_front_normals": true,
+    "embedded_texture": true,
+    "no_preview_objects_in_glb": true,
+    "no_degenerate_or_duplicate_faces": true,
+    "closed_solids_except_four_label_edges": true,
+    "actual_threejs_webgl_render": false
+  },
+  "limits": [
+    "参考图非工程图，采用假设尺寸；未进行实体承载计算。",
+    "架体各零件均独立封闭；整架强制焊接后有 8 条多邻面接触边，属于装配接缝，未作制造级布尔融合。",
+    "加强筋作为同一料箱网格内的嵌入式封闭几何保留，非制造级布尔融合实体。",
+    "尚未在业务地图场景进行大规模实例化性能压测。"
+  ]
+}

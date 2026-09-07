@@ -1,0 +1,26 @@
+{
+  "width": 1.0,
+  "depth": 0.5,
+  "height": 0.9,
+  "tube": 0.03,
+  "foot": 0.008,
+  "deck_tops": [
+    0.24,
+    0.57,
+    0.9
+  ],
+  "sheet": 0.0025,
+  "apron": 0.024,
+  "lower_rail_top": 0.145,
+  "bin_width": 0.282,
+  "bin_depth": 0.42,
+  "bin_height": 0.22,
+  "bin_wall": 0.0035,
+  "bin_floor": 0.004,
+  "rim_extra": 0.004,
+  "rim_height": 0.009,
+  "column_pitch": 0.304,
+  "levels": 3,
+  "columns": 3,
+  "bevel": 0.0008
+}
