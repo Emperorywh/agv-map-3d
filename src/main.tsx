@@ -7,8 +7,14 @@ import App from '@/app/App'
  * 样板入口仅在开发环境显式启用，设施预览不加载真实地图和业务数据源。
  * 生产构建会删除预览模块，默认入口继续执行原有启动和恢复流程。
  */
-const Preview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('assets') === 'industrial'
-  ? lazy(() => import('@/app/preview/IndustrialPreview')) : null
+/**
+ * 空间样板和设备样板共用显式开发参数，生产入口不打包验收控件。
+ * 空间样板复用正式墙体、地坪与光照，以浏览器效果作为材质验收依据。
+ */
+const previewKind = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('assets') : null
+const Preview = previewKind === 'industrial'
+  ? lazy(() => import('@/app/preview/IndustrialPreview'))
+  : previewKind === 'factory' ? lazy(() => import('@/app/preview/FactoryPreview')) : null
 
 // 浏览器唯一入口。
 // 职责：把 <App /> 挂载到 #root，并始终包裹 StrictMode。

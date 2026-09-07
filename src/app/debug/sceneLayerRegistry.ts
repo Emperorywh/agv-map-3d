@@ -53,16 +53,8 @@ export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
     ],
   },
   /**
-   * 节点盘按元素类型拆分为独立开关：NodesLayer 以 map-nodes-${category}
-   * 命名每类节点批次，逐类显隐互不影响；标签与业务元素枚举（NodeType）
-   * 保持一致。当前地图数据不含普通 node 类别，未设对应开关；unknown 是
-   * 未知类型兜底批次，保留开关保证全量排除无残留。
+   * 节点盘图层已随节点渲染移除（地图只保留道路与地标语义）。
    */
-  { key: 'nodes-work', label: '节点盘·工作站点', objectNames: ['map-nodes-work'] },
-  { key: 'nodes-park', label: '节点盘·停靠站点', objectNames: ['map-nodes-park'] },
-  { key: 'nodes-charge', label: '节点盘·充电站点', objectNames: ['map-nodes-charge'] },
-  { key: 'nodes-warehouse', label: '节点盘·库区站点', objectNames: ['map-nodes-warehouse'] },
-  { key: 'nodes-unknown', label: '节点盘·未知类型', objectNames: ['map-nodes-unknown'] },
   {
     key: 'park',
     label: '停车点',

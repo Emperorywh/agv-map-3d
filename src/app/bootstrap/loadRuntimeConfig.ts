@@ -22,7 +22,10 @@ import { describeError, isAbortError, StructuredError } from '@/shared/diagnosti
 /** 数据源形态：Mock 仿真（TASK-009）或真实 WebSocket（TASK-007） */
 export type ConfigDataSource = 'mock' | 'ws'
 
-/** 渲染器运行参数（质量策略在 render-quality Feature 内展开） */
+/**
+ * 渲染器固定参数由 Canvas 和灯光直接使用，运行期间保持完整画质。
+ * 像素比上限与阴影分辨率仅由显式配置决定，不受帧率或车队规模影响。
+ */
 export interface RendererConfig {
   maxDpr: number
   shadowMapSize: number

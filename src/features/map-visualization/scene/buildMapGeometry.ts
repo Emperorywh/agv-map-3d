@@ -1,9 +1,8 @@
 /**
- * 静态地图几何：物理路径去重、分级道路包络与节点实例。
+ * 静态地图几何：物理路径去重与分级道路包络。
  * 展示道路不改变逻辑边、真实采样或方向，地图运行时统一拥有并释放几何资源。
  */
-import * as THREE from 'three'
-import type { MapModel, MapEdge, EdgeType, NodeCategory } from '../model/types'
+import type { MapModel, MapEdge, EdgeType } from '../model/types'
 import {
   BEZIER_SAMPLE_SEGMENTS,
   sampleCubicBezier,
@@ -11,16 +10,8 @@ import {
 } from '../model/edgeGeometry'
 import type { WorldTransform } from '@/shared/spatial'
 import { buildRoadNetwork, type RoadNetwork } from './roadTopology'
-import { ROLE_MIN_SCENE_LEVEL } from './sceneDetail'
-import { NodeMarkerLayout } from './nodeMarkerLayout'
 import { buildRoadGeometry, type RoadGeometry } from './roadGeometry'
 import { classifyRoadPaths, type RoadRoleOverrides, type RoadRole } from './roadPresentation'
-import {
-  NODE_COLORS,
-  NODE_OUTER_RADIUS_M,
-  NODE_REGULAR_SCALE,
-  NODE_Y,
-} from './mapAppearance'
 
 /** 一条去重后的物理路径（几何与其覆盖的逻辑边集合） */
 export interface PhysicalPath {
@@ -161,25 +152,6 @@ function sampleEdgePoints(edge: MapEdge): PlanePoint2[] {
   )
 }
 
-/**
- * 节点实例静态数据：列主序矩阵、RGB 颜色与最低可见场景等级。
- * 矩阵包含密集邻域的水平缩放，真实坐标及圆台高度保持原值。
- */
-export interface NodeInstanceData {
-  readonly count: number
-  /**
-   * 类别与原始 nodeList 一一对应，仅供图层按 type 合批不同轮廓和图标。
-   * 不使用展示角色替代类别，工作站不会因为位于巷道中间而画成库区。
-   */
-  readonly categories: readonly NodeCategory[]
-  /** 列主序 4×4 矩阵数组，长度 16×count；平移与 x/z 等比缩放 */
-  readonly matrices: Float32Array
-  /** RGB 颜色数组，长度 3×count（instanceColor 直读） */
-  readonly colors: Float32Array
-  /** 最低可见场景等级（P0-5.4）：实例属性 aMinLevel 直读，场景等级 ≥ 值可见 */
-  readonly minLevels: Float32Array
-}
-
 /** 已构建的静态地图几何（GPU 资源由本对象拥有并释放） */
 export interface MapGeometry extends RoadGeometry {
   /**
@@ -187,11 +159,6 @@ export interface MapGeometry extends RoadGeometry {
    * 不写入 MapModel，也不用于调度通行能力判断。
    */
   readonly roadRoles: ReadonlyMap<number, RoadRole>
-  /**
-   * 节点静态实例数据按类别合批，最多五种业务类型加一个未知兜底批次。
-   * 批次数不随节点总量增长，逻辑节点顺序与地图身份保持不变。
-   */
-  readonly nodeInstances: NodeInstanceData
   /** 物理路径去重明细（供诊断与后续图层复用） */
   readonly physical: PhysicalPathIndex
   /** 展示级道路网络（链与交叉节点；诊断与测试用） */
@@ -213,17 +180,15 @@ export function buildMapGeometry(
   const network = buildRoadNetwork(mapModel, physical)
   const roadRoles = classifyRoadPaths(mapModel, physical, network, roadRoleOverrides)
   const roads = buildRoadGeometry(mapModel, physical, network, roadRoles, worldTransform)
-  const nodeInstances = buildNodeInstances(mapModel, worldTransform, new NodeMarkerLayout(mapModel, worldTransform))
   let disposed = false
   return {
     ...roads,
     roadRoles,
-    nodeInstances,
     physical,
     network,
     dispose() {
       /**
-       * 幂等释放全部道路批次；节点实例为普通数组，不拥有独立 GPU 几何。
+       * 幂等释放全部道路批次。
        * 上下文恢复与地图原子替换继续复用原有生命周期。
        */
       if (disposed) return
@@ -234,50 +199,4 @@ export function buildMapGeometry(
       roads.roadJunctionLights.dispose()
     },
   }
-}
-
-/** 生成全部节点的实例矩阵、颜色与最低可见场景等级：顺序与 nodeList 一致 */
-function buildNodeInstances(
-  mapModel: MapModel,
-  worldTransform: WorldTransform,
-  markingLayout: NodeMarkerLayout,
-): NodeInstanceData {
-  const count = mapModel.nodeList.length
-  const matrices = new Float32Array(count * 16)
-  const colors = new Float32Array(count * 3)
-  const minLevels = new Float32Array(count)
-  const categories: NodeCategory[] = []
-  const colorScratch = new THREE.Color()
-
-  for (let i = 0; i < count; i += 1) {
-    const node = mapModel.nodeList[i]
-    const world = worldTransform.toWorldXZ(node.x, node.y)
-    const m = i * 16
-    /**
-     * 仅压缩密集节点的水平半径；高度与业务坐标保持原值。
-     * 实例矩阵是静态数据，包围球和拾取继续使用 Three.js 的实例变换。
-     */
-    const radius = markingLayout.nodes.get(node.id)?.radius ?? NODE_OUTER_RADIUS_M
-    const scale = radius / NODE_OUTER_RADIUS_M * (node.category === 'node' ? NODE_REGULAR_SCALE : 1)
-    matrices[m] = scale
-    matrices[m + 5] = 1
-    matrices[m + 10] = scale
-    matrices[m + 12] = world.x
-    matrices[m + 13] = NODE_Y
-    matrices[m + 14] = world.z
-    matrices[m + 15] = 1
-
-    colorScratch.set(NODE_COLORS[node.category])
-    categories.push(node.category)
-    const c = i * 3
-    colors[c] = colorScratch.r
-    colors[c + 1] = colorScratch.g
-    colors[c + 2] = colorScratch.b
-
-    // P0-5.4：角色 → 最低可见场景等级（角色缺失回退 landmark = 全可见）
-    const role = mapModel.nodeVisualRoles?.get(node.id) ?? 'landmark'
-    minLevels[i] = ROLE_MIN_SCENE_LEVEL[role]
-  }
-
-  return { count, categories: Object.freeze(categories), matrices, colors, minLevels }
 }

@@ -3,21 +3,23 @@
  *
  * 职责：把 createGroundSurface 产出的地面平面挂载到场景——包围盒随视图，
  *       平面接收车辆/充电桩的实时阴影，为整场提供「落地感」。图层每视图
- *       最多一个 Draw Call；纹理在工厂内按世界尺寸平铺，总览与近景共用。
- * 边界：网格/材质/纹理全部由本组件 useMemo 创建并在卸载或视图更换时释放
+ *       基础地坪使用一个 Draw Call，每帧另采集一次镜像场景；
+ *       纹理在工厂内按世界尺寸平铺，总览与近景共用。
+ * 边界：网格/材质/纹理全部由本组件 effect 创建并在卸载或视图更换时释放
  *       （创建者释放）；本组件不感知地图业务语义，不释放任何外部资源。
  *       各向异性过滤取渲染器能力与外观上限的较小值。
  * 关键不变量：
- * 1. 资源代序号随每次重建递增并作为 primitive 的 key：R3F 对已挂载
- *    primitive 换 object 依赖「兄弟序列尾部」探测，与兄弟元素组合时重建
- *    会被静默丢弃（TASK-005 实测），key 变化强制走干净的卸载/挂载路径；
+ * 1. 稳定的挂载组不拥有 GPU 资源；每次 effect 设置创建新地坪并加入该组，
+ *    清理时先移除再释放，严格模式重复设置也不复用已经释放的句柄；
  * 2. dispose={null}：对象由本组件 effect 显式释放，禁止 R3F 二次释放；
  * 3. 纹理降级（Canvas 不可得）不阻断挂载：材质退为纯色，地面照常接收阴影。
  */
 import { useEffect, useMemo } from 'react'
 import { useThree } from '@react-three/fiber'
+import { Group } from 'three'
 import type { SceneBounds } from '../model/types'
 import { createGroundSurface } from '../scene/groundSurface'
+import { createGroundReflection } from '../scene/groundReflection'
 
 export interface GroundLayerProps {
   /**
@@ -27,18 +29,31 @@ export interface GroundLayerProps {
   readonly bounds: SceneBounds
 }
 
+/**
+ * 正式地图与预览始终创建完整地坪反射，使用同一固定分辨率。
+ * 地坪和倒影由同一个副作用持有，卸载时先解除反射回调再释放地坪材质。
+ */
 export function GroundLayer({ bounds }: GroundLayerProps) {
   const gl = useThree((state) => state.gl)
-  const surface = useMemo(
-    () => createGroundSurface(bounds, gl.capabilities.getMaxAnisotropy()),
-    [bounds, gl],
-  )
-  useEffect(() => () => surface.dispose(), [surface])
+  const group = useMemo(() => new Group(), [])
+  /**
+   * 地坪句柄必须在每次副作用设置时新建，不能复用严格模式清理过的句柄。
+   * 稳定组负责挂载位置，实际网格由同一副作用添加、移除和释放。
+   */
+  useEffect(() => {
+    const surface = createGroundSurface(bounds, gl.capabilities.getMaxAnisotropy())
+    const reflection = createGroundReflection(surface.mesh)
+    group.add(surface.mesh)
+    return () => {
+      reflection.dispose()
+      group.remove(surface.mesh)
+      surface.dispose()
+    }
+  }, [bounds, gl, group])
 
   return (
     <primitive
-      key={`ground-${surface.id}`}
-      object={surface.mesh}
+      object={group}
       dispose={null}
     />
   )

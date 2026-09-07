@@ -1,6 +1,6 @@
 /**
- * 室内视锥约束：将屏幕四角射线与地面求交，得到单位观察距离的覆盖范围。
- * 覆盖范围随距离线性缩放，因此可以直接解出缩远上限和平移区间，无需逐帧迭代。
+ * 室内视锥约束：画面下沿落在地坪，上沿允许由远侧墙体收口。
+ * 使用墙顶以下的安全截面计算包络，保留围合关系，同时避免镜头穿出厂房。
  */
 import type { FactoryLayout } from '@/features/map-visualization'
 
@@ -11,11 +11,11 @@ import type { FactoryLayout } from '@/features/map-visualization'
 export const CAMERA_MIN_DISTANCE_M = 12
 /**
  * 左键旋转最低俯角放宽到二十五度，允许观察设备侧面和厂房纵深。
- * 默认监控仍采用五十五度，手动降低角度不会改变初始取景。
+ * 默认监控采用三十八度，让远墙与地坪共同提供纵深，仍可手动切换高位总览。
  */
 export const CAMERA_MIN_PITCH_RAD = 25 * Math.PI / 180
 export const CAMERA_MAX_PITCH_RAD = 85 * Math.PI / 180
-export const CAMERA_MONITOR_PITCH_RAD = 55 * Math.PI / 180
+export const CAMERA_MONITOR_PITCH_RAD = 38 * Math.PI / 180
 export const CAMERA_MONITOR_DISTANCE_M = 65
 
 export interface FactoryFrameInput {
@@ -51,27 +51,24 @@ export function computeFactoryFrame(input: FactoryFrameInput) {
   const offsetZ = cosPitch * cosYaw
   const tanV = Math.tan(input.fovDeg * Math.PI / 360) / (input.zoom ?? 1)
   const tanH = tanV * Math.max(input.aspect, 0.001)
+  /**
+   * 高位总览逐渐允许画布显示厂房外轮廓，超宽屏也能完整容纳真实地图。
+   * 常规监控仍由墙地封闭取景；过渡连续，不在某个角度突然跳动镜头。
+   */
+  const overviewProgress = Math.max(0, Math.min(1, (pitch - Math.PI / 3) / (Math.PI / 12)))
+  const coverage = 1 - overviewProgress * overviewProgress * (3 - 2 * overviewProgress)
 
   /**
-   * 同时纳入相机自身与观察中心，除了画面覆盖，还保证镜头水平位置留在厂内。
-   * 地坪比零平面低八毫米，边界内缩半米可覆盖求交高度差及浮点误差。
+   * 上沿射线可以先击中墙面，不再强迫它们在墙前落到地面。
+   * 预留半米墙顶余量；镜头低于墙顶时从镜头高度截断，避免向后外推射线。
    */
-  let minX = Math.min(0, offsetX)
-  let maxX = Math.max(0, offsetX)
-  let minZ = Math.min(0, offsetZ)
-  let maxZ = Math.max(0, offsetZ)
+  const rays: { x: number; y: number; z: number; upper: boolean }[] = []
   for (const screenX of [-1, 1]) {
     for (const screenY of [-1, 1]) {
       const rayX = -offsetX + screenX * tanH * cosYaw - screenY * tanV * sinPitch * sinYaw
       const rayY = -sinPitch + screenY * tanV * cosPitch
       const rayZ = -offsetZ - screenX * tanH * sinYaw - screenY * tanV * sinPitch * cosYaw
-      const reach = -sinPitch / Math.min(rayY, -0.000001)
-      const x = offsetX + rayX * reach
-      const z = offsetZ + rayZ * reach
-      minX = Math.min(minX, x)
-      maxX = Math.max(maxX, x)
-      minZ = Math.min(minZ, z)
-      maxZ = Math.max(maxZ, z)
+      rays.push({ x: rayX, y: Math.min(rayY, -0.000001), z: rayZ, upper: screenY > 0 })
     }
   }
   const bounds = layout.bounds
@@ -80,27 +77,63 @@ export function computeFactoryFrame(input: FactoryFrameInput) {
   const right = bounds.maxWorldX - inset
   const top = bounds.minWorldZ + inset
   const bottom = bounds.maxWorldZ - inset
-  let maxDistance = Math.min((right - left) / (maxX - minX), (bottom - top) / (maxZ - minZ)) * 0.995
   let targetX = Math.max(left, Math.min(right, input.targetX))
   let targetZ = Math.max(top, Math.min(bottom, input.targetZ))
-
   /**
-   * 跟随时优先保持车辆位于画面中心，接近墙边则收近镜头。
-   * 自由平移保持当前倍率，通过移动观察中心收敛到允许区间。
+   * 截面包络随距离单调扩张，用有界二分求允许的最远观察距离。
+   * 跟随模式额外固定目标点，极端宽高比和小地图仍得到有限、可行的相机位置。
+   */
+  const envelope = (distance: number) => {
+    const cx = offsetX * distance
+    const cz = offsetZ * distance
+    const cy = sinPitch * distance
+    let minX = Math.min(0, cx)
+    let maxX = Math.max(0, cx)
+    let minZ = Math.min(0, cz)
+    let maxZ = Math.max(0, cz)
+    for (const ray of rays) {
+      const height = ray.upper ? Math.min(cy, layout.config.wallHeightM - 0.5) : 0
+      const reach = (height - cy) / ray.y
+      const x = cx + ray.x * reach * coverage
+      const z = cz + ray.z * reach * coverage
+      minX = Math.min(minX, x)
+      maxX = Math.max(maxX, x)
+      minZ = Math.min(minZ, z)
+      maxZ = Math.max(maxZ, z)
+    }
+    return { minX, maxX, minZ, maxZ }
+  }
+  let lower = 0
+  let upper = layout.bounds.diagonal / Math.max(Math.min(tanV, tanH), 0.001) + layout.config.wallHeightM
+  for (let step = 0; step < 24; step += 1) {
+    const middle = (lower + upper) / 2
+    const e = envelope(middle)
+    const fits = e.maxX - e.minX <= right - left && e.maxZ - e.minZ <= bottom - top
+    if (fits) lower = middle
+    else upper = middle
+  }
+  const freeMaxDistance = Math.max(0.001, lower * 0.995)
+  const minDistance = Math.min(CAMERA_MIN_DISTANCE_M, freeMaxDistance)
+  /**
+   * 贴边跟随先缩近；若固定目标无法保持离地净空，允许轻微移动观察中心。
+   * 最小距离沿用自由取景的可行范围，避免厂房约束把相机重新压到地面以下。
    */
   if (input.keepTarget) {
-    const anchoredMax = Math.min(
-      minX < 0 ? (targetX - left) / -minX : Infinity,
-      maxX > 0 ? (right - targetX) / maxX : Infinity,
-      minZ < 0 ? (targetZ - top) / -minZ : Infinity,
-      maxZ > 0 ? (bottom - targetZ) / maxZ : Infinity,
-    )
-    maxDistance = Math.min(maxDistance, Math.max(CAMERA_MIN_DISTANCE_M, anchoredMax * 0.995))
+    lower = 0
+    upper = freeMaxDistance
+    for (let step = 0; step < 24; step += 1) {
+      const middle = (lower + upper) / 2
+      const e = envelope(middle)
+      const fits = targetX + e.minX >= left && targetX + e.maxX <= right && targetZ + e.minZ >= top && targetZ + e.maxZ <= bottom
+      if (fits) lower = middle
+      else upper = middle
+    }
   }
-  const minDistance = Math.min(CAMERA_MIN_DISTANCE_M, maxDistance)
+  const maxDistance = input.keepTarget ? Math.max(minDistance, lower * 0.995) : freeMaxDistance
   const distance = Math.max(minDistance, Math.min(maxDistance, input.distance))
-  targetX = Math.max(left - minX * distance, Math.min(right - maxX * distance, targetX))
-  targetZ = Math.max(top - minZ * distance, Math.min(bottom - maxZ * distance, targetZ))
+  const e = envelope(distance)
+  targetX = Math.max(left - e.minX, Math.min(right - e.maxX, targetX))
+  targetZ = Math.max(top - e.minZ, Math.min(bottom - e.maxZ, targetZ))
   return {
     target: { x: targetX, z: targetZ },
     position: { x: targetX + offsetX * distance, y: sinPitch * distance, z: targetZ + offsetZ * distance },

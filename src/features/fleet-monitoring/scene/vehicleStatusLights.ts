@@ -57,6 +57,12 @@ export function createStatusLightGround(): { geometry: THREE.BufferGeometry; mat
     blending: THREE.AdditiveBlending,
     toneMapped: false,
     vertexShader: `
+      /*
+       * 自定义投光也使用场景的深度编码，避免开启对数深度后被地坪错误遮挡。
+       * 普通深度模式下这些片段由宏关闭，设备样板仍可共用同一材质。
+       */
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec2 vGroundPosition;
       varying vec3 vLightColor;
       void main() {
@@ -70,9 +76,15 @@ export function createStatusLightGround(): { geometry: THREE.BufferGeometry; mat
           vLightColor = instanceColor;
         #endif
         gl_Position = projectionMatrix * modelViewMatrix * worldPosition;
+        #include <logdepthbuf_vertex>
       }
     `,
     fragmentShader: `
+      /*
+       * 即使关闭深度写入，深度测试仍必须与地坪采用相同的对数深度值。
+       * 接续顶点阶段输出，保持光斑与车体的正确遮挡关系。
+       */
+      #include <logdepthbuf_pars_fragment>
       varying vec2 vGroundPosition;
       varying vec3 vLightColor;
       void main() {
@@ -94,8 +106,13 @@ export function createStatusLightGround(): { geometry: THREE.BufferGeometry; mat
           * exp(-4.5 * max(abs(p.y) - 0.47, 0.0))
           * (1.0 - smoothstep(0.85, 1.45, abs(p.y)));
         float outsideBody = smoothstep(0.0, 0.09, distanceToBody);
-        float opacity = min(0.72, beam * 0.6 + halo * 0.36 + sides * 0.24) * outsideBody;
+        /*
+         * 抛光浅灰地坪只需要克制的灯色投射，强加色光会把车底倒影冲成白色。
+         * 保留状态色与呼吸节奏，仅降低投地光强度，车体灯带亮度不受影响。
+         */
+        float opacity = min(0.72, beam * 0.6 + halo * 0.36 + sides * 0.24) * outsideBody * 0.28;
         if (opacity < 0.003) discard;
+        #include <logdepthbuf_fragment>
         gl_FragColor = vec4(vLightColor, opacity);
         #include <colorspace_fragment>
       }

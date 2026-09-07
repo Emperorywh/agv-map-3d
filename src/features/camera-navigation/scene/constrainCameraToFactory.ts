@@ -59,7 +59,7 @@ export function constrainCameraToFactory(
    * 仅在继续缩远时，逐步转向能容纳全图的高位总览方向，同时收回观察中心。
    * 左键旋转或视口变化时保留手动俯角，由基础约束收近镜头，避免抬回高位。
    * 二分选择满足当前缩放距离的最小姿态调整，保留滚轮连续性；每个候选仍
-   * 检查四角地面覆盖，所以放开缩放不会重新露出厂房外部。
+   * 检查墙地覆盖，高位总览则连续放宽画面边缘以展示完整厂房轮廓。
    */
   if (allowOverviewAdjustment && overview !== null && input.distance > frame.maxDistance + 0.000001 &&
     overview.maxDistance > frame.maxDistance) {

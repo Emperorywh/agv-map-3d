@@ -16,6 +16,7 @@ import { SLOT_BATCH_CAPACITY } from '../model/instanceSlots'
 import { useFleetMonitoringStore } from '../model/fleetMonitoringStore'
 import {
   LABEL_ANCHOR_Y_M,
+  LABEL_ASPECT,
   LABEL_HEIGHT_M,
   LABEL_IMPORTANT_MAX,
   LABEL_WIDTH_M,
@@ -32,7 +33,6 @@ import {
   labelAlertLevel,
   labelChipOf,
   labelImportanceRank,
-  labelLevelForPixels,
   type ImportantLabelEntry,
 } from '../scene/labelLod'
 import { computeVehicleWorldPose } from '../scene/createVehicleGeometry'
@@ -57,12 +57,6 @@ export interface UseFleetLabelFrameSyncOptions {
   worldTransform: WorldTransform | null
   /** 当前已挂载标签批次（数组身份变化触发全量重写） */
   batches: readonly FleetLabelBatchMeshes[]
-  /**
-   * 标签降级能力开关（SPEC §6.5 行动 1「仅保留重点标签和近景标签」；
-   * TASK-014 质量能力接线）：true 时中距离纯名称档（8～20px）隐藏，近景完
-   * 整档与远景重点车（含选中/告警）不受影响；默认 false。
-   */
-  importantLabelsOnly?: boolean
   /** 结构化诊断通道（保留扩展点；当前标签层无采样告警路径） */
   diagnostics?: DiagnosticsReporter
 }
@@ -148,19 +142,17 @@ export function useFleetLabelFrameSync({
   table,
   worldTransform,
   batches,
-  importantLabelsOnly = false,
   diagnostics,
 }: UseFleetLabelFrameSyncOptions): void {
   // options 经 ref 透传：useFrame 闭包恒定，数组身份/回调变化不重建帧回调
   const optionsRef = useRef(
-    { runtime, table, worldTransform, batches, importantLabelsOnly, diagnostics },
+    { runtime, table, worldTransform, batches, diagnostics },
   )
   optionsRef.current = {
     runtime,
     table,
     worldTransform,
     batches,
-    importantLabelsOnly,
     diagnostics,
   }
 
@@ -199,10 +191,9 @@ function tickLabelFrame(
     table: InstanceSlotTable
     worldTransform: WorldTransform | null
     batches: readonly FleetLabelBatchMeshes[]
-    importantLabelsOnly: boolean
   },
 ): void {
-  const { runtime, table, worldTransform, batches, importantLabelsOnly } = options
+  const { runtime, table, worldTransform, batches } = options
   if (worldTransform === null || batches.length === 0) {
     return
   }
@@ -313,7 +304,6 @@ function tickLabelFrame(
             viewportWidth,
           )
         : 0
-    const distanceLevel = labelLevelForPixels(projectedPx)
     const hovered = entity.key === hoveredKey
     const alertRank = labelImportanceRank({
         selected: cache.selectedNext,
@@ -337,23 +327,25 @@ function tickLabelFrame(
         const projectedWidth = projectedBodyLengthPx(camera, pose.cx, LABEL_ANCHOR_Y_M, pose.cz, LABEL_WIDTH_M, viewportWidth)
         const width = Math.min(cache.selectedNext ? 240 : 176, Math.max(112, projectedWidth))
         cache.scaleNext = projectedWidth > 0 ? width / projectedWidth : 1
-        rectangles.set(flat, { x: (screen.x + 1) * viewportWidth / 2, y: (1 - screen.y) * (state.size?.height ?? 0) / 2, width: width + 8, height: width / 4 + 6 })
+        /**
+         * 两行面板的碰撞高度由共享宽高比计算，避免仍按旧标签高度相互覆盖。
+         * 屏幕边距保持原值，继续沿用现有优先级与避让流程。
+         */
+        rectangles.set(flat, { x: (screen.x + 1) * viewportWidth / 2, y: (1 - screen.y) * (state.size?.height ?? 0) / 2, width: width + 8, height: width / LABEL_ASPECT + 6 })
       }
     }
     if (cache.farRank === null) cache.levelNext = 0
-    // 保留距离分档用于降级预算，选中始终完整，悬停和异常始终简要。
-    // 所有候选继续经过同一个上限，远景不会重新展开普通车辆标签。
-    if (importantLabelsOnly && distanceLevel === 0 && !cache.selectedNext) cache.levelNext = Math.min(cache.levelNext, 1) as LabelLevelNext
   }
 
-  // —— 远景重点截断：超过上限时按（秩, 扁平槽位）保留前 20 ——
+  // 标签始终使用完整候选预算，不按设备性能缩减数量或隐藏信息。
+  // 保留原有优先级排序与重叠避让，超过上限时按（秩, 扁平槽位）保留前二十。
   let kept: Set<number> | null = null
-  if (farCount > (importantLabelsOnly ? 12 : LABEL_IMPORTANT_MAX)) {
+  if (farCount > LABEL_IMPORTANT_MAX) {
     const entries: ImportantLabelEntry[] = []
     for (let i = 0; i < farCount; i += 1) {
       entries.push({ flatSlot: controller.farFlat[i], rank: controller.farRank[i] })
     }
-    kept = capImportantLabels(entries, importantLabelsOnly ? 12 : LABEL_IMPORTANT_MAX)
+    kept = capImportantLabels(entries, LABEL_IMPORTANT_MAX)
   }
   const admitted = new Set<number>()
   const ordered = Array.from({ length: farCount }, (_, index) => index)
@@ -497,8 +489,16 @@ function writeContentAttrs(
   scratch4[3] = chipUv[3]
   writeBgAttr(controller, batches, batch, slot, LABEL_BG_ATTR.chipUv, scratch4)
 
-  // 名称图集：只重绘目标单元（账本内部按内容去重）；UV 恒定只需首写
-  batches[batch].atlas.book.ensureCell(slot, entity.snapshot.agvName)
+  /**
+   * 编号与速度共用原有文字图集，速度保留一位小数后再去重，减少纹理重绘。
+   * 数据过期、连接不可用或速度分量缺失时显示占位，避免将旧值误认为当前速度。
+   */
+  const { vx, vy } = entity.snapshot.velocity
+  const speedKnown = vx !== null && vy !== null && primary !== 'STALE'
+    && entity.staticState.connectivity === 'ONLINE'
+  const speed = speedKnown ? `${Math.hypot(vx, vy).toFixed(1)} m/s` : '— m/s'
+  const name = entity.snapshot.agvName.replace(/[\r\n]+/g, ' ')
+  batches[batch].atlas.book.ensureCell(slot, `ID: ${name}\n${speed}`)
   if (!cache.uvWritten) {
     const uv: LabelCellUv = batches[batch].atlas.cellUv(slot)
     scratch4[0] = uv.u0

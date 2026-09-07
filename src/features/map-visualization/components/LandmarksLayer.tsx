@@ -43,8 +43,6 @@ export interface LandmarksLayerProps {
    * 图集缺失时，停车与充电的语义标识仍然完整可见。
    */
   readonly nameAtlas: MapNameAtlas | null
-  /** 装饰动画能力开关（SPEC §6.5）：只门控充电指示灯呼吸，不隐藏柜体 */
-  readonly decorationsEnabled: boolean
 }
 
 /** 组件自建 GPU 资源集合：合批对象 + 帧 uniforms + 释放清单 */
@@ -67,15 +65,14 @@ let landmarkResourcesSeq = 0
 export function LandmarksLayer({
   mapModel,
   worldTransform,
-  decorationsEnabled,
 }: LandmarksLayerProps) {
   const data = useMemo(
     () => buildLandmarkData(mapModel, worldTransform),
     [mapModel, worldTransform],
   )
   const resources = useMemo(
-    () => createLandmarkResources(data, decorationsEnabled),
-    [data, decorationsEnabled],
+    () => createLandmarkResources(data),
+    [data],
   )
   useEffect(() => () => disposeLandmarkResources(resources), [resources])
 
@@ -114,10 +111,12 @@ function ChargeUniformsDriver({
   return null
 }
 
-/** 上载静态实例数据并创建全部地标 GPU 对象（一次构建、静态不再改写） */
+/**
+ * 上载静态实例数据并创建全部地标 GPU 对象，几何仅构建一次。
+ * 充电指示灯始终按时间驱动呼吸，不再接收画质能力开关。
+ */
 function createLandmarkResources(
   data: LandmarkData,
-  decorationsEnabled: boolean,
 ): LandmarkResources {
   const owned: { dispose(): void }[] = []
   const id = ++landmarkResourcesSeq
@@ -168,15 +167,14 @@ function createLandmarkResources(
   /**
    * 充电元素总览 LOD 与呼吸脉冲（P2-1）：柜体受光材质、柜面闪电标识与指示
    * 灯共享同一组淡出 uniforms（世界尺寸 = 柜体高度），59 处充电柜在总览同步
-   * 渐隐、中近景完整呈现；指示灯额外复合低频呼吸（decorationsEnabled 门控，
-   * 关闭时恒定全亮）。淡出按 alpha 调制，柜体保持深度写入以维持遮挡关系。
+   * 渐隐、中近景完整呈现；指示灯始终叠加低频呼吸。
+   * 淡出按 alpha 调制，柜体保持深度写入以维持遮挡关系。
    */
   const chargeFadeUniforms = createScreenSizeFadeUniforms(CABINET_CONFIG.height)
   chargeFadeUniforms.uFadeStartPx.value = CHARGE_FADE_START_PX
   chargeFadeUniforms.uFadeEndPx.value = CHARGE_FADE_END_PX
   const chargePulseUniforms: PulseUniforms = {
     uTime: { value: 0 },
-    uPulseEnabled: { value: decorationsEnabled ? 1 : 0 },
     uPulsePeriod: { value: CHARGE_LIGHT_PERIOD_S },
     uPulseMin: { value: CHARGE_LIGHT_MIN_BRIGHTNESS },
   }

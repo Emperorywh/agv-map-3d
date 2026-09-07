@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>深度渲染回归</title>
+<pre id="results">正在检查 GPU 深度与自定义着色器……</pre>
+<script type="module">
+/*
+ * 启动开发服务器后打开 /scripts/verifyDepthRendering.html 执行真实 GPU 验收。
+ * 直接导入正式材质，验证普通与对数深度下的前后遮挡，并复现远墙深度碰撞。
+ * 通过真实帧缓冲像素比较检查行为，避免只检查着色器是否包含某段字符串。
+ */
+import * as THREE from 'three'
+import { createLabelTextGeometry, createLabelTextMaterial, createLabelBackgroundGeometry, createLabelBackgroundMaterial } from '/src/features/fleet-monitoring/scene/labelMaterials.ts'
+import { createStatusLightGround } from '/src/features/fleet-monitoring/scene/vehicleStatusLights.ts'
+const lines = []
+const output = document.querySelector('#results')
+const report = (message) => { lines.push(message); output.textContent = lines.join('\n') }
+try {
+  for (const logarithmicDepthBuffer of [false, true]) {
+    const renderer = new THREE.WebGLRenderer({ logarithmicDepthBuffer })
+    renderer.setSize(64, 64)
+    const target = new THREE.WebGLRenderTarget(64, 64)
+    renderer.setRenderTarget(target)
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('black')
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 2000)
+    camera.position.z = 10
+    const blocker = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshBasicMaterial({ color: 'blue' }))
+    scene.add(blocker)
+    const read = () => {
+      renderer.render(scene, camera)
+      const pixels = new Uint8Array(64 * 64 * 4)
+      renderer.readRenderTargetPixels(target, 0, 0, 64, 64, pixels)
+      return pixels
+    }
+    const baseline = read()
+    const texture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)
+    texture.needsUpdate = true
+    const textGeometry = createLabelTextGeometry(1)
+    textGeometry.getAttribute('aNameUv').setXYZW(0, 0, 0, 1, 1)
+    const light = createStatusLightGround()
+    /*
+     * 同一个实体分别放到遮挡板前后，透明且不写深度的材质仍需正确参与深度测试。
+     * 地面灯光转到正对相机的平面，沿用正式实例矩阵及片元衰减计算。
+     */
+    for (const [name, geometry, material, rotation] of [
+      ['车辆名称', textGeometry, createLabelTextMaterial(texture), 0],
+      ['标签底板', createLabelBackgroundGeometry(1), createLabelBackgroundMaterial(texture), 0],
+      ['地面灯光', light.geometry, light.material, Math.PI / 2],
+    ]) {
+      const mesh = new THREE.InstancedMesh(geometry, material, 1)
+      mesh.rotation.x = rotation
+      mesh.setMatrixAt(0, new THREE.Matrix4())
+      scene.add(mesh)
+      for (const z of [1, -1]) {
+        mesh.position.z = z
+        const pixels = read()
+        const changed = pixels.reduce((count, value, index) => count + Number(value !== baseline[index]), 0)
+        if ((z > 0 && changed === 0) || (z < 0 && changed !== 0)) throw new Error(`${name} 遮挡错误，模式 ${logarithmicDepthBuffer}，位置 ${z}，差异 ${changed}`)
+      }
+      report(`通过：${logarithmicDepthBuffer ? '对数' : '普通'}深度 · ${name} 前方可见、后方遮挡`)
+      scene.remove(mesh)
+      mesh.dispose()
+      geometry.dispose()
+      material.dispose()
+    }
+    /*
+     * 四百米处相隔二点九五厘米的两层代表墙板与基层，后画基层以暴露深度碰撞。
+     * 对数模式必须保留前层红色；普通模式仅记录对照结果，不作为通过条件。
+     */
+    camera.position.z = 400
+    camera.fov = 10
+    camera.updateProjectionMatrix()
+    blocker.position.z = -0.0295
+    blocker.renderOrder = 1
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshBasicMaterial({ color: 'red' }))
+    scene.add(panel)
+    const pixels = read()
+    const middle = (32 * 64 + 32) * 4
+    const red = pixels[middle] > 200 && pixels[middle + 2] < 10
+    if (logarithmicDepthBuffer && !red) throw new Error('对数深度未能区分远墙面板与基层')
+    report(`${logarithmicDepthBuffer ? '通过' : '对照'}：400 米远墙 · ${red ? '面板正确遮挡基层' : '基层错误覆盖面板，复现深度冲突'}`)
+    panel.geometry.dispose()
+    panel.material.dispose()
+    blocker.geometry.dispose()
+    blocker.material.dispose()
+    texture.dispose()
+    target.dispose()
+    renderer.dispose()
+  }
+  report('全部 GPU 检查通过')
+} catch (error) {
+  report(`失败：${error.message}`)
+  console.error(error)
+}
+</script>

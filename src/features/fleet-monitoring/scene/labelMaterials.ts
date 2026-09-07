@@ -17,10 +17,10 @@
  *    实例矩阵的 x/y 轴长度在视空间展开四边形——矩阵零缩放即标签整体隐藏，
  *    四边形恒垂直于视线，任何轨道角度下文字不镜像；
  * 2. 每批次恒为背景 + 名称两层网格 = 2 个 Draw Call（SPEC §6.4 上限）；
- * 3. 内容档位 aLevel 在 shader 内裁剪：电量条与状态芯片仅在档位 ≥2 绘制，
- *    名称在 ≥1 档始终绘制；隐藏档由矩阵零缩放表达（与车体同口径）；
- * 4. 颜色常量经 defines 注入（线性空间），与场景共用 tone mapping 和输出
- *    色彩空间转换，标签与车体色一致；L1/L2 边框色与 fleetAppearance 同源。
+ * 3. 可见档位统一显示两行信息和电量条，隐藏档由矩阵零缩放表达；
+ *    状态文字仅在图集矩形有效时采样，不生成独立文字网格；
+ * 4. 颜色常量经 defines 注入线性空间，标签使用固定显示色和输出色彩空间
+ *    转换；状态灯及告警边框的颜色与 fleetAppearance 同源。
  */
 import * as THREE from 'three'
 import {
@@ -125,6 +125,12 @@ export function createLabelTextGeometry(capacity: number): THREE.PlaneGeometry {
  */
 function billboardBody(extraAttributes: string, extraVaryings: string, extraAssign: string): string {
   return `
+/*
+ * 标签与实体共用对数深度，避免文字和底板被地坪错误遮挡。
+ * 在视空间展开完成后计算深度，保留原有广告牌尺寸和朝向。
+ */
+#include <common>
+#include <logdepthbuf_pars_vertex>
 ${extraAttributes}
 varying vec2 vUv;
 ${extraVaryings}
@@ -144,6 +150,7 @@ ${extraAssign}
   #endif
   center.xy += vec2(position.x * sx, position.y * sy);
   gl_Position = projectionMatrix * center;
+  #include <logdepthbuf_vertex>
 }
 `
 }
@@ -183,11 +190,17 @@ varying vec4 vChipUv;
 
 /** 名称层片元：采样名称图集，透明处丢弃 */
 const LABEL_TEXT_FRAGMENT = `
+/*
+ * 透明名称虽不写深度，仍需用统一编码参与实体遮挡测试。
+ * 与共享顶点着色器成对接入，普通深度模式由宏自动兼容。
+ */
+#include <logdepthbuf_pars_fragment>
 uniform sampler2D uNameMap;
 varying vec2 vUv;
 void main() {
   vec4 texel = texture2D(uNameMap, vUv);
   if (texel.a < 0.02) discard;
+  #include <logdepthbuf_fragment>
   gl_FragColor = vec4(texel.rgb, texel.a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -200,9 +213,16 @@ function colorDefineVec3(hex: string): string {
   return `vec3(${color.r.toFixed(6)}, ${color.g.toFixed(6)}, ${color.b.toFixed(6)})`
 }
 
-/** 背景层片元：圆角底板 + 状态圆点 + 告警/选中边框 + 电量条 + 状态芯片
- *  （全部实例属性驱动；P0-6 起底色为深灰黑、状态色只由左上角圆点承载） */
+/**
+ * 浅色面板由细边框、右上状态灯、中间电量条和右下状态文字组成。
+ * 各业务属性仍由实例缓冲驱动，不新增车辆网格或独立材质。
+ */
 const LABEL_BACKGROUND_FRAGMENT = `
+/*
+ * 标签底板与文字保持相同的深度计算，避免出现只剩一层的情况。
+ * 圆角丢弃与透明排序保持原有行为，只修正参与测试的深度值。
+ */
+#include <logdepthbuf_pars_fragment>
 uniform sampler2D uBadgeMap;
 varying vec2 vUv;
 varying float vLevel;
@@ -212,59 +232,82 @@ varying vec2 vOverlay;
 varying vec4 vChipUv;
 void main() {
   vec2 p = vUv;
-  // 圆角矩形 SDF：sdf>0 在底板外，直接丢弃
-  float radius = 0.09;
-  vec2 corner = abs(p - 0.5) - vec2(0.5 - radius);
+  /*
+   * 按真实宽高比计算轻微圆角，边缘使用像素导数平滑过渡。
+   * 白色细边包裹半透明底板，保留参考图的轻薄轮廓。
+   */
+  float radius = 0.045;
+  vec2 corner = abs((p - 0.5) * vec2(float(LABEL_ASPECT), 1.0)) - vec2(float(LABEL_ASPECT) * 0.5 - 0.015 - radius, 0.485 - radius);
   float sdf = length(max(corner, vec2(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
   if (sdf > 0.0) discard;
+  #include <logdepthbuf_fragment>
 
-  // 底色：深灰黑（P0-6），保证白色名称与状态色的可读对比；
-  // 状态信息不再由底色承载，改由下方左上角状态圆点表达
-  vec3 color = LABEL_BACKGROUND_COLOR;
+  float edgeWidth = max(fwidth(sdf), 0.002);
+  float edge = smoothstep(-0.018 - edgeWidth, -0.018 + edgeWidth, sdf);
+  vec3 color = mix(LABEL_BACKGROUND_COLOR, vec3(1.0), edge);
+  float opacity = mix(0.9, 0.98, edge);
 
-  // 状态圆点（P0-6）：左上角等比小圆，颜色 = 主状态色（aStateColor）；
-  // u 向距离乘宽高比还原等比圆，边缘 2% 高度带宽平滑抗锯齿
+  /*
+   * 右上状态灯保留实际业务颜色，外圈的浅色光晕加强小尺寸下的辨识。
+   * 不将所有状态固定为绿色，异常和离线继续使用各自的状态色。
+   */
   vec2 dotDelta = vec2((p.x - STATE_DOT_CENTER_U) * float(LABEL_ASPECT), p.y - STATE_DOT_CENTER_V);
   float dotDist = length(dotDelta);
-  float dotMask = 1.0 - smoothstep(STATE_DOT_RADIUS_V - 0.02, STATE_DOT_RADIUS_V, dotDist);
+  float dotEdge = max(fwidth(dotDist), 0.002);
+  float dotMask = 1.0 - smoothstep(STATE_DOT_RADIUS_V - dotEdge, STATE_DOT_RADIUS_V + dotEdge, dotDist);
+  float halo = 1.0 - smoothstep(STATE_DOT_RADIUS_V, STATE_DOT_RADIUS_V + 0.035, dotDist);
+  color = mix(color, vStateColor, halo * 0.12);
   color = mix(color, vStateColor, dotMask);
+  opacity = mix(opacity, 1.0, dotMask);
 
   // 告警边框（最外圈）：L2 红 / L1 黄，与 SPEC §7.3 告警级一致
-  float band = 0.055;
+  float band = 0.022;
   if (vOverlay.y > 1.5) {
     if (sdf > -band) color = L2_BORDER_COLOR;
   } else if (vOverlay.y > 0.5) {
     if (sdf > -band) color = L1_BORDER_COLOR;
   }
-  // 选中边框：告警边框内侧的白圈，可与告警边框同时存在
+  // 选中边框位于告警内侧，两种提示可同时显示。
+  // 蓝色描边在浅色底板上保持清晰。
   if (vOverlay.x > 0.5 && sdf > -band * 2.0 && sdf <= -band) {
     color = SELECTED_BORDER_COLOR;
   }
 
-  // 电量条：仅完整档位（vLevel>=2）且电量已知（vCharge>=0）；填充色按
-  // 与告警同口径的阈值取色（<15% 红、[15%,30%) 黄、其余绿）
-  if (vLevel > 1.5 && vCharge >= 0.0) {
-    vec2 barMin = vec2(0.05, 0.10);
-    vec2 barMax = vec2(0.60, 0.235);
-    if (p.x > barMin.x && p.x < barMax.x && p.y > barMin.y && p.y < barMax.y) {
+  /*
+   * 中间细条沿面板通栏排列，未知电量只显示浅色轨道。
+   * 正常电量为蓝色，低电量仍保留原有黄色、红色语义。
+   */
+  {
+    vec2 barMin = vec2(0.07, 0.48);
+    vec2 barMax = vec2(0.93, 0.55);
+    float barRadius = (barMax.y - barMin.y) * 0.5;
+    vec2 barCenter = (barMin + barMax) * 0.5;
+    vec2 barDelta = abs((p - barCenter) * vec2(float(LABEL_ASPECT), 1.0)) - vec2((barMax.x - barMin.x) * float(LABEL_ASPECT) * 0.5 - barRadius, 0.0);
+    float barSdf = length(max(barDelta, vec2(0.0))) - barRadius;
+    if (barSdf < 0.0) {
       float fill = clamp(vCharge, 0.0, 1.0);
       float fx = (p.x - barMin.x) / (barMax.x - barMin.x);
-      if (fx > fill) {
-        color = vec3(0.05, 0.06, 0.075);
+      vec3 barColor;
+      if (vCharge < 0.0 || fx > fill) {
+        barColor = mix(LABEL_BACKGROUND_COLOR, BATTERY_OK_COLOR, 0.16);
       } else if (fill < BATTERY_CRITICAL_FILL) {
-        color = BATTERY_CRITICAL_COLOR;
+        barColor = BATTERY_CRITICAL_COLOR;
       } else if (fill < BATTERY_LOW_FILL) {
-        color = BATTERY_LOW_COLOR;
+        barColor = BATTERY_LOW_COLOR;
       } else {
-        color = BATTERY_OK_COLOR;
+        barColor = BATTERY_OK_COLOR;
       }
+      color = mix(color, barColor, 1.0 - smoothstep(-max(fwidth(barSdf), 0.002), 0.0, barSdf));
     }
   }
 
-  // 状态芯片：仅完整档位且芯片 UV 非退化（零矩形 = 无芯片/隐藏）
-  if (vLevel > 1.5 && vChipUv.z > vChipUv.x) {
-    vec2 chipMin = vec2(0.635, 0.30);
-    vec2 chipMax = vec2(0.95, 0.70);
+  /*
+   * 右下展示真实状态，透明图集只提供蓝色文字，与左侧速度对齐。
+   * 悬停摘要同样显示次行，避免新面板出现只剩速度的空白右半区。
+   */
+  if (vLevel > 0.5 && vChipUv.z > vChipUv.x) {
+    vec2 chipMin = vec2(0.55, 0.125);
+    vec2 chipMax = vec2(0.93, 0.355);
     if (p.x > chipMin.x && p.x < chipMax.x && p.y > chipMin.y && p.y < chipMax.y) {
       vec2 cuv = (p - chipMin) / (chipMax - chipMin);
       vec4 chip = texture2D(uBadgeMap, mix(vChipUv.xy, vChipUv.zw, cuv));
@@ -272,7 +315,7 @@ void main() {
     }
   }
 
-  gl_FragColor = vec4(color, 1.0);
+  gl_FragColor = vec4(color, opacity * (1.0 - smoothstep(-edgeWidth, 0.0, sdf)));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -280,7 +323,12 @@ void main() {
 
 /** 名称层材质：引用批次名称图集；透明、不写深度（透明队列按 renderOrder 排序） */
 export function createLabelTextMaterial(atlasTexture: THREE.Texture): THREE.ShaderMaterial {
+  /**
+   * 信息面板使用固定显示色，不随场景曝光而失去蓝字与浅底的对比。
+   * 输出仍经过色彩空间转换，保持图集与着色器颜色一致。
+   */
   return new THREE.ShaderMaterial({
+    toneMapped: false,
     uniforms: { uNameMap: { value: atlasTexture } },
     vertexShader: LABEL_TEXT_VERTEX,
     fragmentShader: LABEL_TEXT_FRAGMENT,
@@ -295,7 +343,12 @@ export function createLabelTextMaterial(atlasTexture: THREE.Texture): THREE.Shad
  * 保证与 fleetAppearance / deriveVehicleState 单一事实源一致。
  */
 export function createLabelBackgroundMaterial(badgeTexture: THREE.Texture): THREE.ShaderMaterial {
+  /**
+   * 背景与文字禁用相同的色调映射，维持面板两层的统一配色。
+   * 场景实体的照明与色调映射继续由原有材质控制。
+   */
   return new THREE.ShaderMaterial({
+    toneMapped: false,
     uniforms: { uBadgeMap: { value: badgeTexture } },
     vertexShader: LABEL_BACKGROUND_VERTEX,
     fragmentShader: LABEL_BACKGROUND_FRAGMENT,
@@ -308,7 +361,8 @@ export function createLabelBackgroundMaterial(badgeTexture: THREE.Texture): THRE
       BATTERY_CRITICAL_COLOR: colorDefineVec3(LABEL_BATTERY_CRITICAL_COLOR),
       BATTERY_CRITICAL_FILL: (LOW_BATTERY_THRESHOLD / 100).toFixed(4),
       BATTERY_LOW_FILL: (BATTERY_NORMAL_THRESHOLD / 100).toFixed(4),
-      // P0-6：深灰底 + 左上角状态圆点（几何与底色常量与 fleetAppearance 同源）
+      // 面板底色与右上状态灯从共享常量注入。
+      // 图集排布、碰撞尺寸和着色器使用相同宽高比。
       LABEL_BACKGROUND_COLOR: colorDefineVec3(LABEL_BACKGROUND_COLOR),
       STATE_DOT_CENTER_U: LABEL_STATE_DOT_CENTER_U.toFixed(6),
       STATE_DOT_CENTER_V: LABEL_STATE_DOT_CENTER_V.toFixed(6),

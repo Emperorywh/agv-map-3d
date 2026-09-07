@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "verify:dist": "node scripts/verifyDist.mjs",
     "verify:roads": "node scripts/verifyRoadGeometry.mjs",
+    "verify:space": "node scripts/verifyFactorySpace.mjs",
     "lint": "oxlint",
     "typecheck": "tsc -b --pretty false"
   },

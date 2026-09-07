@@ -62,7 +62,7 @@ import {
 export interface GroundSurfaceHandle {
   /** 资源代序号：每次创建递增，作为 primitive 的 key 强制走卸载/挂载路径 */
   readonly id: number
-  readonly mesh: THREE.Mesh
+  readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>
   dispose(): void
 }
 
@@ -158,6 +158,25 @@ export function createGroundSurface(
   // 落地感（对象落地）：地面只接收车辆/充电桩的实时阴影，自身不投
   mesh.castShadow = false
   mesh.receiveShadow = true
+
+  /**
+   * 墙根接触明暗按实际厂房边界求值，不依赖覆盖全厂的实时阴影分辨率。
+   * 窄暗边表现接触，外侧宽柔光对应墙边灯槽；质量降级后仍保留围合层次。
+   */
+  const boundary = new THREE.Vector4(bounds.minWorldX, bounds.maxWorldX, bounds.minWorldZ, bounds.maxWorldZ)
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.groundBoundary = { value: boundary }
+    shader.vertexShader = `varying vec3 vGroundPosition;\n${shader.vertexShader}`.replace('#include <project_vertex>', `#include <project_vertex>\nvGroundPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`)
+    shader.fragmentShader = `uniform vec4 groundBoundary;\nvarying vec3 vGroundPosition;\n${shader.fragmentShader}`.replace('#include <opaque_fragment>', `
+// 接触阴影沿墙根连续衰减，灯槽的柔光与地坪反射分开计算。
+vec2 wallDistances = min(vGroundPosition.xz - groundBoundary.xz, groundBoundary.yw - vGroundPosition.xz);
+float wallDistance = max(0.0, min(wallDistances.x, wallDistances.y));
+float wallContact = exp(-wallDistance * 3.8) * 0.24 + exp(-wallDistance * 0.75) * 0.07;
+float wallWash = exp(-pow((wallDistance - 0.85) / 1.4, 2.0)) * 0.055;
+outgoingLight = outgoingLight * (1.0 - wallContact) + vec3(0.93, 0.97, 1.0) * wallWash;
+#include <opaque_fragment>`)
+  }
+  material.customProgramCacheKey = () => 'industrial-floor-contact-v2'
 
   let disposed = false
   groundSurfaceSeq += 1
@@ -439,7 +458,7 @@ function paintRoughnessMap(ctx: CanvasRenderingContext2D, rnd: () => number): vo
       width / 2,
       rnd() * Math.PI,
       0,
-      0.06 * (0.5 + rnd() * 0.5),
+      0.015 * (0.5 + rnd() * 0.5),
     )
   }
 
@@ -448,7 +467,7 @@ function paintRoughnessMap(ctx: CanvasRenderingContext2D, rnd: () => number): vo
 
   // 轻微颗粒噪声，避免粗糙度在大面积上完全均匀
   for (let i = 0; i < GROUND_GRAIN_COUNT / 3; i += 1) {
-    ctx.fillStyle = gray(rnd() < 0.5 ? 255 : 0, 0.03)
+    ctx.fillStyle = gray(rnd() < 0.5 ? 255 : 0, 0.007)
     ctx.fillRect(rnd() * size, rnd() * size, 1, 1)
   }
 }

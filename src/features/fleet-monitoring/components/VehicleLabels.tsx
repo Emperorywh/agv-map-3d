@@ -2,7 +2,7 @@
  * 车辆标签批次图层（SPEC §5.1、§6.4、§7.2、§12.5；TASK-011）。
  *
  * 职责：把图集化 billboard 标签以「批次 × (背景 + 名称) 两层 InstancedMesh」
- *       挂载到场景——每个批次独享一份 2048×2048 名称图集（256 个 256×64
+ *       挂载到场景——每个批次独享一份 2048×4096 双行图集（256 个 256×128
  *       名称槽，槽位与实例槽位一一对应）与一组实例属性几何；共享状态芯片
  *       图集由本组件单一持有；逐帧提交交给 useFleetLabelFrameSync。批次扩
  *       容只发生在车队超过当前容量时（≤1 次重建），属结构性低频变化，批次
@@ -62,11 +62,6 @@ export interface VehicleLabelsProps {
   table: InstanceSlotTable
   /** 当前批次数（与车体图层一致；由 Feature 根组件持有） */
   batchCount: number
-  /**
-   * 标签降级能力开关（SPEC §6.5 行动 1；TASK-014）：true 时中距离纯名称档
-   * 隐藏，仅保留重点标签与近景完整档；默认 false。
-   */
-  importantLabelsOnly?: boolean
   /** 名称图集工厂（可注入；默认真实 Canvas 工厂） */
   createLabelAtlas?: () => VehicleLabelAtlas
   /** 状态芯片图集工厂（可注入；默认真实 Canvas 工厂） */
@@ -83,7 +78,6 @@ export function VehicleLabels({
   worldTransform,
   table,
   batchCount,
-  importantLabelsOnly = false,
   createLabelAtlas = createVehicleLabelAtlas,
   createBadgeAtlas = createVehicleBadgeAtlas,
   diagnostics,
@@ -149,7 +143,6 @@ export function VehicleLabels({
     table,
     worldTransform,
     batches,
-    importantLabelsOnly,
     diagnostics,
   })
 

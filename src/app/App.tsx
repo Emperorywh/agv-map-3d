@@ -10,7 +10,7 @@
 //       失败时按指数退避在后台自动重试（清屏色不变，地图上下文 promise 在
 //       首个成功地图兑现），配置阶段失败为终态（保持清屏色，不渲染任何错
 //       误 DOM）。config.renderer（maxDpr/shadowMapSize）经 props 传入场景，
-//       由 render-quality 与地图灯光消费。TASK-016：经 Canvas onCreated 捕
+//       由 Canvas 与地图灯光直接消费。TASK-016：经 Canvas onCreated 捕
 //       获渲染器并交给 useWebGLContextRecovery 监听上下文丢失/恢复——丢失即
 //       preventDefault 并随恢复期暂停帧提交，恢复后递增 GPU 资源代驱动各
 //       Feature 按确定顺序重建，重建结算成功才恢复渲染；连续三次失败记录结
@@ -338,7 +338,12 @@ export function App() {
   return (
     <Canvas
       style={{ width: '100vw', height: '100dvh' }}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+      /* 直接使用配置与设备像素比确定完整分辨率，不再按帧率动态降低 DPR。
+         配置未就绪时沿用原完整画质上限二；窗口和显示器变化由 Canvas 响应。 */
+      dpr={[0, startup.phase === 'ready' ? startup.config.renderer.maxDpr : 2]}
+      /* 厂房远墙的面板与基层仅相隔约三厘米，普通透视深度在远处会丢失这段间距。
+         使用对数深度同时保留近景裁剪范围和远墙层次，避免镜头移动时表面争抢深度。 */
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, logarithmicDepthBuffer: true }}
       /* shadows（P0-8）：启用实时阴影贴图（R3F 默认 PCFSoftShadowMap）——
          此前 Canvas 未传该 prop，灯光的阴影相机与分辨率全部空转；
          阴影相机按灯光空间地图四角收紧，见 MapVisualizationFeature */
@@ -358,7 +363,6 @@ export function App() {
         worldTransform={
           startup.phase === 'ready' ? (startup.mapDescriptor.initial?.worldTransform ?? null) : null
         }
-        maxDpr={startup.phase === 'ready' ? startup.config.renderer.maxDpr : undefined}
         shadowMapSize={
           startup.phase === 'ready' ? startup.config.renderer.shadowMapSize : undefined
         }

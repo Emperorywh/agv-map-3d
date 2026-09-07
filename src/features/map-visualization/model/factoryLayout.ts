@@ -9,10 +9,11 @@ export const FACTORY_LAYOUT_CONFIG = Object.freeze({
   equipmentDepthM: 4,
   maintenanceWidthM: 2,
   /**
-   * 外围余量由地图对角线的百分之十六放宽到百分之二十二。
-   * 为全图缩远留出屏幕边缘空间，地坪、墙体和相机继续共用这一范围。
+   * 建筑余量按通行与检修尺度收敛，不再随大地图无限扩张。
+   * 镜头可以看到墙面，因此无需用大片空地换取全图取景空间。
    */
-  expansionRatio: 0.22,
+  expansionRatio: 0.035,
+  maxMarginM: 16,
   columnSpacingM: 8,
   wallHeightM: 12,
   wallThicknessM: 0.3,
@@ -59,7 +60,7 @@ export function getFactoryLayout(mapBounds: SceneBounds): FactoryLayout {
   const config = FACTORY_LAYOUT_CONFIG
   const margin = Math.max(
     config.circulationWidthM + config.equipmentDepthM + config.maintenanceWidthM,
-    mapBounds.diagonal * config.expansionRatio,
+    Math.min(config.maxMarginM, mapBounds.diagonal * config.expansionRatio),
   )
   const width = Math.ceil((mapBounds.maxWorldX - mapBounds.minWorldX + margin * 2) / config.columnSpacingM) * config.columnSpacingM
   const depth = Math.ceil((mapBounds.maxWorldZ - mapBounds.minWorldZ + margin * 2) / config.columnSpacingM) * config.columnSpacingM

@@ -1,6 +1,6 @@
 // Canvas 内的 Feature 组合根（SPEC §12.3；TASK-004 接入地图 Feature，
 // TASK-007 接入车队运行时 Provider，TASK-010 接入车辆实例渲染，TASK-013 接
-// 入相机导航与跟随桥接，TASK-014 接入自适应质量能力，TASK-016 接入上下文
+// 入相机导航与跟随桥接，TASK-016 接入上下文
 // 恢复编排）。
 // 职责：作为场景子树的唯一挂载点，以显式 props 组合各 Feature 根组件：
 //       1. FleetRuntimeProvider 在场景子树内持有车队高频运行时与数据源连接
@@ -13,12 +13,8 @@
 //          两个 Feature 互不导入、互不感知；
 //       3. 地图包围盒取自 bootstrap 种子（MapModel.sceneBounds），为相机自
 //          动取景与缩放上限提供唯一来源；
-//       4. 质量能力映射（SPEC §12.3「质量等级由组合层映射为标签、阴影和装
-//          饰能力开关」）：订阅 render-quality 的只读质量等级，经
-//          capabilitiesForLevel 映射为地图（阴影分辨率/动态阴影/装饰动画）
-//          与车队（标签重点模式）的显式 props；RenderQuality
-//          Feature 挂在场景内采样帧时间并应用 DPR 上限；车队规模经只读运
-//          行时 count 的闭包注入（决定目标帧率档位）；
+//       4. 地图与车队始终启用完整渲染效果，阴影使用配置分辨率；
+//          不采样帧率，也不按设备性能或车辆数量修改画质；
 //       5. 上下文恢复编排（TASK-016，SPEC §11.9）：app 状态机递增资源代经
 //          contextGeneration 下发，MapVisualizationFeature（地图 → 环境）
 //          与 FleetMonitoringFeature（车辆 → 标签）在同一
@@ -32,10 +28,9 @@
 //          app 的诊断通道经 diagnostics 下发到各 Feature（geometry/instances
 //          阶段由所有者就地计时上报）。
 // 关键不变量：本组件只做组合与低频桥接（一个命令引用 + 一个运行时引用状态
-// + 一个派生读取器 + 一个低频质量等级订阅 + 一个恢复失败旗标），不解析协
+// + 一个派生读取器 + 一个恢复失败旗标），不解析协
 // 议、不发起网络请求、不读取运行时配置，也不持有任何逐帧数据（跟随位姿由
-// 相机 Feature 的 ref 状态机逐帧读取；帧时间样本由 render-quality 的 ref 状
-// 态机持有，SPEC §4）。
+// 相机 Feature 的 ref 状态机逐帧读取，SPEC §4）。
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { CameraNavigationCommands } from '@/features/camera-navigation'
@@ -54,11 +49,6 @@ import {
   type FocusBounds,
   type MapViewDescriptor,
 } from '@/features/map-visualization'
-import {
-  capabilitiesForLevel,
-  RenderQualityFeature,
-  useQualityLevel,
-} from '@/features/render-quality'
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 
@@ -70,8 +60,6 @@ export interface AgvMonitorSceneProps {
   staleAfterMs?: number
   /** 地图世界变换（app 由 bootstrap 产物注入）；null 时车辆不渲染 */
   worldTransform?: WorldTransform | null
-  /** 基准 DPR 上限（config.renderer.maxDpr）；未就绪时缺省 2 */
-  maxDpr?: number
   /** 基准阴影贴图分辨率（config.renderer.shadowMapSize）；缺省 2048 */
   shadowMapSize?: number
   /**
@@ -122,7 +110,6 @@ export function AgvMonitorScene({
   vehicleSource = null,
   staleAfterMs,
   worldTransform = null,
-  maxDpr = 2,
   shadowMapSize = DEFAULT_SHADOW_MAP_SIZE,
   contextGeneration = 0,
   onContextRecoverySettled,
@@ -153,21 +140,6 @@ export function AgvMonitorScene({
         ? null
         : createFollowTargetReader({ runtime: fleetRuntime, worldTransform }),
     [fleetRuntime, worldTransform],
-  )
-
-  // 车队规模读取器：render-quality 每帧经它取运行时 count（决定 60/30fps
-  // 目标档位），无运行时按 0 台处理；闭包只依赖运行时引用（低频重建）。
-  const readVehicleCount = useMemo(
-    () => () => fleetRuntime?.count ?? 0,
-    [fleetRuntime],
-  )
-
-  // 质量等级 → 能力开关映射（SPEC §12.3：等级订阅与映射只发生在组合层）。
-  // 等级跃迁受迟滞冷却约束（降级 ≥5s、恢复 ≥30s），订阅是低频的。
-  const qualityLevel = useQualityLevel()
-  const capabilities = useMemo(
-    () => capabilitiesForLevel(qualityLevel, { shadowMapSize }),
-    [qualityLevel, shadowMapSize],
   )
 
   // 相机取景与缩放上限的唯一包围盒来源：bootstrap 种子中的地图模型
@@ -275,10 +247,6 @@ export function AgvMonitorScene({
 
   return (
     <group name="agv-monitor-scene">
-      <RenderQualityFeature
-        readVehicleCount={readVehicleCount}
-        maxDpr={maxDpr}
-      />
       <CameraNavigationFeature
         bounds={sceneBounds}
         initialFocusBounds={initialFocusBounds}
@@ -297,9 +265,9 @@ export function AgvMonitorScene({
             资源代经 props 下发驱动整代重建。 */}
         <MapVisualizationFeature
           map={mapDescriptor}
-          shadowMapSize={capabilities.shadowMapSize}
-          dynamicShadowsEnabled={capabilities.dynamicShadowsEnabled}
-          decorationsEnabled={capabilities.decorationsEnabled}
+          /* 阴影始终使用配置的完整分辨率，地面反射和灯光动画由图层持续启用。
+             场景没有质量等级状态，运行时间和车队规模不会改变视觉效果。 */
+          shadowMapSize={shadowMapSize}
           contextGeneration={contextGeneration}
           onContextRecreateFailed={handleContextRecreateFailed}
           diagnostics={diagnostics}
@@ -307,7 +275,6 @@ export function AgvMonitorScene({
         />
         <FleetMonitoringFeature
           worldTransform={worldTransform}
-          importantLabelsOnly={capabilities.importantLabelsOnly}
           contextGeneration={contextGeneration}
           diagnostics={diagnostics}
           onInstancesReady={markFleetReady}

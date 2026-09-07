@@ -18,9 +18,9 @@
  *    长宽缩放——每车尺寸只进入矩阵的 x/z 分量；
  * 4. 警示灯只在 FAULT（FRESH + ONLINE）时旋转闪烁；OFFLINE/STALE 熄灭
  *    （SPEC §5.2），熄灭用零缩放矩阵表达（不存在 instanceColor.a）；
- * 5. 标签 LOD 阈值与重点上限来自 SPEC §6.4：投影 ≥8px 显示名称、≥20px 增加
- *    电量条与完整状态，远景最多 20 个重点标签（优先级截断属 labelLod）；
- * 6. 标签边框配色（选中白 / L1 黄 / L2 红）为告警语义在标签内的表达口径；
+ * 5. 标签保留原有投影阈值与重点上限，可见面板统一显示两行摘要，
+ *    远景最多二十个重点标签（优先级截断属 labelLod）；
+ * 6. 标签边框配色（选中蓝 / L1 黄 / L2 红）为告警语义在标签内的表达口径；
  *    透明贴花按 renderOrder 分层：假阴影(0.012) → 标签(10/11)，互不 z-fight。
  */
 
@@ -160,37 +160,35 @@ export const VEHICLE_STATE_LABELS: Record<VehiclePrimaryDisplayState, string> = 
 /* ==================== 车辆标签外观（SPEC §5.1、§6.4、§7.2；TASK-011） ==================== */
 
 /**
- * 标签四边形世界尺寸：高度固定，宽度 = 高度 × 名称单元宽高比（256×64 = 4:1）。
- * 标签锚点高于车顶与警示灯（约 0.25m），近景不遮挡车体主体。
- * 高度 0.48（P0-6）：宽度 1.92m = 默认车长 1.8m 的 1.07×，对齐 Reference 的
- * 「芯片宽 ≈ 车长 1.1×」（v1 曾建议 0.6 → 过度裁剪文字可读性）。
+ * 参考图采用两行悬浮面板，宽高比为二比一，宽度保持接近默认车长。
+ * 增加的高度容纳车辆编号、电量条和速度，图集单元同步使用相同比例。
  */
-export const LABEL_HEIGHT_M = 0.48
-export const LABEL_ASPECT = 4
+export const LABEL_HEIGHT_M = 0.96
+export const LABEL_ASPECT = 2
 /** 标签世界宽度：由名称单元宽高比推出（帧同步与测试共用同一事实源） */
 export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
 /**
  * 标签锚点高于工业平台、托盘和纸箱顶面，避免载货时遮住箱体。
  * 屏幕尺寸由帧同步层限制，靠近车辆也不会出现巨幅标签。
  */
-export const LABEL_ANCHOR_Y_M = 1.0
+export const LABEL_ANCHOR_Y_M = 1.3
 
 /**
- * 标签背景底色（P0-6）：Reference 为深灰黑底 + 白色 ID + 左上角状态色小圆点
- * + 底部电量条——状态信息由「点」承载，不由「底」承载；此前背景取
- * 状态色 × 0.72，60 台 IDLE 车形成 60 个亮蓝芯片群落。
+ * 浅白半透明底板搭配蓝色信息，贴近参考图的轻量悬浮效果。
+ * 状态圆点仍取真实业务颜色，正常电量条与文字共用蓝色。
  */
-export const LABEL_BACKGROUND_COLOR = '#1a1f26'
+export const LABEL_BACKGROUND_COLOR = '#f3f6ff'
+export const LABEL_TEXT_COLOR = '#395cc7'
 /** 状态圆点几何（P0-6，标签背景 shader 内 SDF 绘制，颜色取 aStateColor）：
  *  圆心/半径以标签 UV 表达——u 为宽度分量（0..1，全宽 = 高度的 ASPECT 倍），
  *  v 为高度分量（0..1）；半径按高度计，绘制时 u 距离乘 ASPECT 还原等比圆。 */
-export const LABEL_STATE_DOT_CENTER_U = 0.04
-export const LABEL_STATE_DOT_CENTER_V = 0.78
-export const LABEL_STATE_DOT_RADIUS_V = 0.055
+export const LABEL_STATE_DOT_CENTER_U = 0.89
+export const LABEL_STATE_DOT_CENTER_V = 0.76
+export const LABEL_STATE_DOT_RADIUS_V = 0.062
 
 /**
- * LOD 投影阈值（SPEC §6.4，边界含）：车体投影长度 ≥8px 显示全部名称，
- * ≥20px 增加电量条和完整状态芯片；低于 8px 仅重点车可见（远景）。
+ * 保留原有八像素、二十像素投影分档，供可见性优先级使用。
+ * 可见面板统一展示双行信息；低于八像素仍只保留重点车辆。
  */
 export const LABEL_NAME_MIN_PX = 8
 export const LABEL_FULL_MIN_PX = 20
@@ -198,15 +196,18 @@ export const LABEL_FULL_MIN_PX = 20
 export const LABEL_IMPORTANT_MAX = 20
 
 /**
- * 标签边框配色（SPEC §7.3 的标签内表达）：选中白、L1 黄、L2 红。
+ * 浅色面板选中时显示蓝色边框，告警继续使用黄色和红色。
  * 电量条颜色按电量档位在 shader 内取值（同阈值常量）。
  */
-export const LABEL_BORDER_SELECTED_COLOR = '#ffffff'
+export const LABEL_BORDER_SELECTED_COLOR = '#5275ec'
 export const LABEL_BORDER_L1_COLOR = '#ffd21e'
 export const LABEL_BORDER_L2_COLOR = '#ff2d2d'
 
-/** 电量条颜色：与告警阈值同口径（<15 红、[15,30) 黄、≥30 绿） */
-export const LABEL_BATTERY_OK_COLOR = '#3fbf6f'
+/**
+ * 正常电量使用参考图的蓝色，低电量仍按原有阈值使用黄、红提示。
+ * 保留电量语义，避免视觉调整掩盖需要关注的车辆。
+ */
+export const LABEL_BATTERY_OK_COLOR = '#4169e8'
 export const LABEL_BATTERY_LOW_COLOR = '#f5a524'
 export const LABEL_BATTERY_CRITICAL_COLOR = '#ff2d2d'
 

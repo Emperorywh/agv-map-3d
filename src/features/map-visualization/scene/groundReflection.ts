@@ -1,0 +1,140 @@
+/**
+ * 地坪反射复用 Three.js 的镜像相机和裁剪平面，叠加在标准受光材质上。
+ * 反射只采集实体，模糊采样与菲涅耳权重控制涂层质感；所有资源由句柄释放。
+ */
+import * as THREE from 'three'
+import { Reflector } from 'three/addons/objects/Reflector.js'
+
+/**
+ * 所有入口固定使用完整反射尺寸，不接受低分辨率或关闭反射的参数。
+ * 每次主画面绘制都同步采集倒影，静止镜头下的车辆运动同样逐帧更新。
+ */
+export const GROUND_REFLECTION_RESOLUTION = 1024
+
+export function createGroundReflection(mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>) {
+  const geometry = new THREE.PlaneGeometry(1, 1)
+  const reflector = new Reflector(geometry, { textureWidth: GROUND_REFLECTION_RESOLUTION, textureHeight: GROUND_REFLECTION_RESOLUTION, multisample: 0, clipBias: 0.001 })
+  reflector.rotation.x = -Math.PI / 2
+  reflector.position.copy(mesh.position)
+  reflector.updateMatrixWorld(true)
+  const reflectorMaterial = reflector.material as THREE.ShaderMaterial
+  const worldProjection = new THREE.Matrix4()
+  const inverseReflector = reflector.matrixWorld.clone().invert()
+  const projection = { value: worldProjection }
+  const texture = { value: reflector.getRenderTarget().texture }
+  /**
+   * 离屏纹理生成降采样层，模糊采样使用预过滤结果，保持灯带倒影连续。
+   * 单次场景采集即可获得柔和倒影，不增加独立的全屏模糊渲染通道。
+   */
+  texture.value.generateMipmaps = true
+  texture.value.minFilter = THREE.LinearMipmapLinearFilter
+  /**
+   * 模糊层级在完整采集尺寸下固定，近地车辆仍保留可辨认的倒置轮廓。
+   * 使用显式层级，避免屏幕导数再次叠加模糊、把小型车辆倒影抹掉。
+   */
+  const blur = { value: 1.2 }
+  const ready = { value: 0 }
+  const material = mesh.material
+  const originalCompile = material.onBeforeCompile
+  const originalKey = material.customProgramCacheKey
+  const originalRender = mesh.onBeforeRender
+
+  /**
+   * 在光照计算完成后混合线性空间的倒影，再交给既有色调映射输出。
+   * 地坪使用世界坐标投影，兼容几何已旋转且网格本身不旋转的现有实现。
+   */
+  material.onBeforeCompile = (shader, renderer) => {
+    originalCompile.call(material, shader, renderer)
+    Object.assign(shader.uniforms, { groundReflectionProjection: projection, groundReflectionTexture: texture, groundReflectionReady: ready, groundReflectionBlur: blur })
+    shader.vertexShader = `uniform mat4 groundReflectionProjection;
+varying vec4 vGroundReflection;
+${shader.vertexShader}`.replace('#include <project_vertex>', `#include <project_vertex>
+vGroundReflection = groundReflectionProjection * modelMatrix * vec4(transformed, 1.0);`)
+    shader.fragmentShader = `uniform sampler2D groundReflectionTexture;
+uniform float groundReflectionReady;
+uniform float groundReflectionBlur;
+varying vec4 vGroundReflection;
+${shader.fragmentShader}`.replace('#include <opaque_fragment>', `
+// 透明背景随颜色一起预过滤，只让实体倒影覆盖受光地坪。
+// 空白区域保留原本的明亮底色，不再混入清屏灰色形成整片灰蒙遮罩。
+vec2 reflectionUv = vGroundReflection.xy / max(vGroundReflection.w, 0.0001);
+float reflectionBlur = groundReflectionBlur + roughnessFactor * 0.8;
+vec4 reflected = textureLod(groundReflectionTexture, reflectionUv, reflectionBlur);
+float reflectionEdge = smoothstep(0.0, 0.025, min(min(reflectionUv.x, reflectionUv.y), min(1.0 - reflectionUv.x, 1.0 - reflectionUv.y)));
+float grazing = pow(1.0 - max(dot(normalize(normal), normalize(vViewPosition)), 0.0), 3.0);
+float reflectionWeight = groundReflectionReady * reflectionEdge * (0.42 + 0.12 * grazing);
+outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflected.rgb * reflectionWeight;
+#include <opaque_fragment>`)
+  }
+  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v2`
+  /**
+   * 同一材质切换回已用过的程序时，Three.js 不会再次执行编译回调。
+   * 清理材质程序缓存以绑定本次反射纹理；地坪几何与三张源纹理继续复用。
+   */
+  material.dispose()
+  material.needsUpdate = true
+  const hidden: THREE.Object3D[] = []
+  let capturing = false
+
+  /**
+   * 在主相机真正绘制地面时采集，确保车辆位置、墙体剖切已经更新。
+   * 静止和移动镜头均逐帧刷新，车辆运动与倒影保持相同更新节奏。
+   * 仅用重入保护阻止镜像场景递归采集，不跳帧或限制反射帧率。
+   */
+  mesh.onBeforeRender = (renderer, scene, camera, renderGeometry, renderMaterial, group) => {
+    if (capturing) return
+    originalRender.call(mesh, renderer, scene, camera, renderGeometry, renderMaterial, group)
+    capturing = true
+    const renderTarget = renderer.getRenderTarget()
+    const xrEnabled = renderer.xr.enabled
+    const shadowAutoUpdate = renderer.shadowMap.autoUpdate
+    const background = scene.background
+    const clearAlpha = renderer.getClearAlpha()
+    const clearColor = renderer.getClearColor(new THREE.Color()).clone()
+    try {
+      /**
+       * 反射纹理只记录实体覆盖率，透明清屏不会把场景背景烘进地面。
+       * 黑色透明底保证降采样后的颜色已按覆盖率加权，倒影边缘没有灰色光圈。
+       */
+      scene.background = null
+      renderer.setClearColor(0x000000, 0)
+      scene.traverse((object) => {
+        const unlit = object instanceof THREE.Mesh && !Array.isArray(object.material) && object.material instanceof THREE.MeshBasicMaterial
+        if (object.visible && (object === mesh || unlit || object.name === 'fleet-labels')) {
+          hidden.push(object)
+          object.visible = false
+        }
+      })
+      reflector.onBeforeRender(renderer, scene, camera, geometry, reflectorMaterial, group)
+      worldProjection.copy(reflectorMaterial.uniforms.textureMatrix.value).multiply(inverseReflector)
+      ready.value = 1
+    } finally {
+      scene.background = background
+      renderer.setClearColor(clearColor, clearAlpha)
+      for (const object of hidden) object.visible = true
+      hidden.length = 0
+      renderer.xr.enabled = xrEnabled
+      renderer.shadowMap.autoUpdate = shadowAutoUpdate
+      renderer.setRenderTarget(renderTarget)
+      capturing = false
+    }
+  }
+  let disposed = false
+  return {
+    dispose() {
+      if (disposed) return
+      disposed = true
+      mesh.onBeforeRender = originalRender
+      material.onBeforeCompile = originalCompile
+      material.customProgramCacheKey = originalKey
+      /**
+       * 卸载时清理旧程序，防止资源重建后仍读取已经释放的倒影纹理。
+       * 先恢复材质回调，再由地坪所有者释放材质，保证清理路径对称。
+       */
+      material.dispose()
+      material.needsUpdate = true
+      reflector.dispose()
+      geometry.dispose()
+    },
+  }
+}

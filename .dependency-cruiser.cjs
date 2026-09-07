@@ -4,7 +4,7 @@
  * 职责：以 dependency-cruiser 规则静态锁定 Feature-Based 架构的依赖方向。
  * 关键不变量：
  * 1. 所有模块只能从 `src/features/<name>/index.ts` 公开入口导入其他 Feature；
- * 2. map-visualization、fleet-monitoring、render-quality 三者之间禁止任何互相导入；
+ * 2. map-visualization、fleet-monitoring 之间禁止任何互相导入；
  * 3. mock-simulation 与 camera-navigation 只允许导入 map-visualization、
  *    fleet-monitoring 的 index.ts（自身 Feature 内部导入不受此约束）；
  * 4. shared 不得依赖 app 或任何 Feature（反向依赖）；
@@ -18,11 +18,11 @@ const FEATURES = [
   'fleet-monitoring',
   'camera-navigation',
   'mock-simulation',
-  'render-quality',
 ]
 
-// 这三个 Feature 之间按 SPEC 不得互相导入
-const CORE_FEATURES = ['map-visualization', 'fleet-monitoring', 'render-quality']
+// 地图与车队通过应用组合层协作，不能直接互相导入。
+// 画质模块已移除，不再为已删除的目录保留边界配置。
+const CORE_FEATURES = ['map-visualization', 'fleet-monitoring']
 
 const forbidden = [
   // 每个 Feature 的内部文件禁止被 Feature 外部深层导入（公开入口 index.ts 除外）
@@ -37,7 +37,8 @@ const forbidden = [
     },
   })),
 
-  // 核心三 Feature（地图 / 车队 / 质量）之间禁止任何互相导入
+  // 地图与车队两个核心 Feature 之间禁止任何互相导入。
+  // 协作数据继续由应用组合层通过公开入口传递。
   ...CORE_FEATURES.map((feature) => ({
     name: `core-feature-${feature}-no-cross-feature-import`,
     severity: 'error',
