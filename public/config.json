@@ -5,6 +5,7 @@
   "maxVehicles": 256,
   "staleAfterMs": 10000,
   "renderer": {
+    "qualityPreset": "balanced",
     "maxDpr": 1.5,
     "shadowMapSize": 2048
   },

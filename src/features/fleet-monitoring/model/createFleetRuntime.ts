@@ -99,6 +99,11 @@ export interface ReadonlyFleetRuntime {
 }
 
 export interface FleetRuntime extends ReadonlyFleetRuntime {
+  /**
+   * 渲染观察版本，数据更新、删除及新鲜度变化时递增。
+   * 标签可以跳过完全静止的帧，不消费车体专用的脏集合。
+   */
+  readonly revision: number
   /** 归并一个已校验事件；事件外壳非法时整条拒绝并记录采样诊断 */
   applyEvent(event: VehicleDataEvent): FleetDiff
   /** 1Hz 跃迁推进：只处理 FRESH/STALE 边界；now 为单调毫秒 */
@@ -134,6 +139,12 @@ export function createFleetRuntime(
 
   /** 实体表：键为 (mapId, agvKey) 编码，值为可变内部实体 */
   const entities = new Map<string, FleetEntityData>()
+  /**
+   * 实体列表只在成员变化时重建，成员对象仍由运行时原位维护。
+   * 版本号覆盖内容变化，避免标签逐帧复制整个 Map 的值列表。
+   */
+  let revision = 0
+  let entityList: readonly ReadonlyFleetEntity[] | null = null
   const dirtyPose = new Set<string>()
   const dirtyDisplay = new Set<string>()
   const dirtyRemoved = new Set<string>()
@@ -143,6 +154,7 @@ export function createFleetRuntime(
     snapshot: VehicleSnapshot,
     receivedAt: number,
   ): 'added' | 'updated' => {
+    revision += 1
     const existing = entities.get(snapshot.entityKey)
     if (existing === undefined) {
       const staticState = deriveVehicleState(snapshot)
@@ -158,6 +170,7 @@ export function createFleetRuntime(
         lastServerTime: snapshot.serverTime,
       }
       entities.set(entity.key, entity)
+      entityList = null
       dirtyPose.add(entity.key)
       dirtyDisplay.add(entity.key)
       return 'added'
@@ -194,6 +207,8 @@ export function createFleetRuntime(
       return null
     }
     entities.delete(key)
+    entityList = null
+    revision += 1
     dirtyPose.delete(key)
     dirtyDisplay.delete(key)
     dirtyRemoved.add(key)
@@ -272,6 +287,7 @@ export function createFleetRuntime(
         continue
       }
       entity.freshness = next
+      revision += 1
       entity.displayState = projectDisplayState(entity.staticState, next)
       dirtyDisplay.add(entity.key)
     }
@@ -280,6 +296,7 @@ export function createFleetRuntime(
   // 全量脏标记：幂等（Set 去重），只覆盖存活实体——已删除实体不在表中，
   // 其 removed 差异只能由 applyEvent 产生，这里绝不伪造
   const markAllDirty = (): void => {
+    revision += 1
     for (const entity of entities.values()) {
       dirtyPose.add(entity.key)
       dirtyDisplay.add(entity.key)
@@ -305,7 +322,8 @@ export function createFleetRuntime(
     markAllDirty,
     consumeDirty,
     get: (key) => entities.get(key),
-    entities: () => [...entities.values()] as readonly ReadonlyFleetEntity[],
+    entities: () => entityList ??= Object.freeze([...entities.values()]),
+    get revision(): number { return revision },
     get count(): number {
       return entities.size
     },

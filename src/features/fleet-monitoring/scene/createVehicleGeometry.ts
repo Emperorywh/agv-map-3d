@@ -35,7 +35,7 @@ export type VehiclePartLayout = Record<VehiclePartKind, PartPlacement> & {
 }
 export interface VehicleWorldPose { readonly cx: number; readonly cz: number; readonly rotY: number }
 export interface VehicleResources {
-  readonly parts: Record<VehiclePartKind, { geometry: THREE.BufferGeometry; material: THREE.Material }>
+  readonly parts: Record<VehiclePartKind, { geometry: THREE.BufferGeometry; material: THREE.Material; lodGeometries?: THREE.BufferGeometry[] }>
   readonly modelReady: boolean
   dispose(): void
 }
@@ -172,7 +172,11 @@ export function createVehicleResources(model?: IndustrialModel): VehicleResource
     parts,
     modelReady: model !== undefined,
     dispose() {
-      const geometries = new Set(Object.values(parts).map((part) => part.geometry))
+      /**
+       * 精修与中远景几何都由整队资源所有者释放，批次只释放自身拷贝。
+       * 材质由各档共享，集合去重避免重复清理。
+       */
+      const geometries = new Set(Object.values(parts).flatMap((part) => [part.geometry, ...(part.lodGeometries ?? [])]))
       const ownedMaterials = new Set([...Object.values(materials), ...Object.values(parts).map((part) => part.material)])
       for (const geometry of geometries) geometry.dispose()
       for (const material of ownedMaterials) material.dispose()

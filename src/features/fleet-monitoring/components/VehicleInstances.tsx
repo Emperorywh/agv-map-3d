@@ -13,6 +13,7 @@ import { SLOT_BATCH_CAPACITY } from '../model/instanceSlots'
 import { INSTANCE_COLOR_PARTS, PICKABLE_PARTS, VEHICLE_PART_KINDS, type VehiclePartKind, type VehicleResources } from '../scene/createVehicleGeometry'
 import { useFleetFrameSync, type FleetBatchMeshes } from '../hooks/useFleetFrameSync'
 import { CulledVehicleBatch } from '../scene/culledVehicleBatch'
+import { useRenderQuality, type RenderQuality } from '@/shared/rendering/renderQuality'
 
 /**
  * 加载空档使用稳定的空数组，避免未就绪时反复触发结构换代。
@@ -31,6 +32,7 @@ export interface VehicleInstancesProps {
 }
 
 export function VehicleInstances({ runtime, worldTransform, resources, table, batchCount, onBatchCountChanged, diagnostics }: VehicleInstancesProps) {
+  const quality = useRenderQuality()
   /**
    * 合批资源在副作用中成对创建和释放，严格模式重新设置时生成全新纹理。
    * 渲染参数换代时暂不挂载旧批次，防止已释放的矩阵纹理被再次使用。
@@ -38,12 +40,12 @@ export function VehicleInstances({ runtime, worldTransform, resources, table, ba
   const [loaded, setLoaded] = useState<{ resources: VehicleResources; count: number; batches: FleetBatchMeshes[] } | null>(null)
   const batches = loaded?.resources === resources && loaded.count === batchCount ? loaded.batches : EMPTY_BATCHES
   useEffect(() => {
-    const next = createBatches(resources, batchCount)
+    const next = createBatches(resources, batchCount, quality)
     setLoaded({ resources, count: batchCount, batches: next })
     return () => {
       for (const batch of next) for (const mesh of Object.values(batch.parts)) mesh.dispose()
     }
-  }, [resources, batchCount])
+  }, [resources, batchCount, quality])
   useFleetFrameSync({ runtime, table, worldTransform, batches, onBatchCountChanged, diagnostics })
   return <group name="fleet-vehicles">
     {batches.map((batch, index) => <group key={batch.parts.shell.uuid} name={`fleet-batch-${index}`}>
@@ -56,12 +58,16 @@ export function VehicleInstances({ runtime, worldTransform, resources, table, ba
  * 所有矩阵以零缩放初始化，空槽位绝不出现在原点；动态颜色缓冲只分配给灯光部件。
  * 拾取部件携带相同批次号，加载模型或点击载货纸箱仍映射到同一车辆实体。
  */
-function createBatches(resources: VehicleResources, count: number): FleetBatchMeshes[] {
+function createBatches(resources: VehicleResources, count: number, quality: RenderQuality): FleetBatchMeshes[] {
   return Array.from({ length: count }, (_, batchId) => {
     const parts = {} as Record<VehiclePartKind, CulledVehicleBatch>
     for (const kind of VEHICLE_PART_KINDS) {
       const resource = resources.parts[kind]
-      const mesh = new CulledVehicleBatch(resource.geometry, resource.material, SLOT_BATCH_CAPACITY)
+      /**
+       * 中远景只切换批内几何编号，继续共享材质、业务槽位及车辆矩阵。
+       * 高画质档不分配低模拷贝，保持完整精修模型。
+       */
+      const mesh = new CulledVehicleBatch(resource.geometry, resource.material, SLOT_BATCH_CAPACITY, quality.lodPixels[0] > 0 ? resource.lodGeometries : undefined, quality.lodPixels)
       mesh.name = `fleet-${kind}-b${batchId}`
       mesh.matrixAutoUpdate = false
       mesh.castShadow = !INSTANCE_COLOR_PARTS.has(kind) && kind !== 'shadow'

@@ -6,14 +6,14 @@ import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 
 /**
- * 所有入口固定使用完整反射尺寸，不接受低分辨率或关闭反射的参数。
- * 每次主画面绘制都同步采集倒影，静止镜头下的车辆运动同样逐帧更新。
+ * 默认均衡预算保留柔和倒影，高画质档可以显式提高尺寸与刷新频率。
+ * 镜头变化立即重新采集，静止镜头下仍定期采集车辆运动和状态灯变化。
  */
-export const GROUND_REFLECTION_RESOLUTION = 1024
+export const GROUND_REFLECTION_RESOLUTION = 512
 
-export function createGroundReflection(mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>) {
+export function createGroundReflection(mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>, resolution = GROUND_REFLECTION_RESOLUTION, fps = 30) {
   const geometry = new THREE.PlaneGeometry(1, 1)
-  const reflector = new Reflector(geometry, { textureWidth: GROUND_REFLECTION_RESOLUTION, textureHeight: GROUND_REFLECTION_RESOLUTION, multisample: 0, clipBias: 0.001 })
+  const reflector = new Reflector(geometry, { textureWidth: resolution, textureHeight: resolution, multisample: 0, clipBias: 0.001 })
   reflector.rotation.x = -Math.PI / 2
   reflector.position.copy(mesh.position)
   reflector.updateMatrixWorld(true)
@@ -78,11 +78,20 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   let frame = 0
   let capturedFrame = -1
   let capturedCamera: THREE.Camera | null = null
+  /**
+   * 缓存采集相机和时间，复用颜色草稿；跳帧时保持上次纹理与投影矩阵成对使用。
+   * 暂停恢复后的大时间差只触发一次采集，不补跑后台积累的帧。
+   */
+  let elapsed = 0
+  let capturedAt = -Infinity
+  const capturedWorld = new THREE.Matrix4()
+  const capturedProjection = new THREE.Matrix4()
+  const clearColor = new THREE.Color()
 
   /**
    * 在主相机真正绘制地面时采集，确保车辆位置、墙体剖切已经更新。
-   * 静止和移动镜头均逐帧刷新，车辆运动与倒影保持相同更新节奏。
-   * 仅用重入保护阻止镜像场景递归采集，不跳帧或限制反射帧率。
+   * 移动镜头立即刷新，静止镜头按预算采集；车辆运动不会导致倒影永久冻结。
+   * 重入保护和外层帧号共同阻止透射与主体通道重复采集。
    */
   mesh.onBeforeRender = (renderer, scene, camera, renderGeometry, renderMaterial, group) => {
     if (capturing) return
@@ -92,13 +101,15 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
      * 按外层动画帧而非渲染器计数去重，嵌套镜像渲染不会误判为新的一帧。
      */
     if (capturedFrame === frame && capturedCamera === camera) return
+    const cameraChanged = capturedCamera !== camera || !capturedWorld.equals(camera.matrixWorld) || !capturedProjection.equals(camera.projectionMatrix)
+    if (!cameraChanged && elapsed - capturedAt < 1 / fps - 0.001) return
     capturing = true
     const renderTarget = renderer.getRenderTarget()
     const xrEnabled = renderer.xr.enabled
     const shadowAutoUpdate = renderer.shadowMap.autoUpdate
     const background = scene.background
     const clearAlpha = renderer.getClearAlpha()
-    const clearColor = renderer.getClearColor(new THREE.Color()).clone()
+    renderer.getClearColor(clearColor)
     try {
       /**
        * 反射纹理只记录实体覆盖率，透明清屏不会把场景背景烘进地面。
@@ -118,6 +129,9 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
       ready.value = 1
       capturedFrame = frame
       capturedCamera = camera
+      capturedAt = elapsed
+      capturedWorld.copy(camera.matrixWorld)
+      capturedProjection.copy(camera.projectionMatrix)
     } finally {
       scene.background = background
       renderer.setClearColor(clearColor, clearAlpha)
@@ -132,10 +146,10 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   let disposed = false
   return {
     /**
-     * 每个动画帧允许重新采集一次完整倒影，车辆运动和灯光动画仍逐帧同步。
-     * 这里只消除同帧重复采集，不降低倒影分辨率或刷新频率。
+     * 累积外层动画时间，同时推进同帧去重编号。
+     * 分辨率与刷新预算固定到资源代，避免不断重建反射纹理。
      */
-    beginFrame() { frame += 1 },
+    beginFrame(delta = 1 / 60) { frame += 1; elapsed += delta },
     dispose() {
       if (disposed) return
       disposed = true

@@ -17,18 +17,20 @@
  * 5. 取消（AbortError）原样向上抛出，不包装成配置错误。
  */
 import { isFiniteNumber, isPlainObject } from '@/shared/validation'
+import type { RenderQualityPreset } from '@/shared/rendering/renderQuality'
 import { describeError, isAbortError, StructuredError, type DiagnosticsReporter } from '@/shared/diagnostics'
 
 /** 数据源形态：Mock 仿真（TASK-009）或真实 WebSocket（TASK-007） */
 export type ConfigDataSource = 'mock' | 'ws'
 
 /**
- * 渲染器固定参数由 Canvas 和灯光直接使用，运行期间保持完整画质。
- * 像素比上限与阴影分辨率仅由显式配置决定，不受帧率或车队规模影响。
+ * 渲染预算由显式档位提供，旧配置省略档位时自动采用均衡档。
+ * 像素比与阴影仍支持独立上限，不通过瞬时帧率反复重建资源。
  */
 export interface RendererConfig {
   maxDpr: number
   shadowMapSize: number
+  qualityPreset: RenderQualityPreset
 }
 
 /** 统一二维仿射变换参数（业务语义解释归 TASK-003 的统一坐标） */
@@ -79,7 +81,7 @@ const TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
   'coordinateTransform',
 ])
 
-const RENDERER_KEYS: ReadonlySet<string> = new Set(['maxDpr', 'shadowMapSize'])
+const RENDERER_KEYS: ReadonlySet<string> = new Set(['maxDpr', 'shadowMapSize', 'qualityPreset'])
 
 const TRANSFORM_KEYS: ReadonlySet<string> = new Set([
   'scale',
@@ -274,7 +276,16 @@ export function validateRuntimeConfig(raw: unknown, baseUrl: string, diagnostics
     throw fieldError('renderer', '对象', rendererRaw)
   }
   rejectUnknownKeys(rendererRaw, RENDERER_KEYS, 'renderer.')
+  /**
+   * 缺省配置兼容旧部署；显式填写时严格校验，避免拼写错误静默切换画质。
+   * 档位只控制渲染预算，不影响车辆容量、坐标和数据源。
+   */
+  const qualityPreset = rendererRaw.qualityPreset === undefined ? 'balanced' : rendererRaw.qualityPreset
+  if (qualityPreset !== 'performance' && qualityPreset !== 'balanced' && qualityPreset !== 'high') {
+    throw fieldError('renderer.qualityPreset', 'performance、balanced 或 high', qualityPreset)
+  }
   const renderer: RendererConfig = {
+    qualityPreset,
     maxDpr: requirePositiveFinite(rendererRaw, 'maxDpr', 'renderer.maxDpr'),
     shadowMapSize: requirePositiveInteger(rendererRaw, 'shadowMapSize', 'renderer.shadowMapSize'),
   }

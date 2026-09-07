@@ -42,6 +42,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas } from '@react-three/fiber'
+import { RENDER_QUALITY, RenderQualityContext } from '@/shared/rendering/renderQuality'
 import {
   createDiagnosticsReporter,
   isAbortError,
@@ -335,12 +336,17 @@ export function App() {
     }
   }, [vehicleSource])
 
+  /**
+   * 配置未就绪时使用均衡预算，显式高画质档可恢复完整模型与高分辨率效果。
+   * 同一上下文供地图和车辆读取，避免每层独立推导预算造成画质不一致。
+   */
+  const quality = RENDER_QUALITY[startup.phase === 'ready' ? startup.config.renderer.qualityPreset : 'balanced']
   return (
     <Canvas
       style={{ width: '100vw', height: '100dvh' }}
-      /* 直接使用配置与设备像素比确定完整分辨率，不再按帧率动态降低 DPR。
-         配置未就绪时沿用原完整画质上限二；窗口和显示器变化由 Canvas 响应。 */
-      dpr={[0, startup.phase === 'ready' ? startup.config.renderer.maxDpr : 2]}
+      /* 像素比同时遵守设备、配置及画质档上限，限制多通道的平方级像素成本。
+         不按瞬时帧率反复调节尺寸，避免渲染目标持续重分配。 */
+      dpr={[0, Math.min(quality.maxDpr, startup.phase === 'ready' ? startup.config.renderer.maxDpr : quality.maxDpr)]}
       /* 厂房远墙的面板与基层仅相隔约三厘米，普通透视深度在远处会丢失这段间距。
          使用对数深度同时保留近景裁剪范围和远墙层次，避免镜头移动时表面争抢深度。 */
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, logarithmicDepthBuffer: true }}
@@ -356,6 +362,7 @@ export function App() {
         setRenderer(state.gl)
       }}
     >
+      <RenderQualityContext.Provider value={quality}>
       <AgvMonitorScene
         mapDescriptor={startup.phase === 'ready' ? startup.mapDescriptor : null}
         vehicleSource={vehicleSource}
@@ -372,6 +379,7 @@ export function App() {
         startedAt={startedAtRef.current}
         debugPanelEnabled={debugPanelEnabled}
       />
+      </RenderQualityContext.Provider>
     </Canvas>
   )
 }

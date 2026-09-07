@@ -1,6 +1,7 @@
 /**
  * 为 GLB 自发光补充屏幕空间光晕，在线性高动态范围画面上合成后统一色调映射。
- * 主画面、透射采样及光晕首层使用完整绘制尺寸，资源随上下文代重新创建。
+ * 主画面保持画布尺寸，透射、抗锯齿及光晕遵守显式画质预算。
+ * 资源随上下文代重新创建，不根据瞬时帧率重建渲染目标。
  */
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
@@ -9,9 +10,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { useRenderQuality } from '@/shared/rendering/renderQuality'
+import { createFrameDiagnostics } from '@/shared/rendering/frameDiagnostics'
 
 export function SceneBloom({ generation }: { generation: number }) {
   const { gl, scene, camera } = useThree()
+  const quality = useRenderQuality()
   const pipeline = useRef<{
     composer: EffectComposer
     bloom: UnrealBloomPass
@@ -19,15 +23,26 @@ export function SceneBloom({ generation }: { generation: number }) {
     height: number
   } | null>(null)
   const drawingSize = useRef(new THREE.Vector2())
+  /**
+   * 性能统计覆盖整个外层帧，包含镜像嵌套渲染和后处理的绘制调用。
+   * 只在用户显式开启 perf 参数时工作，普通监控页面保持无统计开销。
+   */
+  const diagnostics = useRef<ReturnType<typeof createFrameDiagnostics>>(null)
+  useEffect(() => {
+    const current = createFrameDiagnostics(gl)
+    diagnostics.current = current
+    return () => { diagnostics.current = null; current?.dispose() }
+  }, [gl, generation])
+  useFrame(() => diagnostics.current?.begin(), -100)
 
   useEffect(() => {
     /**
-     * 半浮点颜色保留大于一的发光能量，抗锯齿采用设备支持的最高多重采样数。
+     * 半浮点颜色保留大于一的发光能量，采样数受设备能力与画质预算共同限制。
      * 输出通道独占最终色调映射，避免先压平高光再提取光晕造成白色装甲泛光。
      */
     const target = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
-      samples: gl.capabilities.maxSamples,
+      samples: Math.min(quality.msaa, gl.capabilities.maxSamples),
     })
     const composer = new EffectComposer(gl, target)
     composer.setPixelRatio(1)
@@ -46,7 +61,7 @@ export function SceneBloom({ generation }: { generation: number }) {
     composer.addPass(bloom)
     composer.addPass(output)
     const previousTransmissionScale = gl.transmissionResolutionScale
-    gl.transmissionResolutionScale = 1
+    gl.transmissionResolutionScale = quality.transmissionScale
     pipeline.current = { composer, bloom, width: 0, height: 0 }
     return () => {
       pipeline.current = null
@@ -61,7 +76,7 @@ export function SceneBloom({ generation }: { generation: number }) {
       output.dispose()
       composer.dispose()
     }
-  }, [gl, scene, camera, generation])
+  }, [gl, scene, camera, generation, quality])
 
   /**
    * 接管主画面渲染，所有普通帧回调完成后才采集；反射仍由原地坪钩子逐帧生成。
@@ -69,7 +84,7 @@ export function SceneBloom({ generation }: { generation: number }) {
    */
   useFrame((_, delta) => {
     const current = pipeline.current
-    if (current === null) { gl.render(scene, camera); return }
+    if (current === null) { gl.render(scene, camera); diagnostics.current?.end(delta); return }
     gl.getDrawingBufferSize(drawingSize.current)
     const { x: width, y: height } = drawingSize.current
     /**
@@ -80,14 +95,15 @@ export function SceneBloom({ generation }: { generation: number }) {
     if (current.width !== width || current.height !== height) {
       current.composer.setSize(width, height)
       /**
-       * 内置光晕将输入尺寸减半作为第一层，因此传入双倍尺寸保留完整首层细节。
-       * 后续层级只用于不同半径的柔光卷积，主体画面始终保持原始像素分辨率。
+       * 均衡档恢复内置半分辨率首层，性能档进一步降低柔光卷积的像素数量。
+       * 主体画面和最终输出保持画布分辨率，高画质档保留原完整首层。
        */
-      current.bloom.setSize(width * 2, height * 2)
+      current.bloom.setSize(Math.max(1, width * quality.bloomScale), Math.max(1, height * quality.bloomScale))
       current.width = width
       current.height = height
     }
     current.composer.render(delta)
+    diagnostics.current?.end(delta)
   }, 1)
   return null
 }

@@ -20,6 +20,7 @@ import { Group } from 'three'
 import type { SceneBounds } from '../model/types'
 import { createGroundSurface } from '../scene/groundSurface'
 import { createGroundReflection } from '../scene/groundReflection'
+import { useRenderQuality } from '@/shared/rendering/renderQuality'
 
 export interface GroundLayerProps {
   /**
@@ -30,10 +31,11 @@ export interface GroundLayerProps {
 }
 
 /**
- * 正式地图与预览始终创建完整地坪反射，使用同一固定分辨率。
+ * 正式地图与预览共用显式画质预算，静止镜头下按预算降低倒影刷新率。
  * 地坪和倒影由同一个副作用持有，卸载时先解除反射回调再释放地坪材质。
  */
 export function GroundLayer({ bounds }: GroundLayerProps) {
+  const quality = useRenderQuality()
   const gl = useThree((state) => state.gl)
   const group = useMemo(() => new Group(), [])
   /**
@@ -41,14 +43,14 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
    * 反射句柄换代时同步替换引用，卸载后不再访问旧资源。
    */
   const reflectionRef = useRef<ReturnType<typeof createGroundReflection> | null>(null)
-  useFrame(() => reflectionRef.current?.beginFrame())
+  useFrame((_, delta) => reflectionRef.current?.beginFrame(delta))
   /**
    * 地坪句柄必须在每次副作用设置时新建，不能复用严格模式清理过的句柄。
    * 稳定组负责挂载位置，实际网格由同一副作用添加、移除和释放。
    */
   useEffect(() => {
     const surface = createGroundSurface(bounds, gl.capabilities.getMaxAnisotropy())
-    const reflection = createGroundReflection(surface.mesh)
+    const reflection = createGroundReflection(surface.mesh, quality.reflectionSize, quality.reflectionFps)
     reflectionRef.current = reflection
     group.add(surface.mesh)
     return () => {
@@ -57,7 +59,7 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
       group.remove(surface.mesh)
       surface.dispose()
     }
-  }, [bounds, gl, group])
+  }, [bounds, gl, group, quality])
 
   return (
     <primitive

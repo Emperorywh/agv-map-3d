@@ -13,7 +13,7 @@ let binary: Promise<ArrayBuffer> | undefined
  * 静态导入让 Vite 原样输出 GLB，并自动处理内容哈希及子路径部署。
  * 请求失败清除缓存，下次挂载可以重新加载，不用旧充电柜代替缺失模型。
  */
-export async function loadChargingTowers(matrices: Float32Array) {
+export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8) {
   binary ??= fetch(towerUrl).then((response) => {
     if (!response.ok) throw new Error(`充电塔模型加载失败：HTTP ${response.status}`)
     return response.arrayBuffer()
@@ -23,6 +23,12 @@ export async function loadChargingTowers(matrices: Float32Array) {
   const materials = new Set<THREE.Material>()
   const textures = new Set<THREE.Texture>()
   const lights: THREE.PointLight[] = []
+  const instances: THREE.InstancedMesh[] = []
+  /**
+   * 塔体发光保持完整，实时照明只分配固定数量的灯槽。
+   * 每座塔保存静态灯位，镜头变化时再选择有画面贡献的近处灯位。
+   */
+  const lightPositions: THREE.Vector3[] = []
   const batches: THREE.BatchedMesh[] = []
   const group = new THREE.Group()
   group.name = 'map-charge-towers'
@@ -31,6 +37,7 @@ export async function loadChargingTowers(matrices: Float32Array) {
     if (disposed) return
     disposed = true
     group.clear()
+    for (const mesh of instances) mesh.dispose()
     for (const batch of batches) batch.dispose()
     for (const light of lights) light.dispose()
     for (const geometry of geometries) geometry.dispose()
@@ -118,51 +125,101 @@ export async function loadChargingTowers(matrices: Float32Array) {
       placement.matrixAutoUpdate = false
       placement.add(gltf.scene.clone(true))
       /**
-       * GLB 的发光不会自动照亮邻近物体，光环高度补充有限距离的蓝色点光源。
-       * 强度与照明距离保持原值，只剔除影响范围完全落在画面及倒影外的光源。
+       * 静态模型只计算一次局部矩阵，保留全部透明部件与材质。
+       * 灯位单独保存，避免每座塔都给所有受光材质增加一盏实时灯。
        */
-      const light = new THREE.PointLight(0x42bfff, 3, 4, 2)
-      light.name = 'charge-tower-energy-light'
-      light.position.set(0, 2.563, 0)
-      lights.push(light)
-      placement.add(light)
+      placement.traverse((object) => { if (object.matrixAutoUpdate) object.updateMatrix(); object.matrixAutoUpdate = false })
+      lightPositions.push(new THREE.Vector3(0, 2.563, 0).applyMatrix4(placement.matrix))
       group.add(placement)
     }
+    /**
+     * 灯槽始终可见，空槽强度为零；相机移动不改变着色器中的点光源数量。
+     * 未分配实时灯的塔仍保留水晶自发光和合批地面光斑，保证设施位置可辨。
+     */
+    for (let index = 0; index < Math.min(lightBudget, lightPositions.length); index += 1) {
+      const light = new THREE.PointLight(0x42bfff, 0, 4, 2)
+      light.name = 'charge-tower-energy-light'
+      lights.push(light)
+      group.add(light)
+    }
+    /**
+     * 单张小型径向纹理供全部光斑共享，柔和衰减避免出现硬边圆盘。
+     * 纹理不依赖图片请求，随塔体资源统一释放。
+     */
+    const glowPixels = new Uint8Array(32 * 32 * 4)
+    for (let y = 0; y < 32; y += 1) for (let x = 0; x < 32; x += 1) {
+      const offset = (y * 32 + x) * 4
+      glowPixels[offset] = glowPixels[offset + 1] = glowPixels[offset + 2] = 255
+      glowPixels[offset + 3] = Math.round(255 * Math.max(0, 1 - Math.hypot((x - 15.5) / 15.5, (y - 15.5) / 15.5)) ** 2)
+    }
+    const glowTexture = new THREE.DataTexture(glowPixels, 32, 32)
+    glowTexture.magFilter = THREE.LinearFilter
+    glowTexture.needsUpdate = true
+    textures.add(glowTexture)
+    const glowGeometry = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2)
+    const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x42bfff, map: glowTexture, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending })
+    geometries.add(glowGeometry)
+    materials.add(glowMaterial)
+    const glow = new THREE.InstancedMesh(glowGeometry, glowMaterial, towerCount)
+    instances.push(glow)
+    glow.name = 'charge-tower-ground-glow'
+    glow.renderOrder = 8
+    glow.raycast = () => {}
+    for (let index = 0; index < towerCount; index += 1) {
+      placementMatrix.makeScale(1.6, 1, 1.6).setPosition(lightPositions[index].x, GROUND_SURFACE_Y + 0.006, lightPositions[index].z)
+      glow.setMatrixAt(index, placementMatrix)
+    }
+    glow.computeBoundingSphere()
+    group.add(glow)
     group.updateMatrixWorld(true)
     const frustum = new THREE.Frustum()
     const projection = new THREE.Matrix4()
     const influence = new THREE.Sphere()
     const reflectedInfluence = new THREE.Sphere()
-    const contributing = new Uint8Array(lights.length)
+    const contributing = new Uint8Array(lightPositions.length)
+    const cameraWorld = new THREE.Matrix4()
+    const cameraProjection = new THREE.Matrix4()
+    const cameraPosition = new THREE.Vector3()
+    const candidates: number[] = []
+    const scores = new Float64Array(lightPositions.length)
+    let initialized = false
     /**
-     * 光源的四米影响球与主视野、地面镜像视野取并集，屏幕外灯照进画面时仍保留。
-     * 额外边距避免视口边缘反复切换；剔除的是无画面贡献的实时灯，不是自发光材质。
+     * 光源影响球与主视野、地面镜像视野取并集，屏幕外照进画面的灯仍有候选资格。
+     * 从候选中按预算分配实时灯，未入选的塔继续显示自发光与合批地面光斑。
      */
     const updateLightVisibility = (camera: THREE.Camera) => {
       camera.updateWorldMatrix(true, false)
+      if (initialized && cameraWorld.equals(camera.matrixWorld) && cameraProjection.equals(camera.projectionMatrix)) return
+      initialized = true
+      cameraWorld.copy(camera.matrixWorld)
+      cameraProjection.copy(camera.projectionMatrix)
+      cameraPosition.setFromMatrixPosition(camera.matrixWorld)
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       frustum.setFromProjectionMatrix(projection, camera.coordinateSystem, camera.reversedDepth)
-      let visibleCount = 0
-      for (let index = 0; index < lights.length; index += 1) {
-        const light = lights[index]
-        light.getWorldPosition(influence.center)
-        influence.radius = light.distance + (contributing[index] ? 1 : 0.5)
+      candidates.length = 0
+      for (let index = 0; index < lightPositions.length; index += 1) {
+        influence.center.copy(lightPositions[index])
+        influence.radius = 4.5
         reflectedInfluence.copy(influence)
         reflectedInfluence.center.y = 2 * GROUND_SURFACE_Y - influence.center.y
-        contributing[index] = Number(frustum.intersectsSphere(influence) || frustum.intersectsSphere(reflectedInfluence))
-        visibleCount += contributing[index]
+        if (frustum.intersectsSphere(influence) || frustum.intersectsSphere(reflectedInfluence)) {
+          scores[index] = influence.center.distanceToSquared(cameraPosition) * (contributing[index] ? 0.85 : 1)
+          candidates.push(index)
+        }
       }
       /**
-       * 灯槽数量按四、八、十六等档位取整，减少移动镜头时逐盏增减引发的着色器重编译。
-       * 所有有贡献的灯仍以原强度参与；填充槽亮度为零，不改变可见照明或限制灯数。
+       * 最近的有效灯位优先，已分配灯位给予滞回权重，避免相邻塔来回抢占灯槽。
+       * 空槽只清零强度，不隐藏对象，保持程序变体数量稳定。
        */
-      const slotCount = visibleCount === 0 ? 0 : Math.min(lights.length, 2 ** Math.ceil(Math.log2(Math.max(4, visibleCount))))
-      let padding = slotCount - visibleCount
+      candidates.sort((a, b) => scores[a] - scores[b] || a - b)
+      contributing.fill(0)
       for (let index = 0; index < lights.length; index += 1) {
-        const active = contributing[index] === 1
-        lights[index].visible = active || padding > 0
-        lights[index].intensity = active ? 3 : 0
-        if (!active && padding > 0) padding -= 1
+        const target = candidates[index]
+        lights[index].intensity = target === undefined ? 0 : 3
+        if (target !== undefined) {
+          contributing[target] = 1
+          lights[index].position.copy(lightPositions[target])
+        }
       }
     }
     return { group, updateLightVisibility, dispose }

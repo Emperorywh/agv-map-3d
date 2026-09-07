@@ -7,8 +7,10 @@ import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import type * as THREE from 'three'
 import { loadChargingTowers } from '../scene/chargingTowerModel'
+import { useRenderQuality } from '@/shared/rendering/renderQuality'
 
 export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
+  const quality = useRenderQuality()
   const root = useRef<THREE.Group>(null)
   const resourceRef = useRef<Awaited<ReturnType<typeof loadChargingTowers>> | null>(null)
   const [failure, setFailure] = useState<{ matrices: Float32Array; message: string } | null>(null)
@@ -17,7 +19,7 @@ export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
     const parent = root.current
     let active = true
     let resource: Awaited<ReturnType<typeof loadChargingTowers>> | null = null
-    void loadChargingTowers(matrices).then((loaded) => {
+    void loadChargingTowers(matrices, quality.pointLights).then((loaded) => {
       if (!active) { loaded.dispose(); return }
       resource = loaded
       resourceRef.current = loaded
@@ -34,7 +36,7 @@ export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
       if (resource !== null) parent?.remove(resource.group)
       resource?.dispose()
     }
-  }, [matrices])
+  }, [matrices, quality])
 
   /**
    * 相机移动时只更新实时灯的影响范围判定，不重建模型或提交 React 状态。

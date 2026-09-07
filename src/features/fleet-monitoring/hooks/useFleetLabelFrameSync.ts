@@ -29,11 +29,9 @@ import {
 } from '../scene/labelAtlas'
 import { LABEL_BG_ATTR, LABEL_BG_ATTRIBUTE_NAMES } from '../scene/labelMaterials'
 import {
-  capImportantLabels,
   labelAlertLevel,
   labelChipOf,
   labelImportanceRank,
-  type ImportantLabelEntry,
 } from '../scene/labelLod'
 import { computeVehicleWorldPose } from '../scene/createVehicleGeometry'
 
@@ -96,6 +94,24 @@ interface LabelEntityCache {
 type LabelLevelNext = 0 | 1 | 2
 
 interface LabelFrameController {
+  /**
+   * 相机、数据及交互状态均未变化时整帧跳过；缓存容器按最大槽位复用。
+   * 版本观察与车体脏集合独立，不影响位姿提交的唯一消费者。
+   */
+  lastRuntime: FleetRuntime | null
+  lastTable: InstanceSlotTable | null
+  lastRevision: number
+  lastRenderedCount: number
+  lastWorldTransform: WorldTransform | null
+  cameraWorld: THREE.Matrix4
+  cameraProjection: THREE.Matrix4
+  viewportWidth: number
+  viewportHeight: number
+  selectedKey: string | null
+  hoveredKey: string | null
+  rectangles: { x: number; y: number; width: number; height: number }[]
+  ordered: number[]
+  admitted: Set<number>
   caches: Map<string, LabelEntityCache>
   seen: Set<string>
   /** 远景重点候选（平行数字数组，避免逐帧对象分配） */
@@ -126,6 +142,20 @@ const scratch4: number[] = [0, 0, 0, 0]
 
 function createLabelFrameController(): LabelFrameController {
   return {
+    lastRuntime: null,
+    lastTable: null,
+    lastRevision: -1,
+    lastRenderedCount: -1,
+    lastWorldTransform: null,
+    cameraWorld: new THREE.Matrix4(),
+    cameraProjection: new THREE.Matrix4(),
+    viewportWidth: -1,
+    viewportHeight: -1,
+    selectedKey: null,
+    hoveredKey: null,
+    rectangles: [],
+    ordered: [],
+    admitted: new Set(),
     caches: new Map(),
     seen: new Set<string>(),
     farFlat: [],
@@ -203,6 +233,7 @@ function tickLabelFrame(
   if (controller.lastBatchesIdentity !== batches) {
     controller.lastBatchesIdentity = batches
     controller.caches.clear()
+    controller.lastRevision = -1
   }
 
   const camera = state.camera
@@ -210,6 +241,27 @@ function tickLabelFrame(
   const viewportWidth = state.size?.width ?? 0
   const selectedKey = useFleetMonitoringStore.getState().selectedKey
   const hoveredKey = useFleetMonitoringStore.getState().hoveredKey
+  /**
+   * 仅在影响标签的输入变化时重新布局，静止页面不扫描车辆或触发图集提交。
+   * 相机矩阵包含朝向，投影矩阵包含缩放，窗口与资源换代也会强制更新。
+   */
+  const viewportHeight = state.size?.height ?? 0
+  if (controller.lastRuntime === runtime && controller.lastTable === table && controller.lastRevision === runtime.revision &&
+    controller.lastRenderedCount === table.renderedCount && controller.lastWorldTransform === worldTransform &&
+    controller.viewportWidth === viewportWidth && controller.viewportHeight === viewportHeight &&
+    controller.selectedKey === selectedKey && controller.hoveredKey === hoveredKey &&
+    controller.cameraWorld.equals(camera.matrixWorld) && controller.cameraProjection.equals(camera.projectionMatrix)) return
+  controller.lastRuntime = runtime
+  controller.lastTable = table
+  controller.lastRevision = runtime.revision
+  controller.lastRenderedCount = table.renderedCount
+  controller.lastWorldTransform = worldTransform
+  controller.viewportWidth = viewportWidth
+  controller.viewportHeight = viewportHeight
+  controller.selectedKey = selectedKey
+  controller.hoveredKey = hoveredKey
+  controller.cameraWorld.copy(camera.matrixWorld)
+  controller.cameraProjection.copy(camera.projectionMatrix)
   const entities = runtime.entities()
 
   // —— 删除清理（先于内容扫描）：清除消失实体的图集单元与残留矩阵 ——
@@ -238,7 +290,9 @@ function tickLabelFrame(
    * 所有可见标签统一执行数量限制和屏幕碰撞避让，优先保留选中与悬停。
    * 异常提示使用现有告警优先级；普通车辆即使在近景也默认不展开。
    */
-  const rectangles = new Map<number, { x: number; y: number; width: number; height: number }>()
+  const { rectangles, ordered, admitted } = controller
+  ordered.length = 0
+  admitted.clear()
   for (const entity of entities) {
     const slot = table.get(entity.key)
     if (slot === undefined || slot.batch >= batches.length) {
@@ -289,7 +343,18 @@ function tickLabelFrame(
       cache.displayState = entity.displayState
     }
 
-    // 投影档位：以车体长度在屏幕上的像素长度分级（8px/20px，边界含）
+    /**
+     * 普通未选中车辆没有标签候选资格，提前跳过坐标投影和屏幕尺寸计算。
+     * 选中、悬停和全部告警继续使用既有优先级，不减少业务提示预算。
+     */
+    const hovered = entity.key === hoveredKey
+    const alertRank = labelImportanceRank({ selected: cache.selectedNext, primary: entity.displayState.primary, alerts: entity.staticState.alerts })
+    cache.levelNext = cache.selectedNext ? 2 : hovered || alertRank !== null ? 1 : 0
+    const rank = cache.selectedNext ? 0 : hovered ? 1 : alertRank === null ? null : alertRank + 2
+    if (rank === null) continue
+
+    // 只有需要显示的标签才计算车体投影大小。
+    // 位置与显示档位仍在同一帧更新，跟随与悬停不增加固定延迟。
     const pose = computeVehicleWorldPose(entity.snapshot, worldTransform)
     cache.poseX = pose.cx
     cache.poseZ = pose.cz
@@ -304,16 +369,8 @@ function tickLabelFrame(
             viewportWidth,
           )
         : 0
-    const hovered = entity.key === hoveredKey
-    const alertRank = labelImportanceRank({
-        selected: cache.selectedNext,
-        primary: entity.displayState.primary,
-        alerts: entity.staticState.alerts,
-      })
-    cache.levelNext = cache.selectedNext ? 2 : hovered || alertRank !== null ? 1 : 0
-    const rank = cache.selectedNext ? 0 : hovered ? 1 : alertRank === null ? null : alertRank + 2
     if (rank !== null && projectedPx > 0) {
-      const screen = new THREE.Vector3(pose.cx, LABEL_ANCHOR_Y_M, pose.cz).project(camera)
+      const screen = scratchPosition.set(pose.cx, LABEL_ANCHOR_Y_M, pose.cz).project(camera)
       if (screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < 1.1 && Math.abs(screen.y) < 1.1) {
         const flat = slot.batch * SLOT_BATCH_CAPACITY + slot.slot
         controller.farFlat[farCount] = flat
@@ -331,7 +388,11 @@ function tickLabelFrame(
          * 两行面板的碰撞高度由共享宽高比计算，避免仍按旧标签高度相互覆盖。
          * 屏幕边距保持原值，继续沿用现有优先级与避让流程。
          */
-        rectangles.set(flat, { x: (screen.x + 1) * viewportWidth / 2, y: (1 - screen.y) * (state.size?.height ?? 0) / 2, width: width + 8, height: width / LABEL_ASPECT + 6 })
+        const rect = rectangles[flat] ??= { x: 0, y: 0, width: 0, height: 0 }
+        rect.x = (screen.x + 1) * viewportWidth / 2
+        rect.y = (1 - screen.y) * viewportHeight / 2
+        rect.width = width + 8
+        rect.height = width / LABEL_ASPECT + 6
       }
     }
     if (cache.farRank === null) cache.levelNext = 0
@@ -339,25 +400,22 @@ function tickLabelFrame(
 
   // 标签始终使用完整候选预算，不按设备性能缩减数量或隐藏信息。
   // 保留原有优先级排序与重叠避让，超过上限时按（秩, 扁平槽位）保留前二十。
-  let kept: Set<number> | null = null
-  if (farCount > LABEL_IMPORTANT_MAX) {
-    const entries: ImportantLabelEntry[] = []
-    for (let i = 0; i < farCount; i += 1) {
-      entries.push({ flatSlot: controller.farFlat[i], rank: controller.farRank[i] })
-    }
-    kept = capImportantLabels(entries, LABEL_IMPORTANT_MAX)
-  }
-  const admitted = new Set<number>()
-  const ordered = Array.from({ length: farCount }, (_, index) => index)
-    .sort((a, b) => controller.farRank[a] - controller.farRank[b] || controller.farFlat[a] - controller.farFlat[b])
+  /**
+   * 一次排序完成优先级截断，保留原先先取前二十再执行避让的语义。
+   * 碰撞直接遍历已准入集合，不为每个候选复制数组。
+   */
+  for (let index = 0; index < farCount; index += 1) ordered.push(index)
+  ordered.sort((a, b) => controller.farRank[a] - controller.farRank[b] || controller.farFlat[a] - controller.farFlat[b])
+  ordered.length = Math.min(ordered.length, LABEL_IMPORTANT_MAX)
   for (const index of ordered) {
     const flat = controller.farFlat[index]
-    if (kept !== null && !kept.has(flat)) continue
-    const rect = rectangles.get(flat)!
-    if ([...admitted].some((other) => {
-      const placed = rectangles.get(other)!
-      return Math.abs(rect.x - placed.x) < (rect.width + placed.width) / 2 && Math.abs(rect.y - placed.y) < (rect.height + placed.height) / 2
-    })) continue
+    const rect = rectangles[flat]
+    let overlaps = false
+    for (const other of admitted) {
+      const placed = rectangles[other]
+      if (Math.abs(rect.x - placed.x) < (rect.width + placed.width) / 2 && Math.abs(rect.y - placed.y) < (rect.height + placed.height) / 2) { overlaps = true; break }
+    }
+    if (overlaps) continue
     admitted.add(flat)
   }
 

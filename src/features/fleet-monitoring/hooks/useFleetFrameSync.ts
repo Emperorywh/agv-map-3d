@@ -1,6 +1,6 @@
 /**
  * 车队脏槽位的唯一帧消费者，继续使用原有槽位分配、删除清场和批次扩容机制。
- * 模型资源就绪后全程展示精修模型，不再按相机距离分档；资源换代触发全量回填。
+ * 模型资源就绪后由批次按投影大小选择几何，资源换代触发全量回填。
  * 载货部件始终遵守有效性和载荷状态，颜色同步写入局部状态灯与地面投光。
  */
 import { useEffect, useRef } from 'react'
@@ -505,6 +505,9 @@ function writePlacementMatrix(
   scratchMatrix.compose(scratchPosition, scratchQuaternion, scratchScale)
   const mesh = batches[batchIndex].parts[kind]
   scratchMatrix.toArray(mesh.instanceMatrix.array as unknown as number[], slotIndex * 16)
+  // 每次写入登记精确槽位，同帧重复写入会合并。
+  // 保留原批次脏标记作为快速入口，不再提交未变化的车辆。
+  mesh.markMatrixSlot(slotIndex)
   controller.matrixDirty[batchIndex][VEHICLE_PART_KINDS.indexOf(kind)] = true
 }
 
@@ -522,6 +525,9 @@ function zeroPartMatrix(
     array[base + i] = 0
   }
   array[base + 15] = 1
+  // 零缩放也必须登记，保证删除、非法位姿及载荷隐藏能更新活跃集合。
+  // 全量重建复用本路径，首次回填无需特殊扫描。
+  batches[batchIndex].parts[kind].markMatrixSlot(slotIndex)
   controller.matrixDirty[batchIndex][VEHICLE_PART_KINDS.indexOf(kind)] = true
 }
 
@@ -556,6 +562,9 @@ function writePartColor(
   array[base] = color.r * brightness
   array[base + 1] = color.g * brightness
   array[base + 2] = color.b * brightness
+  // 颜色独立登记，状态灯动画不会触发整车矩阵上传。
+  // 同一槽位多次调色只提交最终颜色。
+  batches[batchIndex].parts[kind].markColorSlot(slotIndex)
   controller.colorDirty[batchIndex][VEHICLE_PART_KINDS.indexOf(kind)] = true
 }
 
@@ -575,16 +584,9 @@ function flushDirtyBatches(
       if (controller.matrixDirty[b][k]) {
         controller.matrixDirty[b][k] = false
         /**
-         * 收紧到最后一个有效槽位，空部件整批隐藏，避免空槽位仍产生精修顶点开销。
-         * 删除、载货切换和资源换代均走矩阵脏路径，显隐随之同步。
+         * 活跃计数与绘制上界已由批次按脏槽位增量维护。
+         * 此处只清理批次标记，避免提交后再次扫描整批矩阵。
          */
-        let count = 0
-        const array = mesh.instanceMatrix.array
-        for (let slot = 0; slot < array.length / 16; slot += 1) {
-          if (array[slot * 16] !== 0 || array[slot * 16 + 5] !== 0 || array[slot * 16 + 10] !== 0) count = slot + 1
-        }
-        mesh.count = count
-        mesh.visible = count > 0
       }
       if (controller.colorDirty[b][k]) {
         controller.colorDirty[b][k] = false

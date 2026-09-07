@@ -14,6 +14,8 @@ import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -109,6 +111,50 @@ if (await exists(mapPath)) {
     check(map !== null && typeof map === 'object', 'map.json 是合法 JSON 对象')
   } catch (error) {
     check(false, `map.json 可解析（错误：${error.message}）`)
+  }
+}
+
+/**
+ * 车辆派生资产属于发布必需资源，构建时用生产同版加载器核对交付内容。
+ * 同时核对材质分区、有限顶点、米制包围盒及减面数量，防止导出错误静默进入运行时。
+ */
+let sourceMaterials = null
+let sourceBounds = null
+let sourceTriangles = 0
+for (const name of ['AGV_FUTURE.glb', 'AGV_FUTURE_LOD1.glb', 'AGV_FUTURE_LOD2.glb']) {
+  try {
+    const buffer = await readFile(path.join(DIST, 'models', name))
+    const model = await new GLTFLoader().parseAsync(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength), '')
+    const materials = new Set()
+    const geometries = new Set()
+    let triangles = 0
+    let finite = true
+    model.scene.updateMatrixWorld(true)
+    model.scene.traverse((object) => {
+      if (!object.isMesh) return
+      geometries.add(object.geometry)
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.add(material)
+      const position = object.geometry.getAttribute('position')
+      triangles += (object.geometry.index?.count ?? position.count) / 3
+      for (const attribute of Object.values(object.geometry.attributes)) {
+        for (const value of attribute.array) if (!Number.isFinite(value)) finite = false
+      }
+    })
+    const bounds = new THREE.Box3().setFromObject(model.scene)
+    const names = [...materials].map((material) => material.name).filter((value, index, all) => all.indexOf(value) === index).sort().join('|')
+    if (sourceBounds === null) {
+      sourceBounds = bounds
+      sourceMaterials = names
+      sourceTriangles = triangles
+    }
+    check(finite && triangles > 0, `${name} 顶点属性有效，共 ${triangles} 三角形`)
+    check(names === sourceMaterials, `${name} 保留完整材质分区`)
+    check(bounds.min.distanceTo(sourceBounds.min) < 0.03 && bounds.max.distanceTo(sourceBounds.max) < 0.03, `${name} 定位和包围盒与原资产一致（容差 3cm）`)
+    if (name.includes('LOD')) check(triangles < sourceTriangles * 0.35, `${name} 三角形少于原资产的 35%`)
+    for (const geometry of geometries) geometry.dispose()
+    for (const material of materials) material.dispose()
+  } catch (error) {
+    check(false, `${name} 可用（${error.message}）`)
   }
 }
 

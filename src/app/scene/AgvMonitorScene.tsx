@@ -13,8 +13,8 @@
 //          两个 Feature 互不导入、互不感知；
 //       3. 地图包围盒取自 bootstrap 种子（MapModel.sceneBounds），为相机自
 //          动取景与缩放上限提供唯一来源；
-//       4. 地图与车队始终启用完整渲染效果，阴影使用配置分辨率；
-//          不采样帧率，也不按设备性能或车辆数量修改画质；
+//       4. 地图与车队共用显式画质预算，阴影使用配置分辨率；
+//          模型按投影尺寸分档，业务容量和告警语义不随画质改变；
 //       5. 上下文恢复编排（TASK-016，SPEC §11.9）：app 状态机递增资源代经
 //          contextGeneration 下发，MapVisualizationFeature（地图 → 环境）
 //          与 FleetMonitoringFeature（车辆 → 标签）在同一
@@ -265,8 +265,8 @@ export function AgvMonitorScene({
             资源代经 props 下发驱动整代重建。 */}
         <MapVisualizationFeature
           map={mapDescriptor}
-          /* 阴影始终使用配置的完整分辨率，地面反射和灯光动画由图层持续启用。
-             场景没有质量等级状态，运行时间和车队规模不会改变视觉效果。 */
+          /* 阴影使用配置分辨率，地面反射和实时灯槽遵守共享画质预算。
+             质量配置不影响车辆数据、坐标和业务交互。 */
           shadowMapSize={shadowMapSize}
           contextGeneration={contextGeneration}
           onContextRecreateFailed={handleContextRecreateFailed}
