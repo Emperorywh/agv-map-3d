@@ -4,6 +4,8 @@
  */
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
+import { registerReflectionCamera } from '@/shared/rendering/projectedLod'
+import { getReflectionMaterial } from '@/shared/rendering/reflectionMaterials'
 
 /**
  * 默认均衡预算保留柔和倒影，高画质档可以显式提高尺寸与刷新频率。
@@ -74,6 +76,8 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   material.dispose()
   material.needsUpdate = true
   const hidden: THREE.Object3D[] = []
+  const replacedMeshes: THREE.Mesh[] = []
+  const replacedMaterials: (THREE.Material | THREE.Material[])[] = []
   let capturing = false
   let frame = 0
   let capturedFrame = -1
@@ -118,12 +122,29 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
       scene.background = null
       renderer.setClearColor(0x000000, 0)
       scene.traverse((object) => {
+        /**
+         * 必须在镜像渲染器收集绘制列表之前替换水晶材质，才能省去反射透射预通道。
+         * 外层主画面的材质在 finally 中完整恢复，异常也不会让简化材质留在近景。
+         */
+        if (object instanceof THREE.Mesh) {
+          const replacement = getReflectionMaterial(object)
+          if (replacement !== undefined && replacement !== object.material) {
+            replacedMeshes.push(object)
+            replacedMaterials.push(object.material)
+            object.material = replacement
+          }
+        }
         const unlit = object instanceof THREE.Mesh && !Array.isArray(object.material) && object.material instanceof THREE.MeshBasicMaterial
         if (object.visible && (object === mesh || unlit || object.name === 'fleet-labels')) {
           hidden.push(object)
           object.visible = false
         }
       })
+      /**
+       * 当前 Three.js 为每个源相机维护镜像相机，采集前登记对应的几何预算。
+       * 注册仅保存弱引用，不依赖反射器内部字段，也不延长相机生命周期。
+       */
+      registerReflectionCamera(reflector.getReflectionCamera(camera))
       reflector.onBeforeRender(renderer, scene, camera, geometry, reflectorMaterial, group)
       worldProjection.copy(reflectorMaterial.uniforms.textureMatrix.value).multiply(inverseReflector)
       ready.value = 1
@@ -137,6 +158,8 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
       renderer.setClearColor(clearColor, clearAlpha)
       for (const object of hidden) object.visible = true
       hidden.length = 0
+      for (let index = 0; index < replacedMeshes.length; index += 1) replacedMeshes[index].material = replacedMaterials[index]
+      replacedMeshes.length = replacedMaterials.length = 0
       renderer.xr.enabled = xrEnabled
       renderer.shadowMap.autoUpdate = shadowAutoUpdate
       renderer.setRenderTarget(renderTarget)

@@ -19,7 +19,11 @@ export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
     const parent = root.current
     let active = true
     let resource: Awaited<ReturnType<typeof loadChargingTowers>> | null = null
-    void loadChargingTowers(matrices, quality.pointLights).then((loaded) => {
+    /**
+     * 设施几何与水晶透射使用同一档位预算，近景保留原资产和真实材质。
+     * 预算随资源代固定，镜头移动只切换已创建的几何编号与材质引用。
+     */
+    void loadChargingTowers(matrices, quality.pointLights, quality.lodPixels, quality.crystalPixels).then((loaded) => {
       if (!active) { loaded.dispose(); return }
       resource = loaded
       resourceRef.current = loaded
@@ -39,10 +43,10 @@ export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
   }, [matrices, quality])
 
   /**
-   * 相机移动时只更新实时灯的影响范围判定，不重建模型或提交 React 状态。
-   * 实体与水晶的剔除分别由合批对象和原生网格按每次绘制相机处理。
+   * 渲染列表收集之前选择主画面的水晶材质，避免远景仍触发透射预通道。
+   * 相机和窗口未变化时跳过更新；几何剔除继续按实际绘制相机进行。
    */
-  useFrame(({ camera }) => resourceRef.current?.updateLightVisibility(camera))
+  useFrame(({ camera, size }) => resourceRef.current?.updateForCamera(camera, size.height))
 
   return <group ref={root} dispose={null}>
     {/* 加载失败明确显示原因，避免在设施缺失时仍让使用者误认为完整加载。

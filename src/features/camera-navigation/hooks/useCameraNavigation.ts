@@ -3,7 +3,7 @@
  * 默认作业区聚焦）。
  *
  * 职责：在唯一 Canvas 内自持 OrbitControls 实例（旋转/平移/光标定点滚轮缩
- *       放 + 阻尼、按厂房视锥约束距离）、以高位监控视角自动取景，主动总览
+ *       放直接响应、按厂房视锥约束距离）、以高位监控视角自动取景，主动总览
  *       与初始聚焦共用室内保护；双击跟随状态机（进入时捕获相对偏移、每帧
  *       读取只读目标、手动拖拽或目标删除立即退出）、监听器对称清理；并把
  *       { follow, exitFollow, overview } 命令经 commandsRef 交给 app 组合层
@@ -44,6 +44,7 @@ import { useCameraNavigationStore } from '../model/cameraNavigationStore'
  */
 import { constrainCameraToGround } from '../scene/constrainCameraToGround'
 import { constrainCameraToFactory } from '../scene/constrainCameraToFactory'
+import { createGroundNavigation } from '../scene/createGroundNavigation'
 import { CAMERA_MAX_PITCH_RAD, getFactoryMinPitch } from '../model/factoryFraming'
 import {
   CAMERA_MIN_DISTANCE_M,
@@ -98,27 +99,19 @@ interface FollowState {
 /** 拖拽退出跟随默认阈值：与 useVehicleSelection 的拖拽抑制一致（像素） */
 const DEFAULT_DRAG_EXIT_THRESHOLD_PX = 6
 
-/** 跟随期间滚轮缩放偏移的系数（与 OrbitControls getZoomScale 同基数） */
+/**
+ * 普通浏览和车辆跟随使用相同的指数缩放系数。
+ * 基数与轨道控制一致，每百像素滚轮量由统一速度决定倍率。
+ */
 const WHEEL_DOLLY_BASE = 0.95
 /** 滚轮一格（deltaY=±100）对应的缩放强度 */
 const WHEEL_DOLLY_NOTCH = 100
 
 /**
  * 自由浏览与车辆跟随共用的滚轮缩放速度。
- * 保留连续缩放的细步进，倍率上下限由室内覆盖约束提供。
+ * 每百像素滚轮量约缩近一成，触控板小位移仍保留连续细步进。
  */
-const CAMERA_ZOOM_SPEED = 1.25
-
-/**
- * 主动取景前消费剩余轨道阻尼，避免上一轮拖拽继续改变新总览的方位。
- * 暂时关闭阻尼只影响这次同步更新，随后恢复原设置，正常浏览手感不变。
- */
-function clearOrbitMomentum(controls: OrbitControls): void {
-  const damping = controls.enableDamping
-  controls.enableDamping = false
-  controls.update()
-  controls.enableDamping = damping
-}
+const CAMERA_ZOOM_SPEED = 2
 
 export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   const { bounds, initialFocusBounds, readFollowTarget, commandsRef, controlsRef } = options
@@ -136,16 +129,15 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
 
   // 跟随状态机（ref，逐帧更新不进 React state；不变量 2）
   const followRef = useRef<FollowState | null>(null)
-  // 指针拖拽判定基准：本指针会话的按下落点；null 表示无按下记录
-  const pointerDownRef = useRef<{ x: number; y: number } | null>(null)
+  /**
+   * 按下位置用于跟随退出阈值，上一位置用于逐次地面平移。
+   * 记录指针编号和按键，避免其他指针或取消事件串入当前拖拽。
+   */
+  const pointerDownRef = useRef<{
+    x: number; y: number; lastX: number; lastY: number; pointerId: number; button: number
+  } | null>(null)
   // 用户已交互旗标（P0-5.2）：按下/滚轮/空格后不再接受默认聚焦请求
   const userInteractedRef = useRef(false)
-
-  /**
-   * 保存上次约束完成后的轨道距离，以区分缩远与保持距离的旋转、平移。
-   * 不依赖鼠标按键状态，因此松开左键后剩余的旋转阻尼也不会误触发总览。
-   */
-  const constrainedDistanceRef = useRef<number | null>(null)
 
   /**
    * 控制器事件与帧循环共用地面、视锥和平移保护；修正后同步跟随偏移。
@@ -153,9 +145,6 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
    */
   const applyGroundConstraint = useCallback((controlsNow: OrbitControls): void => {
     const perspective = camera as THREE.PerspectiveCamera
-    const requestedDistance = camera.position.distanceTo(controlsNow.target)
-    const previousDistance = constrainedDistanceRef.current
-    const zoomingOut = previousDistance !== null && requestedDistance > previousDistance + 0.001
     const groundChanged = constrainCameraToGround(perspective, controlsNow)
     const currentBounds = boundsRef.current
     const factoryChanged = currentBounds !== null && constrainCameraToFactory(
@@ -163,9 +152,7 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       controlsNow,
       getFactoryLayout(currentBounds),
       followRef.current !== null,
-      zoomingOut,
     )
-    constrainedDistanceRef.current = camera.position.distanceTo(controlsNow.target)
     if (groundChanged || factoryChanged) {
       followRef.current?.offset.copy(camera.position).sub(controlsNow.target)
     }
@@ -212,7 +199,6 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       return
     }
     exitFollow()
-    clearOrbitMomentum(controlsNow)
     const perspective = camera as THREE.PerspectiveCamera
     // 四角投影包络需要视口纵横比（P0-1）：取画布实测尺寸，异常时退化为方视口
     const width = gl.domElement.clientWidth
@@ -247,7 +233,6 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       return
     }
     exitFollow()
-    clearOrbitMomentum(controlsNow)
     const perspective = camera as THREE.PerspectiveCamera
     const width = gl.domElement.clientWidth
     const height = gl.domElement.clientHeight
@@ -267,7 +252,12 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   // 本 effect 必须先于取景/命令 effect 声明，保证同一次提交内先创建实例。
   useEffect(() => {
     const controlsInstance = new OrbitControls(camera, gl.domElement)
-    controlsInstance.enableDamping = true
+    /**
+     * 拖动当次完整应用输入，松手即停，避免默认 0.05 阻尼带来的追赶和滑行。
+     * 左键沿用轨道旋转；右键交给地面射线平移，避免两套位移同时叠加。
+     */
+    controlsInstance.enableDamping = false
+    controlsInstance.mouseButtons.RIGHT = null
     /**
      * 围绕光标命中的屏幕位置推进镜头，密集地图中可直接对准某个节点或路径
      * 连续放大；最近距离与自动取景共用同一常量，避免初始化阶段口径漂移。
@@ -288,8 +278,8 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       controlsRef.current = controlsInstance
     }
     /**
-     * change 在原生滚轮、拖拽与阻尼更新完成后触发，此时再限制最终机位，
-     * 能覆盖光标定点缩放在极角检查之后追加的位移；无需二次推进阻尼。
+     * change 在轨道旋转及自定义平移、缩放同步更新后触发，统一限制最终机位。
+     * 同时覆盖原生中键缩放追加的光标位移，无需递归调用控制器更新。
      */
     const onControlsChange = (): void => applyGroundConstraint(controlsInstance)
     controlsInstance.addEventListener('change', onControlsChange)
@@ -371,11 +361,14 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     }
   }, [frameOverview])
 
-  // 指针拖拽退出跟随 + 跟随期间滚轮缩放偏移：监听在画布元素上，effect
-  // 对称清理；只接受主鼠标指针（SPEC §8，与车辆拾取同一判定口径）
+  /**
+   * 指针拖拽退出跟随，右键通过地面求交平移，滚轮共用直接缩放路径。
+   * 捕获阶段先处理相机输入，跟随阈值内不让原生旋转提前改变机位。
+   */
   useEffect(() => {
     const domElement = gl.domElement
     const thresholdPx = options.dragExitThresholdPx ?? DEFAULT_DRAG_EXIT_THRESHOLD_PX
+    const groundNavigation = createGroundNavigation(camera, domElement)
 
     const isMainMouse = (native: PointerEvent | WheelEvent): boolean => {
       const pointerType = (native as PointerEvent).pointerType
@@ -389,77 +382,107 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     }
 
     const onPointerDown = (event: PointerEvent): void => {
-      if (!isMainMouse(event)) {
+      if (!isMainMouse(event) || !internalControlsRef.current?.enabled) {
         return
       }
       userInteractedRef.current = true
-      pointerDownRef.current = { x: event.clientX, y: event.clientY }
+      pointerDownRef.current = {
+        x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY,
+        pointerId: event.pointerId, button: event.button,
+      }
     }
     const onPointerMove = (event: PointerEvent): void => {
       const down = pointerDownRef.current
-      if (down === null || followRef.current === null || !isMainMouse(event)) {
+      const controlsNow = internalControlsRef.current
+      if (down === null || down.pointerId !== event.pointerId || !isMainMouse(event) || !controlsNow?.enabled) {
         return
       }
-      // 位移超阈值视为轨道拖拽：立即退出跟随，当前 controls 姿态无缝接管
-      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > thresholdPx) {
+      /**
+       * 跟随期间的小幅手抖不传给轨道控制，跨过阈值后由当前机位直接接管。
+       * 自由浏览没有这个等待阈值，右键按下后的第一次移动即可平移。
+       */
+      if (followRef.current !== null) {
+        if (Math.hypot(event.clientX - down.x, event.clientY - down.y) <= thresholdPx) {
+          event.stopPropagation()
+          return
+        }
         exitFollow()
       }
+      if (down.button === 2 && controlsNow.enablePan) {
+        groundNavigation.pan(controlsNow.target, down.lastX, down.lastY, event.clientX, event.clientY)
+        controlsNow.update()
+      }
+      down.lastX = event.clientX
+      down.lastY = event.clientY
     }
-    const onPointerUp = (): void => {
+    const onPointerUp = (event: PointerEvent): void => {
+      if (pointerDownRef.current?.pointerId === event.pointerId) pointerDownRef.current = null
+    }
+    /**
+     * 指针捕获丢失或窗口失焦时清空会话，防止回到页面后继续平移。
+     * 轨道控制仍负责捕获的申请和释放，本层只维护自己的拖拽基准。
+     */
+    const clearPointer = (): void => {
       pointerDownRef.current = null
     }
     const onWheel = (event: WheelEvent): void => {
-      userInteractedRef.current = true
-      if (!isMainMouse(event)) {
-        return
-      }
       const controlsNow = internalControlsRef.current
-      if (controlsNow === null) {
-        return
-      }
-      if (followRef.current === null) {
-        /**
-         * 自由浏览的滚轮位移已经由原生监听处理，change 回调负责离地保护。
-         * 不再额外 update：单纯重复极角检查无法保护有实际厚度的地面图层。
-         */
-        return
-      }
-      // 跟随期间缩放相对偏移（不变量 3）；controls 缩放已关闭不会抢占
-      event.preventDefault()
-      const { offset } = followRef.current
+      if (!isMainMouse(event) || !controlsNow?.enabled) return
+      userInteractedRef.current = true
       /**
-       * 正向滚轮表示缩远，与原生轨道控制保持一致。
-       * 原先指数符号相反，跟随模式会出现滚轮方向倒置。
+       * 捕获滚轮并阻止原生处理重复缩放，两种浏览状态使用完全相同的倍率。
+       * 拖拽期间保持当前手势，避免滚轮改变抓取基准或与中键缩放叠加。
        */
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const following = followRef.current
+      if (pointerDownRef.current !== null || (!controlsNow.enableZoom && following === null)) return
+      /**
+       * 将行、页滚动单位换成与原生控制相同的像素尺度；触控板捏合保留增益。
+       * 正值缩远、负值缩近，先限制真实轨道距离，再按实际倍率围绕落点缩放。
+       */
+      const unitScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 100 : 1
+      const delta = event.deltaY * unitScale * (event.ctrlKey ? 10 : 1)
+      if (!Number.isFinite(delta) || delta === 0) return
       const factor = WHEEL_DOLLY_BASE ** (
-        -(event.deltaY / WHEEL_DOLLY_NOTCH) * CAMERA_ZOOM_SPEED
+        -(delta / WHEEL_DOLLY_NOTCH) * controlsNow.zoomSpeed
       )
+      const distance = camera.position.distanceTo(controlsNow.target)
+      if (distance <= 0) return
       const nextLength = THREE.MathUtils.clamp(
-        offset.length() * factor,
+        distance * factor,
         controlsNow.minDistance,
         controlsNow.maxDistance,
       )
-      offset.setLength(nextLength)
+      groundNavigation.zoom(controlsNow.target, event.clientX, event.clientY, nextLength / distance, following !== null)
+      following?.offset.copy(camera.position).sub(controlsNow.target)
+      controlsNow.update()
     }
 
     domElement.addEventListener('pointerdown', onPointerDown)
-    domElement.addEventListener('pointermove', onPointerMove)
+    domElement.addEventListener('pointermove', onPointerMove, true)
     domElement.addEventListener('pointerup', onPointerUp)
     domElement.addEventListener('pointercancel', onPointerUp)
-    domElement.addEventListener('wheel', onWheel, { passive: false })
+    domElement.addEventListener('lostpointercapture', clearPointer)
+    window.addEventListener('blur', clearPointer)
+    domElement.addEventListener('wheel', onWheel, { passive: false, capture: true })
     return () => {
       domElement.removeEventListener('pointerdown', onPointerDown)
-      domElement.removeEventListener('pointermove', onPointerMove)
+      domElement.removeEventListener('pointermove', onPointerMove, true)
       domElement.removeEventListener('pointerup', onPointerUp)
       domElement.removeEventListener('pointercancel', onPointerUp)
-      domElement.removeEventListener('wheel', onWheel)
+      domElement.removeEventListener('lostpointercapture', clearPointer)
+      window.removeEventListener('blur', clearPointer)
+      domElement.removeEventListener('wheel', onWheel, true)
       pointerDownRef.current = null
     }
-  }, [gl, exitFollow, options.dragExitThresholdPx])
+  }, [camera, gl, exitFollow, options.dragExitThresholdPx])
 
-  // 帧循环：跟随 → 写目标与偏移（目标删除即退出），随后驱动阻尼更新。
-  // R3F 同帧回调按注册序执行，本 Hook 的 update 在自身跟随写入之后调用，
-  // 保证渲染用的是最终位姿；拖拽产生的阻尼残量在退出后自然衰减。
+  /**
+   * 帧循环先更新跟随位置，再同步轨道状态及边界，目标删除时立即退出跟随。
+   * 相机在地图图层之前完成更新，渲染和拾取使用同一帧的实际位姿。
+   */
   useFrame(() => {
     const controlsNow = internalControlsRef.current
     if (controlsNow === null) {
@@ -481,15 +504,9 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       }
     }
     /**
-     * 先刷新视口对应的限制，避免旧视口的缩远上限提前截断本帧跟随偏移。
-     * 再更新控制器并最终收敛，所有地图图层随后读取本帧实际机位。
+     * 发生变化时由同步 change 回调收敛；静止帧仍检查视口和裁剪面变化。
+     * 每帧只求解一次厂房边界，避免此前更新前后和事件内重复求解。
      */
-    applyGroundConstraint(controlsNow)
-    controlsNow.update()
-    /**
-     * 渲染前再次兜底，覆盖低于 change 事件阈值的小位移以及视口、裁剪面变化。
-     * 该保护不依赖鼠标事件，因此车辆跟随和剩余阻尼也不能把机位带入地面。
-     */
-    applyGroundConstraint(controlsNow)
+    if (!controlsNow.update()) applyGroundConstraint(controlsNow)
   }, -1)
 }

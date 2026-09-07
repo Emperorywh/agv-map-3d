@@ -10,15 +10,18 @@ import type { MapModel } from '../model/types'
 import type { FactoryLayout } from '../model/factoryLayout'
 import { buildShelfLayout } from '../scene/shelfLayout'
 import { GROUND_SURFACE_Y } from '../scene/mapAppearance'
+import { StaticLodBatch } from '@/shared/rendering/staticLodBatch'
+import { useRenderQuality } from '@/shared/rendering/renderQuality'
 
 export function ShelvesLayer({ mapModel, worldTransform, layout }: { mapModel: MapModel; worldTransform: WorldTransform; layout: FactoryLayout }) {
+  const quality = useRenderQuality()
   const root = useRef<THREE.Group>(null)
   const placements = useMemo(() => buildShelfLayout(mapModel, worldTransform, layout), [mapModel, worldTransform, layout])
   useEffect(() => {
     const parent = root.current
     let active = true
     const models: ShelfModel[] = []
-    const meshes: THREE.InstancedMesh[] = []
+    const meshes: StaticLodBatch[] = []
     for (const variant of ['empty', 'loaded'] as const satisfies readonly ShelfVariant[]) {
       const positions = placements.filter((placement) => placement.variant === variant)
       if (positions.length === 0) continue
@@ -26,20 +29,30 @@ export function ShelvesLayer({ mapModel, worldTransform, layout }: { mapModel: M
         if (!active) { model.dispose(); return }
         models.push(model)
         const matrix = new THREE.Matrix4()
-        for (const part of Object.values(model.parts)) {
-          const mesh = new THREE.InstancedMesh(part.geometry, part.material, positions.length)
-          meshes.push(mesh)
-          mesh.name = `map-shelves-${variant}-${part.material.name}`
-          mesh.castShadow = true
-          mesh.receiveShadow = true
-          mesh.raycast = () => {}
-          for (let index = 0; index < positions.length; index += 1) {
-            const placement = positions[index]
-            matrix.makeRotationY(placement.rotation).setPosition(placement.x, GROUND_SURFACE_Y, placement.z)
-            mesh.setMatrixAt(index, matrix)
+        /**
+         * 十二米网格让相邻库位共用批次，近景可先剔除屏幕外的整个库区。
+         * 批内仍逐货架剔除并选择几何，避免一座可见货架带动全地图提交顶点。
+         */
+        const cells = new Map<string, typeof positions>()
+        for (const placement of positions) {
+          const key = `${Math.floor(placement.x / 12)}:${Math.floor(placement.z / 12)}`
+          const cell = cells.get(key) ?? []
+          cell.push(placement)
+          cells.set(key, cell)
+        }
+        for (const [key, cell] of cells) {
+          const matrices = new Float32Array(cell.length * 16)
+          for (let index = 0; index < cell.length; index += 1) {
+            const placement = cell[index]
+            matrix.makeRotationY(placement.rotation).setPosition(placement.x, GROUND_SURFACE_Y, placement.z).toArray(matrices, index * 16)
           }
-          mesh.computeBoundingSphere()
-          parent?.add(mesh)
+          for (const part of Object.values(model.parts)) {
+            const levels = [part.geometry, ...(quality.lodPixels[0] > 0 ? part.lodGeometries ?? [] : [])]
+            const mesh = new StaticLodBatch(levels, part.material, matrices, 1.8, quality.lodPixels)
+            meshes.push(mesh)
+            mesh.name = `map-shelves-${variant}-${part.material.name}-${key}`
+            parent?.add(mesh)
+          }
         }
       }).catch((error: unknown) => { if (active) console.warn(`地面货架加载失败：${variant}`, error) })
     }
@@ -48,6 +61,6 @@ export function ShelvesLayer({ mapModel, worldTransform, layout }: { mapModel: M
       for (const mesh of meshes) { parent?.remove(mesh); mesh.dispose() }
       for (const model of models) model.dispose()
     }
-  }, [placements])
+  }, [placements, quality])
   return <group ref={root} name="map-shelves" dispose={null} />
 }

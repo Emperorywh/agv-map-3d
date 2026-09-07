@@ -1,24 +1,19 @@
 /**
- * 直接加载交付的完整充电塔，保留原始层级、法线、材质与米制尺寸。
- * 仅缓存二进制；每个图层资源代独立解析，几何和材质在该代内共享并统一释放。
+ * 充电塔以整塔材质部件实例化，按距离切换三档几何并限制远景水晶的透射开销。
+ * 几何、材质与光源在资源代内共享并统一释放，近景保留原资产尺寸和真实水晶。
  */
 import * as THREE from 'three'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import towerUrl from '../../../../assets/agv_charge_tower_20260907_01/agv_charge_tower.glb?url'
 import { GROUND_SURFACE_Y } from './mapAppearance'
-
-let binary: Promise<ArrayBuffer> | undefined
+import { loadChargingTowerAsset } from './chargingTowerAsset'
+import { StaticLodBatch } from '@/shared/rendering/staticLodBatch'
+import { setReflectionMaterial } from '@/shared/rendering/reflectionMaterials'
 
 /**
- * 静态导入让 Vite 原样输出 GLB，并自动处理内容哈希及子路径部署。
- * 请求失败清除缓存，下次挂载可以重新加载，不用旧充电柜代替缺失模型。
+ * 资产加载器负责字节缓存与三档几何，场景句柄只装配静态实例和灯位。
+ * 水晶材质在收集渲染列表之前选择，倒影采集期间临时使用简化版本。
  */
-export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8) {
-  binary ??= fetch(towerUrl).then((response) => {
-    if (!response.ok) throw new Error(`充电塔模型加载失败：HTTP ${response.status}`)
-    return response.arrayBuffer()
-  }).catch((error: unknown) => { binary = undefined; throw error })
-  const gltf = await new GLTFLoader().parseAsync(await binary, '')
+export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8, lodPixels: readonly [number, number] = [120, 36], crystalPixels = 120) {
+  const asset = await loadChargingTowerAsset()
   const geometries = new Set<THREE.BufferGeometry>()
   const materials = new Set<THREE.Material>()
   const textures = new Set<THREE.Texture>()
@@ -29,7 +24,10 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
    * 每座塔保存静态灯位，镜头变化时再选择有画面贡献的近处灯位。
    */
   const lightPositions: THREE.Vector3[] = []
-  const batches: THREE.BatchedMesh[] = []
+  const crystalMeshes: { mesh: THREE.Mesh; original: THREE.Material; simplified: THREE.Material; tower: number }[] = []
+  const simplifiedMaterials = new Map<THREE.Material, THREE.MeshStandardMaterial>()
+  const detailedCrystals = new Uint8Array(matrices.length / 16)
+  const batches: StaticLodBatch[] = []
   const group = new THREE.Group()
   group.name = 'map-charge-towers'
   let disposed = false
@@ -43,92 +41,55 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
     for (const geometry of geometries) geometry.dispose()
     for (const material of materials) material.dispose()
     for (const texture of textures) texture.dispose()
+    asset.dispose()
   }
 
   try {
-    gltf.scene.updateMatrixWorld(true)
-    const opaque = new Map<string, { material: THREE.Material; parts: THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] }>()
-    gltf.scene.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return
-      geometries.add(object.geometry)
-      const meshMaterials = Array.isArray(object.material) ? object.material : [object.material]
-      for (const material of meshMaterials) {
-        materials.add(material)
-        for (const value of Object.values(material)) {
-          if (value instanceof THREE.Texture) textures.add(value)
-        }
-      }
-      /**
-       * 不透明装甲参与实时投影，透射水晶不投射错误的实心黑影。
-       * 保留加载器读出的透明度、透射率、折射率和自发光，不注入淡出或呼吸着色器。
-       */
-      object.castShadow = meshMaterials.every((material) =>
-        !material.transparent && !(material instanceof THREE.MeshPhysicalMaterial && material.transmission > 0),
-      )
-      object.receiveShadow = true
-      /**
-       * 不透明部件按原材质合批，只复用顶点与变换，不做减面或材质替换。
-       * 水晶仍保留独立网格和原层级，由渲染器维持透明与透射绘制顺序。
-       */
-      if (object.castShadow && !Array.isArray(object.material)) {
-        /**
-         * 交付资产中同种金属同时存在带 UV 和不带 UV 的部件，批次还需按顶点布局分组。
-         * 保留每种布局原样，避免为合批删除属性，或因缺失 UV 导致加载失败。
-         */
-        const part = object as THREE.Mesh<THREE.BufferGeometry, THREE.Material>
-        const layout = Object.entries(part.geometry.attributes).sort(([a], [b]) => a.localeCompare(b))
-          .map(([name, attribute]) => `${name}:${attribute.itemSize}:${attribute.normalized}`).join('|')
-        const key = `${object.material.uuid}:${object.geometry.index !== null}:${layout}`
-        const entry = opaque.get(key)
-        if (entry === undefined) opaque.set(key, { material: part.material, parts: [part] })
-        else entry.parts.push(part)
-      }
-    })
-
     const placementMatrix = new THREE.Matrix4()
-    const partMatrix = new THREE.Matrix4()
     const towerCount = matrices.length / 16
-    for (const { material, parts } of opaque.values()) {
-      const vertices = parts.reduce((sum, part) => sum + part.geometry.getAttribute('position').count, 0)
-      const indices = parts.reduce((sum, part) => sum + (part.geometry.index?.count ?? 0), 0)
-      const batch = new THREE.BatchedMesh(towerCount * parts.length, vertices, indices, material)
+    /**
+     * 同材质小部件已合成整塔几何，批内按塔剔除，避免每个螺钉都做排序和视锥判断。
+     * 高画质使用原几何，其余档位按当前主画面、透射、镜像和阴影视口选择 LOD。
+     */
+    for (const part of asset.opaque.values()) {
+      const levels = [part.geometry, ...(lodPixels[0] > 0 ? part.lodGeometries ?? [] : [])]
+      const batch = new StaticLodBatch(levels, part.material, matrices, 3.6, lodPixels)
       batches.push(batch)
-      batch.name = `charge-tower-opaque-${material.name}`
-      batch.castShadow = true
-      batch.receiveShadow = true
-      batch.perObjectFrustumCulled = true
-      for (const part of parts) {
-        const geometryId = batch.addGeometry(part.geometry)
-        for (let offset = 0; offset < matrices.length; offset += 16) {
-          placementMatrix.fromArray(matrices, offset)
-          partMatrix.multiplyMatrices(placementMatrix, part.matrixWorld)
-          batch.setMatrixAt(batch.addInstance(geometryId), partMatrix)
-        }
-      }
-      batch.computeBoundingSphere()
+      batch.name = `charge-tower-opaque-${part.material.name}`
       group.add(batch)
     }
-    /**
-     * 合批完成后从克隆模板摘除不透明网格，防止同时绘制两份装甲。
-     * 原始几何与材质继续登记到释放清单，透明模板只共享尚需独立绘制的部件。
-     */
-    for (const { parts } of opaque.values()) for (const part of parts) part.removeFromParent()
 
     for (let offset = 0; offset < matrices.length; offset += 16) {
       /**
-       * 每座塔保留独立透明网格，由渲染器逐对象排序和剔除，保持水晶遮挡关系。
-       * 变换施加在外层容器，原始根节点、部件位置及一比一尺度全部保留。
+       * 每座塔保留独立水晶网格以维持对象排序，烘焙几何和原材质继续共享。
+       * 远景和倒影采用单次绘制的半透明受光材质，不再为水晶重复采集整个场景。
        */
       const placement = new THREE.Group()
       placement.name = `charge-tower-${offset / 16}`
       placement.matrix.fromArray(matrices, offset)
       placement.matrixAutoUpdate = false
-      placement.add(gltf.scene.clone(true))
-      /**
-       * 静态模型只计算一次局部矩阵，保留全部透明部件与材质。
-       * 灯位单独保存，避免每座塔都给所有受光材质增加一盏实时灯。
-       */
-      placement.traverse((object) => { if (object.matrixAutoUpdate) object.updateMatrix(); object.matrixAutoUpdate = false })
+      for (const part of asset.crystals) {
+        let simplified = simplifiedMaterials.get(part.material)
+        if (simplified === undefined) {
+          simplified = new THREE.MeshStandardMaterial()
+          if (part.material instanceof THREE.MeshStandardMaterial) simplified.copy(part.material)
+          simplified.name = `${part.material.name}-simplified`
+          simplified.transparent = true
+          simplified.opacity = Math.min(part.material.opacity, 0.5)
+          simplified.depthWrite = false
+          simplified.forceSinglePass = true
+          simplifiedMaterials.set(part.material, simplified)
+          materials.add(simplified)
+        }
+        const mesh = new THREE.Mesh(part.geometry, crystalPixels === 0 ? part.material : simplified)
+        mesh.name = `charge-tower-crystal-${offset / 16}`
+        mesh.receiveShadow = true
+        mesh.matrixAutoUpdate = false
+        mesh.raycast = () => {}
+        setReflectionMaterial(mesh, simplified)
+        crystalMeshes.push({ mesh, original: part.material, simplified, tower: offset / 16 })
+        placement.add(mesh)
+      }
       lightPositions.push(new THREE.Vector3(0, 2.563, 0).applyMatrix4(placement.matrix))
       group.add(placement)
     }
@@ -183,21 +144,33 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
     const candidates: number[] = []
     const scores = new Float64Array(lightPositions.length)
     let initialized = false
+    let cameraHeight = 0
     /**
      * 光源影响球与主视野、地面镜像视野取并集，屏幕外照进画面的灯仍有候选资格。
      * 从候选中按预算分配实时灯，未入选的塔继续显示自发光与合批地面光斑。
      */
-    const updateLightVisibility = (camera: THREE.Camera) => {
+    const updateForCamera = (camera: THREE.Camera, viewportHeight: number) => {
       camera.updateWorldMatrix(true, false)
-      if (initialized && cameraWorld.equals(camera.matrixWorld) && cameraProjection.equals(camera.projectionMatrix)) return
+      if (initialized && cameraHeight === viewportHeight && cameraWorld.equals(camera.matrixWorld) && cameraProjection.equals(camera.projectionMatrix)) return
       initialized = true
+      cameraHeight = viewportHeight
       cameraWorld.copy(camera.matrixWorld)
       cameraProjection.copy(camera.projectionMatrix)
       cameraPosition.setFromMatrixPosition(camera.matrixWorld)
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       frustum.setFromProjectionMatrix(projection, camera.coordinateSystem, camera.reversedDepth)
       candidates.length = 0
+      const view = camera.matrixWorldInverse.elements
+      const factor = viewportHeight * Math.abs(camera.projectionMatrix.elements[5]) * 3.6 / 2
       for (let index = 0; index < lightPositions.length; index += 1) {
+        /**
+         * 以整塔包络估算水晶投影，临界距离保留百分之十五滞回，避免材质频繁跳变。
+         * 相机背后的塔保持简化材质，镜像中需要它们时仍由反射专用材质正确呈现。
+         */
+        const position = lightPositions[index]
+        const depth = -(view[2] * position.x + view[6] * position.y + view[10] * position.z + view[14])
+        const pixels = camera instanceof THREE.PerspectiveCamera ? depth > 0 ? factor / depth : 0 : factor
+        detailedCrystals[index] = crystalPixels === 0 || pixels >= crystalPixels * (detailedCrystals[index] ? 0.85 : 1.15) ? 1 : 0
         influence.center.copy(lightPositions[index])
         influence.radius = 4.5
         reflectedInfluence.copy(influence)
@@ -207,6 +180,7 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
           candidates.push(index)
         }
       }
+      for (const entry of crystalMeshes) entry.mesh.material = detailedCrystals[entry.tower] ? entry.original : entry.simplified
       /**
        * 最近的有效灯位优先，已分配灯位给予滞回权重，避免相邻塔来回抢占灯槽。
        * 空槽只清零强度，不隐藏对象，保持程序变体数量稳定。
@@ -222,7 +196,7 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
         }
       }
     }
-    return { group, updateLightVisibility, dispose }
+    return { group, updateForCamera, dispose }
   } catch (error) {
     dispose()
     throw error

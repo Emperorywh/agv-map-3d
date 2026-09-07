@@ -3,6 +3,7 @@
  * 主相机、镜像相机和阴影相机分别筛选完整部件，视野外实例不再提交顶点。
  */
 import * as THREE from 'three'
+import { ProjectedLod } from '@/shared/rendering/projectedLod'
 
 export class CulledVehicleBatch extends THREE.BatchedMesh {
   readonly instanceMatrix: THREE.InstancedBufferAttribute
@@ -18,14 +19,11 @@ export class CulledVehicleBatch extends THREE.BatchedMesh {
   private readonly colorSlots = new Set<number>()
   private readonly activeSlots = new Set<number>()
   private readonly geometryIds: number[] = []
-  private readonly cameraLevels = new WeakMap<THREE.Camera, Uint8Array>()
-  private readonly viewMatrix = new THREE.Matrix4()
-  private readonly drawingSize = new THREE.Vector2()
+  private readonly lod: ProjectedLod
   private readonly pickBounds = new THREE.Box3()
   private readonly pickInverse = new THREE.Matrix4()
   private readonly pickRay = new THREE.Ray()
   private readonly pickPoint = new THREE.Vector3()
-  private readonly lodPixels: readonly [number, number]
   private disposed = false
 
   constructor(geometry: THREE.BufferGeometry, material: THREE.Material, capacity: number, lodGeometries: readonly THREE.BufferGeometry[] = [], lodPixels: readonly [number, number] = [120, 36]) {
@@ -38,7 +36,7 @@ export class CulledVehicleBatch extends THREE.BatchedMesh {
     const source = geometry.hasAttribute('position') ? geometry : empty
     const levels = [source, ...lodGeometries]
     super(capacity, levels.reduce((sum, item) => sum + item.getAttribute('position').count, 0), levels.reduce((sum, item) => sum + (item.index?.count ?? 0), 0), material)
-    this.lodPixels = lodPixels
+    this.lod = new ProjectedLod(capacity, 2.8, lodPixels)
     for (const level of levels) this.geometryIds.push(this.addGeometry(level))
     const geometryId = this.geometryIds[0]
     if (source.getAttribute('position').count > 0) {
@@ -99,34 +97,16 @@ export class CulledVehicleBatch extends THREE.BatchedMesh {
   }
 
   /**
-   * 每个绘制相机根据整车投影大小选择几何，所有精修部件共享相同尺寸口径。
-   * 百分之十五滞回防止边界闪烁；主画面、倒影、阴影各自使用正确的相机。
+   * 车体和车载货架共用整车投影口径，并按当前通道实际视口选择几何。
+   * 离屏透射、镜像与阴影不再沿用主画布的完整细节预算，拾取仍使用原始包围盒。
    */
   override onBeforeRender(...args: Parameters<THREE.BatchedMesh['onBeforeRender']>): void {
-    const [renderer, , camera] = args
     if (this.geometryIds.length > 1) {
-      let levels = this.cameraLevels.get(camera)
-      if (levels === undefined) {
-        levels = new Uint8Array(this.instanceMatrix.count).fill(255)
-        this.cameraLevels.set(camera, levels)
-      }
-      renderer.getSize(this.drawingSize)
-      this.viewMatrix.multiplyMatrices(camera.matrixWorldInverse, this.matrixWorld)
-      const view = this.viewMatrix.elements
+      this.lod.prepare(args[0], args[2], this.matrixWorld, args[4])
       const positions = this.instanceMatrix.array
-      const factor = this.drawingSize.y * Math.abs(camera.projectionMatrix.elements[5]) * 2.8 / 2
       for (const slot of this.activeSlots) {
         const offset = slot * 16
-        const depth = -(view[2] * positions[offset + 12] + view[6] * positions[offset + 13] + view[10] * positions[offset + 14] + view[14])
-        const pixels = camera instanceof THREE.PerspectiveCamera ? factor / Math.max(0.01, depth) : factor
-        const previous = levels[slot]
-        let level = pixels >= this.lodPixels[0] ? 0 : pixels >= this.lodPixels[1] ? 1 : 2
-        if (previous !== 255 && level !== previous) {
-          const boundary = this.lodPixels[level > previous ? previous : level]
-          if (level > previous ? pixels > boundary * 0.85 : pixels < boundary * 1.15) level = previous
-        }
-        level = Math.min(level, this.geometryIds.length - 1)
-        levels[slot] = level
+        const level = Math.min(this.lod.select(slot, positions[offset + 12], positions[offset + 13], positions[offset + 14]), this.geometryIds.length - 1)
         if (this.getGeometryIdAt(slot) !== this.geometryIds[level]) this.setGeometryIdAt(slot, this.geometryIds[level])
       }
     }

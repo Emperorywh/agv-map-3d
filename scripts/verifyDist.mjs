@@ -10,7 +10,7 @@
  * 2. index.html 的脚本与样式引用不得以 / 开头（绝对根路径引用会破坏子路径部署）；
  * 3. config.json 顶层字段必须落在运行时配置白名单内且不含疑似凭据字段。
  */
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -155,6 +155,69 @@ for (const name of ['AGV_FUTURE.glb', 'AGV_FUTURE_LOD1.glb', 'AGV_FUTURE_LOD2.gl
     for (const material of materials) material.dispose()
   } catch (error) {
     check(false, `${name} 可用（${error.message}）`)
+  }
+}
+
+/**
+ * 设施三档通过 Vite 静态导入发布，核对带哈希的实际产物和运行时材质分组合同。
+ * 构建环境只解析纹理元数据，图像字节范围另行检查，不把占位纹理当成像素解码验证。
+ */
+const assetFiles = await readdir(path.join(DIST, 'assets'))
+for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded']) {
+  let original = null
+  for (const suffix of ['', '_LOD1', '_LOD2']) {
+    const name = `${stem}${suffix}`
+    const geometries = new Set()
+    const materials = new Set()
+    const textures = new Set()
+    try {
+      const file = assetFiles.find((entry) => entry.startsWith(`${name}-`) && entry.endsWith('.glb'))
+      if (file === undefined) throw new Error('构建产物缺少模型文件')
+      const buffer = await readFile(path.join(DIST, 'assets', file))
+      const document = JSON.parse(buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString('utf8'))
+      const binSize = buffer.readUInt32LE(20 + buffer.readUInt32LE(12))
+      check((document.images ?? []).every((image) => {
+        const view = document.bufferViews?.[image.bufferView]
+        return view && view.byteLength > 0 && (view.byteOffset ?? 0) + view.byteLength <= binSize
+      }), `${name} 内嵌贴图字节范围有效`)
+      const loader = new GLTFLoader().register(() => ({
+        name: 'BUILD_TEXTURE_METADATA',
+        loadTexture() { const texture = new THREE.Texture(); textures.add(texture); return Promise.resolve(texture) },
+      }))
+      const model = await loader.parseAsync(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength), '')
+      let triangles = 0
+      let finite = true
+      const layouts = new Set()
+      model.scene.updateMatrixWorld(true)
+      model.scene.traverse((object) => {
+        if (!object.isMesh) return
+        const geometry = object.geometry
+        geometries.add(geometry)
+        const attributes = Object.entries(geometry.attributes).sort(([a], [b]) => a.localeCompare(b))
+          .map(([name, attribute]) => `${name}:${attribute.itemSize}:${attribute.normalized}`).join('|')
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+          materials.add(material)
+          layouts.add(`${material.name}:${geometry.index !== null}:${attributes}`)
+          for (const value of Object.values(material)) if (value instanceof THREE.Texture) textures.add(value)
+        }
+        triangles += (geometry.index?.count ?? geometry.getAttribute('position').count) / 3
+        for (const attribute of Object.values(geometry.attributes)) for (const value of attribute.array) if (!Number.isFinite(value)) finite = false
+      })
+      const bounds = new THREE.Box3().setFromObject(model.scene)
+      const materialNames = [...new Set([...materials].map((material) => material.name))].sort().join('|')
+      if (original === null) original = { bounds, triangles, layouts, materialNames }
+      check(finite && triangles > 0, `${name} 顶点属性有效，共 ${triangles} 三角形`)
+      check(materialNames === original.materialNames, `${name} 保留完整材质分区`)
+      check([...original.layouts].every((layout) => layouts.has(layout)), `${name} 顶点布局兼容运行时合批`)
+      check(bounds.min.distanceTo(original.bounds.min) < 0.03 && bounds.max.distanceTo(original.bounds.max) < 0.03, `${name} 包围盒与原模型一致（容差 3cm）`)
+      if (suffix !== '') check(triangles < original.triangles * 0.35, `${name} 三角形少于原资产的 35%`)
+    } catch (error) {
+      check(false, `${name} 可用（${error.message}）`)
+    } finally {
+      for (const geometry of geometries) geometry.dispose()
+      for (const material of materials) material.dispose()
+      for (const texture of textures) texture.dispose()
+    }
   }
 }
 

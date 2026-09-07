@@ -7,6 +7,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { joinGeometry } from './geometry'
 import emptyUrl from '../../../assets/agv_shelf_20260907_01/shelf_empty.glb?url'
 import loadedUrl from '../../../assets/agv_shelf_20260907_01/shelf_loaded.glb?url'
+import emptyLod1Url from '../../../assets/agv_shelf_20260907_01/shelf_empty_LOD1.glb?url'
+import emptyLod2Url from '../../../assets/agv_shelf_20260907_01/shelf_empty_LOD2.glb?url'
+import loadedLod1Url from '../../../assets/agv_shelf_20260907_01/shelf_loaded_LOD1.glb?url'
+import loadedLod2Url from '../../../assets/agv_shelf_20260907_01/shelf_loaded_LOD2.glb?url'
 
 export const SHELF_MATERIAL_PARTS = {
   PowderCoat_OffWhite: 'shelfFrame',
@@ -17,23 +21,49 @@ export const SHELF_MATERIAL_PARTS = {
 export type ShelfPartKind = typeof SHELF_MATERIAL_PARTS[keyof typeof SHELF_MATERIAL_PARTS]
 export type ShelfVariant = 'empty' | 'loaded'
 export interface ShelfModel {
-  readonly parts: Partial<Record<ShelfPartKind, { geometry: THREE.BufferGeometry; material: THREE.Material }>>
+  readonly parts: Partial<Record<ShelfPartKind, { geometry: THREE.BufferGeometry; material: THREE.Material; lodGeometries?: THREE.BufferGeometry[] }>>
   dispose(): void
 }
 
-const binaries = new Map<ShelfVariant, Promise<ArrayBuffer>>()
+const binaries = new Map<string, Promise<ArrayBuffer>>()
+const modelUrls = { empty: [emptyUrl, emptyLod1Url, emptyLod2Url], loaded: [loadedUrl, loadedLod1Url, loadedLod2Url] } as const
+
+/**
+ * 地面与车载货架共享完整的三档材质分区，低模只提供几何，始终复用近景材质。
+ * 派生资源不可用时回退原模型，失败档和未接管的贴图仍由原加载句柄对称释放。
+ */
+export async function loadShelfModel(variant: ShelfVariant): Promise<ShelfModel> {
+  const primary = await loadShelfLevel(variant, 0)
+  const results = await Promise.allSettled([1, 2].map((level) => loadShelfLevel(variant, level)))
+  const models = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+  try {
+    const kinds = Object.keys(primary.parts) as ShelfPartKind[]
+    if (models.length !== 2 || kinds.some((kind) => models.some((model) => model.parts[kind] === undefined))) {
+      console.warn(`货架低模不可用，保留精修模型：${variant}`)
+      return primary
+    }
+    for (const kind of kinds) primary.parts[kind]!.lodGeometries = models.map((model) => model.parts[kind]!.geometry.clone())
+    return primary
+  } catch (error) {
+    primary.dispose()
+    throw error
+  } finally {
+    for (const model of models) model.dispose()
+  }
+}
 
 /**
  * 按原材质合并静态部件，仅把层级变换应用到运行时几何副本。
  * 保留料箱标签的原始 UV 和内嵌贴图，避免合批后丢失标签图案。
  */
-export async function loadShelfModel(variant: ShelfVariant): Promise<ShelfModel> {
-  let binary = binaries.get(variant)
-  binary ??= fetch(variant === 'empty' ? emptyUrl : loadedUrl).then((response) => {
+async function loadShelfLevel(variant: ShelfVariant, level: number): Promise<ShelfModel> {
+  const url = modelUrls[variant][level]
+  let binary = binaries.get(url)
+  binary ??= fetch(url).then((response) => {
     if (!response.ok) throw new Error(`货架模型加载失败：HTTP ${response.status}`)
     return response.arrayBuffer()
-  }).catch((error: unknown) => { binaries.delete(variant); throw error })
-  binaries.set(variant, binary)
+  }).catch((error: unknown) => { binaries.delete(url); throw error })
+  binaries.set(url, binary)
   const gltf = await new GLTFLoader().parseAsync(await binary, '')
   const sourceGeometries = new Set<THREE.BufferGeometry>()
   const materials = new Set<THREE.Material>()
@@ -44,7 +74,14 @@ export async function loadShelfModel(variant: ShelfVariant): Promise<ShelfModel>
   const dispose = () => {
     if (disposed) return
     disposed = true
-    for (const part of Object.values(parts)) part.geometry.dispose()
+    /**
+     * 中远景几何随原货架一同释放，车队接管 parts 后也沿用相同的资源边界。
+     * 原始材质和内嵌标签贴图只登记一份，派生文件的重复贴图不进入常驻资源。
+     */
+    for (const part of Object.values(parts)) {
+      part.geometry.dispose()
+      for (const geometry of part.lodGeometries ?? []) geometry.dispose()
+    }
     for (const material of materials) material.dispose()
     for (const texture of textures) texture.dispose()
   }
