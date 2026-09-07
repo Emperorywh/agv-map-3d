@@ -1,0 +1,184 @@
+{
+  "three_revision": "185",
+  "file": "C:\\code\\agv-map-3d\\assets\\agv_charge_tower_20260907_01\\agv_charge_tower.glb",
+  "loaded": true,
+  "dimensions_xyz_m": [
+    1.4759999513626099,
+    3.0005879402160645,
+    1.4759999513626099
+  ],
+  "bounds_min": [
+    -0.7379999756813049,
+    0,
+    -0.7379999756813049
+  ],
+  "bounds_max": [
+    0.7379999756813049,
+    3.0005879402160645,
+    0.7379999756813049
+  ],
+  "meshes": 41,
+  "triangles": 40218,
+  "cameras": 0,
+  "lights": 0,
+  "materials": [
+    {
+      "name": "Crystal_Blue_Translucent",
+      "type": "MeshPhysicalMaterial",
+      "transparent": true,
+      "opacity": 0.3199999928474426,
+      "transmission": 0.7200000286102295,
+      "emissive": [
+        0.0012000000283122064,
+        0.02599999943375586,
+        0.12799999904632564
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Crystal_Inner_Emission",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0.006000000052154064,
+        0.20999999344348907,
+        1
+      ],
+      "emissiveIntensity": 2
+    },
+    {
+      "name": "Crystal_Lattice_Emission",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0.15000000596046448,
+        0.6600000262260437,
+        1
+      ],
+      "emissiveIntensity": 1.899999976158142
+    },
+    {
+      "name": "Frame_Graphite_Metal",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Trim_Titanium",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Frame_Channel_Emission",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0.03500000014901161,
+        0.3799999952316284,
+        1
+      ],
+      "emissiveIntensity": 1.2999999523162842
+    },
+    {
+      "name": "Halo_Strip_Emission",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0.23999999463558197,
+        0.550000011920929,
+        1
+      ],
+      "emissiveIntensity": 2
+    },
+    {
+      "name": "Armor_White_Ceramic",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Panel_Black_Composite",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Base_Strip_Emission",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0.05999999865889549,
+        0.28999999165534973,
+        1
+      ],
+      "emissiveIntensity": 2
+    },
+    {
+      "name": "Accent_Champagne_Metal",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0,
+        0,
+        0
+      ],
+      "emissiveIntensity": 1
+    },
+    {
+      "name": "Lightning_Emission",
+      "type": "MeshStandardMaterial",
+      "transparent": false,
+      "opacity": 1,
+      "transmission": 0,
+      "emissive": [
+        0.4000000059604645,
+        0.699999988079071,
+        1
+      ],
+      "emissiveIntensity": 2.799999952316284
+    }
+  ],
+  "renderer_checked": false,
+  "note": "已用项目安装的 GLTFLoader 实际加载；没有在目标业务场景运行 WebGL 渲染或性能压测。"
+}

@@ -1,0 +1,809 @@
+{
+  "source": {
+    "bounds_min": [
+      -0.7379999756813049,
+      -0.7379999756813049,
+      0.0
+    ],
+    "bounds_max": [
+      0.7379999756813049,
+      0.7379999756813049,
+      3.0005879402160645
+    ],
+    "dimensions_m": [
+      1.4759999513626099,
+      1.4759999513626099,
+      3.0005879402160645
+    ],
+    "mesh_count": 27,
+    "triangles": 40218,
+    "material_count": 12,
+    "materials": [
+      "Accent_Champagne_Metal",
+      "Armor_White_Ceramic",
+      "Base_Strip_Emission",
+      "Crystal_Blue_Translucent",
+      "Crystal_Inner_Emission",
+      "Crystal_Lattice_Emission",
+      "Frame_Channel_Emission",
+      "Frame_Graphite_Metal",
+      "Halo_Strip_Emission",
+      "Lightning_Emission",
+      "Panel_Black_Composite",
+      "Trim_Titanium"
+    ],
+    "parts": [
+      {
+        "name": "01_Crystal_Shell",
+        "vertices": 56,
+        "triangles": 108,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "02_Crystal_Inner",
+        "vertices": 32,
+        "triangles": 60,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "10_Base_Frame",
+        "vertices": 1632,
+        "triangles": 3192,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "13_Base_Lights",
+        "vertices": 768,
+        "triangles": 1432,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "04_Internal_Frame",
+        "vertices": 2408,
+        "triangles": 4664,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "11_Base_Panels",
+        "vertices": 1792,
+        "triangles": 3456,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "12_Base_Armor",
+        "vertices": 896,
+        "triangles": 1728,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "15_Mechanical_Details",
+        "vertices": 3968,
+        "triangles": 7280,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "05_Frame_Trim",
+        "vertices": 920,
+        "triangles": 1792,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "06_Frame_Lights",
+        "vertices": 312,
+        "triangles": 568,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "07_Halo_Metal",
+        "vertices": 2272,
+        "triangles": 4480,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "08_Halo_Lights",
+        "vertices": 768,
+        "triangles": 1536,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Side_-1",
+        "vertices": 160,
+        "triangles": 316,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Front_-1",
+        "vertices": 104,
+        "triangles": 204,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Back_-1",
+        "vertices": 104,
+        "triangles": 204,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Lower_Fins",
+        "vertices": 288,
+        "triangles": 560,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Side_1",
+        "vertices": 160,
+        "triangles": 316,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Front_1",
+        "vertices": 104,
+        "triangles": 204,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Back_1",
+        "vertices": 104,
+        "triangles": 204,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "16_Front_Panel",
+        "vertices": 336,
+        "triangles": 660,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "17_Lightning_Symbol",
+        "vertices": 84,
+        "triangles": 164,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "18_Charging_Bay",
+        "vertices": 1344,
+        "triangles": 2636,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "21_Side_Energy_Windows",
+        "vertices": 224,
+        "triangles": 440,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "22_Base_Lightning",
+        "vertices": 84,
+        "triangles": 164,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "03_Crystal_Lattice",
+        "vertices": 1261,
+        "triangles": 1858,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "19_Rear_Service",
+        "vertices": 936,
+        "triangles": 1752,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "20_Armor_Seams",
+        "vertices": 160,
+        "triangles": 240,
+        "raw_split_boundary_edges": 0,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      }
+    ]
+  },
+  "reimported": {
+    "bounds_min": [
+      -0.7379999756813049,
+      -0.7379999756813049,
+      0.0
+    ],
+    "bounds_max": [
+      0.7379999756813049,
+      0.7379999756813049,
+      3.0005879402160645
+    ],
+    "dimensions_m": [
+      1.4759999513626099,
+      1.4759999513626099,
+      3.0005879402160645
+    ],
+    "mesh_count": 27,
+    "triangles": 40218,
+    "material_count": 12,
+    "materials": [
+      "Accent_Champagne_Metal",
+      "Armor_White_Ceramic",
+      "Base_Strip_Emission",
+      "Crystal_Blue_Translucent",
+      "Crystal_Inner_Emission",
+      "Crystal_Lattice_Emission",
+      "Frame_Channel_Emission",
+      "Frame_Graphite_Metal",
+      "Halo_Strip_Emission",
+      "Lightning_Emission",
+      "Panel_Black_Composite",
+      "Trim_Titanium"
+    ],
+    "parts": [
+      {
+        "name": "01_Crystal_Shell",
+        "vertices": 220,
+        "triangles": 108,
+        "raw_split_boundary_edges": 220,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "02_Crystal_Inner",
+        "vertices": 116,
+        "triangles": 60,
+        "raw_split_boundary_edges": 116,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "03_Crystal_Lattice",
+        "vertices": 3994,
+        "triangles": 1858,
+        "raw_split_boundary_edges": 3994,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "04_Internal_Frame",
+        "vertices": 9176,
+        "triangles": 4664,
+        "raw_split_boundary_edges": 9176,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "05_Frame_Trim",
+        "vertices": 3544,
+        "triangles": 1792,
+        "raw_split_boundary_edges": 3544,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "06_Frame_Lights",
+        "vertices": 1104,
+        "triangles": 568,
+        "raw_split_boundary_edges": 1104,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "07_Halo_Metal",
+        "vertices": 7776,
+        "triangles": 4480,
+        "raw_split_boundary_edges": 7776,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "08_Halo_Lights",
+        "vertices": 2304,
+        "triangles": 1536,
+        "raw_split_boundary_edges": 2304,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Back_1",
+        "vertices": 392,
+        "triangles": 204,
+        "raw_split_boundary_edges": 392,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Back_-1",
+        "vertices": 392,
+        "triangles": 204,
+        "raw_split_boundary_edges": 392,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Front_1",
+        "vertices": 392,
+        "triangles": 204,
+        "raw_split_boundary_edges": 392,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Front_-1",
+        "vertices": 392,
+        "triangles": 204,
+        "raw_split_boundary_edges": 392,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Lower_Fins",
+        "vertices": 1088,
+        "triangles": 560,
+        "raw_split_boundary_edges": 1088,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Side_1",
+        "vertices": 616,
+        "triangles": 316,
+        "raw_split_boundary_edges": 616,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "09_Armor_Side_-1",
+        "vertices": 616,
+        "triangles": 316,
+        "raw_split_boundary_edges": 616,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "10_Base_Frame",
+        "vertices": 5984,
+        "triangles": 3192,
+        "raw_split_boundary_edges": 5984,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "11_Base_Panels",
+        "vertices": 6912,
+        "triangles": 3456,
+        "raw_split_boundary_edges": 6912,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "12_Base_Armor",
+        "vertices": 3456,
+        "triangles": 1728,
+        "raw_split_boundary_edges": 3456,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "13_Base_Lights",
+        "vertices": 2736,
+        "triangles": 1432,
+        "raw_split_boundary_edges": 2736,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "15_Mechanical_Details",
+        "vertices": 15168,
+        "triangles": 7280,
+        "raw_split_boundary_edges": 15168,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "16_Front_Panel",
+        "vertices": 1296,
+        "triangles": 660,
+        "raw_split_boundary_edges": 1296,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "17_Lightning_Symbol",
+        "vertices": 324,
+        "triangles": 164,
+        "raw_split_boundary_edges": 324,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "18_Charging_Bay",
+        "vertices": 5184,
+        "triangles": 2636,
+        "raw_split_boundary_edges": 5184,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "19_Rear_Service",
+        "vertices": 3744,
+        "triangles": 1752,
+        "raw_split_boundary_edges": 3744,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "20_Armor_Seams",
+        "vertices": 480,
+        "triangles": 240,
+        "raw_split_boundary_edges": 480,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "21_Side_Energy_Windows",
+        "vertices": 864,
+        "triangles": 440,
+        "raw_split_boundary_edges": 864,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      },
+      {
+        "name": "22_Base_Lightning",
+        "vertices": 324,
+        "triangles": 164,
+        "raw_split_boundary_edges": 324,
+        "welded_nonmanifold_edges": 0,
+        "degenerate_faces": 0,
+        "duplicate_faces": 0
+      }
+    ]
+  },
+  "glb_bytes": 2655000,
+  "glb_triangles": 40218,
+  "glb_materials": [
+    {
+      "name": "Crystal_Blue_Translucent",
+      "alpha_mode": "BLEND",
+      "base_color": [
+        0.006000000052154064,
+        0.12999999523162842,
+        0.6399999856948853,
+        0.3199999928474426
+      ],
+      "emissive_factor": [
+        0.0012000000283122064,
+        0.02599999943375586,
+        0.12799999904632564
+      ],
+      "extensions": {
+        "KHR_materials_transmission": {
+          "transmissionFactor": 0.7200000286102295
+        },
+        "KHR_materials_ior": {
+          "ior": 1.4500000476837158
+        }
+      }
+    },
+    {
+      "name": "Crystal_Inner_Emission",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.006000000052154064,
+        0.20999999344348907,
+        1,
+        1
+      ],
+      "emissive_factor": [
+        0.006000000052154064,
+        0.20999999344348907,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 2
+        }
+      }
+    },
+    {
+      "name": "Crystal_Lattice_Emission",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.15000000596046448,
+        0.6600000262260437,
+        1,
+        1
+      ],
+      "emissive_factor": [
+        0.15000000596046448,
+        0.6600000262260437,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 1.899999976158142
+        }
+      }
+    },
+    {
+      "name": "Frame_Graphite_Metal",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.039000000804662704,
+        0.052000001072883606,
+        0.07000000029802322,
+        1
+      ],
+      "emissive_factor": [
+        0,
+        0,
+        0
+      ],
+      "extensions": {}
+    },
+    {
+      "name": "Trim_Titanium",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.30000001192092896,
+        0.38999998569488525,
+        0.4699999988079071,
+        1
+      ],
+      "emissive_factor": [
+        0,
+        0,
+        0
+      ],
+      "extensions": {}
+    },
+    {
+      "name": "Frame_Channel_Emission",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.03500000014901161,
+        0.3799999952316284,
+        1,
+        1
+      ],
+      "emissive_factor": [
+        0.03500000014901161,
+        0.3799999952316284,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 1.2999999523162842
+        }
+      }
+    },
+    {
+      "name": "Halo_Strip_Emission",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.23999999463558197,
+        0.550000011920929,
+        1,
+        1
+      ],
+      "emissive_factor": [
+        0.23999999463558197,
+        0.550000011920929,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 2
+        }
+      }
+    },
+    {
+      "name": "Armor_White_Ceramic",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.7300000190734863,
+        0.7900000214576721,
+        0.8500000238418579,
+        1
+      ],
+      "emissive_factor": [
+        0,
+        0,
+        0
+      ],
+      "extensions": {}
+    },
+    {
+      "name": "Panel_Black_Composite",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.012000000104308128,
+        0.02199999988079071,
+        0.035999998450279236,
+        1
+      ],
+      "emissive_factor": [
+        0,
+        0,
+        0
+      ],
+      "extensions": {}
+    },
+    {
+      "name": "Base_Strip_Emission",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.05999999865889549,
+        0.28999999165534973,
+        1,
+        1
+      ],
+      "emissive_factor": [
+        0.05999999865889549,
+        0.28999999165534973,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 2
+        }
+      }
+    },
+    {
+      "name": "Accent_Champagne_Metal",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.49000000953674316,
+        0.30000001192092896,
+        0.09000000357627869,
+        1
+      ],
+      "emissive_factor": [
+        0,
+        0,
+        0
+      ],
+      "extensions": {}
+    },
+    {
+      "name": "Lightning_Emission",
+      "alpha_mode": "OPAQUE",
+      "base_color": [
+        0.4000000059604645,
+        0.699999988079071,
+        1,
+        1
+      ],
+      "emissive_factor": [
+        0.4000000059604645,
+        0.699999988079071,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 2.799999952316284
+        }
+      }
+    }
+  ],
+  "glb_meshes": 27,
+  "glb_primitives": 41,
+  "glb_extensions": [
+    "KHR_materials_transmission",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_ior"
+  ],
+  "contains_cameras": false,
+  "contains_lights": false,
+  "dimension_delta_m": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "front_blender": "-Y",
+  "front_threejs": "+Z",
+  "up_blender": "+Z",
+  "up_threejs": "+Y",
+  "limitations": [
+    "没有进行装配零件之间的全量碰撞求交检查；已按五个视角检查明显穿插。",
+    "Three.js 最终光照与透明排序仍取决于宿主场景，GLB 不携带屏幕空间 Bloom。"
+  ]
+}

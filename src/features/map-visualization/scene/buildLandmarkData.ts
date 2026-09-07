@@ -12,19 +12,20 @@
  *       Reference 中不存在仓库标识文字与方垫。）
  * 边界：输入必须来自 createMapModel 的只读 MapModel（已校验、有限坐标）；
  *       本模块不创建 Three.js 对象、不进 React、不知道图集存在（名称锚点
- *       由图层与图集单元 join）。position 逐项取自节点坐标，无引用可悬空。
+ *       由图层与图集单元 join）。充电柜从节点向停车区域外侧退让，无引用可悬空。
  * 关键不变量：
  * 1. 数量恒等：pile/ring/light 平移数 = charge 节点数；停车 slab 数 = park
  *    锚点数 = park 节点数（当前地图 59 / 2）；
- * 2. 矩阵为列主序 4×4，只含平移（桩/灯/环/名称）或平移+xz/sy 非等比缩放
- *    （停车 slab），旋转恒为单位——地标不依赖可能为 null 的节点 angle；
+ * 2. 矩阵为列主序 4×4，充电柜含平移与朝向停靠点的旋转；停车 slab 含
+ *    平移+xz/sy 非等比缩放。缺失节点朝向时，由连接道路推导柜体退让方向；
  * 3. 停车 slab 为单一语义色（紫），由图层材质直接取色、不走实例颜色；
  * 4. 世界坐标只经统一 WorldTransform 转换一次，与路径/节点图层完全同源
  *    （SPEC §2.5：所有对象复用同一坐标转换）。
  */
-import type { MapModel } from '../model/types'
+import type { MapModel, MapNode } from '../model/types'
 import type { WorldTransform } from '@/shared/spatial'
 import {
+  CHARGE_CABINET_OFFSET_M,
   PARK_PAD_SIZE_M,
   PARK_SLAB_HALO_SIZE_RATIO,
   PARK_SLAB_HEIGHT_M,
@@ -41,7 +42,10 @@ export interface ParkGlyphAnchor {
 export interface LandmarkData {
   /** charge 节点数：立柱/光环/呼吸灯/闪电贴花实例的实例数 */
   readonly chargeCount: number
-  /** 立柱/呼吸灯/光环/闪电贴花共用的世界平移矩阵（列主序 16×chargeCount） */
+  /**
+   * 柜体、指示灯和闪电标识共用退让后的世界变换。
+   * 列主序矩阵包含平移与旋转，确保操作面始终朝向停靠点。
+   */
   readonly chargeMatrices: Float32Array
   /** 停车凸起 slab 实例数 = park 节点数 */
   readonly parkSlabCount: number
@@ -61,15 +65,34 @@ export function buildLandmarkData(
   mapModel: MapModel,
   worldTransform: WorldTransform,
 ): LandmarkData {
-  const chargePositions: { x: number; z: number }[] = []
+  const chargePositions: { x: number; z: number; rotation: number }[] = []
   const slabMatrices: number[] = []
   const haloMatrices: number[] = []
   const parkAnchors: ParkGlyphAnchor[] = []
 
+  /**
+   * 按物理邻居去重双向逻辑边，也收集只有入边的充电点。
+   * 柜体摆放只依赖静态地图，车辆到达、转向或离开都不会让设施跳动。
+   */
+  const chargeNeighbors = new Map<string, Set<string>>()
+  for (const edge of mapModel.edgeList) {
+    for (const [id, neighborId] of [[edge.snodeId, edge.enodeId], [edge.enodeId, edge.snodeId]]) {
+      if (mapModel.nodes.get(id)?.category !== 'charge' || id === neighborId) continue
+      const neighbors = chargeNeighbors.get(id) ?? new Set<string>()
+      neighbors.add(neighborId)
+      chargeNeighbors.set(id, neighbors)
+    }
+  }
+
   for (const node of mapModel.nodeList) {
     const world = worldTransform.toWorldXZ(node.x, node.y)
     if (node.category === 'charge') {
-      chargePositions.push({ x: world.x, z: world.z })
+      const rotation = chargeCabinetRotation(node, chargeNeighbors.get(node.id), mapModel, worldTransform)
+      chargePositions.push({
+        x: world.x - Math.sin(rotation) * CHARGE_CABINET_OFFSET_M,
+        z: world.z - Math.cos(rotation) * CHARGE_CABINET_OFFSET_M,
+        rotation,
+      })
       continue
     }
     if (node.category === 'warehouse') {
@@ -87,6 +110,15 @@ export function buildLandmarkData(
   const chargeMatrices = new Float32Array(chargeCount * 16)
   for (let i = 0; i < chargePositions.length; i += 1) {
     writeTranslation(chargeMatrices, i * 16, chargePositions[i].x, 0, chargePositions[i].z)
+    /**
+     * 柜体局部正 Z 是操作面，绕世界 Y 旋转后指向停靠点。
+     * 所有柜体部件复用此矩阵，因此灯和柜面标识同步移动、旋转。
+     */
+    const { rotation } = chargePositions[i]
+    chargeMatrices[i * 16] = Math.cos(rotation)
+    chargeMatrices[i * 16 + 2] = -Math.sin(rotation)
+    chargeMatrices[i * 16 + 8] = Math.sin(rotation)
+    chargeMatrices[i * 16 + 10] = Math.cos(rotation)
   }
 
   return {
@@ -97,6 +129,34 @@ export function buildLandmarkData(
     parkHaloMatrices: new Float32Array(haloMatrices),
     parkAnchors: Object.freeze(parkAnchors),
   }
+}
+
+/**
+ * 有停靠朝向时将柜体放在车尾；无朝向时，将柜体放到连接道路的相反侧。
+ * 多条道路取单位方向合力，孤立点或对称连接回退到地图负 X 侧。
+ * 道路方向在世界坐标中计算，退让距离不受地图缩放、旋转或镜像影响。
+ */
+function chargeCabinetRotation(
+  node: MapNode,
+  neighborIds: ReadonlySet<string> | undefined,
+  mapModel: MapModel,
+  worldTransform: WorldTransform,
+): number {
+  if (node.angle !== null) return worldTransform.angleToWorldYRotation(node.angle) + Math.PI / 2
+  const world = worldTransform.toWorldXZ(node.x, node.y)
+  let dx = 0
+  let dz = 0
+  for (const id of neighborIds ?? []) {
+    const neighbor = mapModel.nodes.get(id)!
+    const position = worldTransform.toWorldXZ(neighbor.x, neighbor.y)
+    const length = Math.hypot(position.x - world.x, position.z - world.z)
+    if (length < 1e-6) continue
+    dx += (position.x - world.x) / length
+    dz += (position.z - world.z) / length
+  }
+  return Math.hypot(dx, dz) > 1e-6
+    ? Math.atan2(dx, dz)
+    : worldTransform.angleToWorldYRotation(0) + Math.PI / 2
 }
 
 /**

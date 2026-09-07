@@ -1,8 +1,9 @@
 /**
  * 车辆按材质和部件批量实例渲染，精修资产与程序回退共用原来的车辆槽位表。
- * 模型资源归上层所有，各批次只释放实例缓冲；资源替换强制重新挂载并全量回填。
+ * 每个部件按当前绘制相机独立剔除；完整网格、材质和固定业务槽位保持不变。
+ * 模型资源归上层所有，各批次释放合批几何与数据纹理；资源替换全量回填。
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import * as THREE from 'three'
 import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
@@ -11,6 +12,13 @@ import type { InstanceSlotTable } from '../model/instanceSlots'
 import { SLOT_BATCH_CAPACITY } from '../model/instanceSlots'
 import { INSTANCE_COLOR_PARTS, PICKABLE_PARTS, VEHICLE_PART_KINDS, type VehiclePartKind, type VehicleResources } from '../scene/createVehicleGeometry'
 import { useFleetFrameSync, type FleetBatchMeshes } from '../hooks/useFleetFrameSync'
+import { CulledVehicleBatch } from '../scene/culledVehicleBatch'
+
+/**
+ * 加载空档使用稳定的空数组，避免未就绪时反复触发结构换代。
+ * 真正挂载批次后，原有帧同步会全量回填当前车辆状态。
+ */
+const EMPTY_BATCHES: readonly FleetBatchMeshes[] = []
 
 export interface VehicleInstancesProps {
   runtime: FleetRuntime
@@ -23,10 +31,19 @@ export interface VehicleInstancesProps {
 }
 
 export function VehicleInstances({ runtime, worldTransform, resources, table, batchCount, onBatchCountChanged, diagnostics }: VehicleInstancesProps) {
-  const batches = useMemo(() => createBatches(resources, batchCount), [resources, batchCount])
-  useEffect(() => () => {
-    for (const batch of batches) for (const mesh of Object.values(batch.parts)) mesh.dispose()
-  }, [batches])
+  /**
+   * 合批资源在副作用中成对创建和释放，严格模式重新设置时生成全新纹理。
+   * 渲染参数换代时暂不挂载旧批次，防止已释放的矩阵纹理被再次使用。
+   */
+  const [loaded, setLoaded] = useState<{ resources: VehicleResources; count: number; batches: FleetBatchMeshes[] } | null>(null)
+  const batches = loaded?.resources === resources && loaded.count === batchCount ? loaded.batches : EMPTY_BATCHES
+  useEffect(() => {
+    const next = createBatches(resources, batchCount)
+    setLoaded({ resources, count: batchCount, batches: next })
+    return () => {
+      for (const batch of next) for (const mesh of Object.values(batch.parts)) mesh.dispose()
+    }
+  }, [resources, batchCount])
   useFleetFrameSync({ runtime, table, worldTransform, batches, onBatchCountChanged, diagnostics })
   return <group name="fleet-vehicles">
     {batches.map((batch, index) => <group key={batch.parts.shell.uuid} name={`fleet-batch-${index}`}>
@@ -41,13 +58,12 @@ export function VehicleInstances({ runtime, worldTransform, resources, table, ba
  */
 function createBatches(resources: VehicleResources, count: number): FleetBatchMeshes[] {
   return Array.from({ length: count }, (_, batchId) => {
-    const parts = {} as Record<VehiclePartKind, THREE.InstancedMesh>
+    const parts = {} as Record<VehiclePartKind, CulledVehicleBatch>
     for (const kind of VEHICLE_PART_KINDS) {
       const resource = resources.parts[kind]
-      const mesh = new THREE.InstancedMesh(resource.geometry, resource.material, SLOT_BATCH_CAPACITY)
+      const mesh = new CulledVehicleBatch(resource.geometry, resource.material, SLOT_BATCH_CAPACITY)
       mesh.name = `fleet-${kind}-b${batchId}`
       mesh.matrixAutoUpdate = false
-      mesh.frustumCulled = false
       mesh.castShadow = !INSTANCE_COLOR_PARTS.has(kind) && kind !== 'shadow'
       /**
        * 投光贴片在道路透明层之后绘制，不投射或接收实时阴影，也不参与拾取。

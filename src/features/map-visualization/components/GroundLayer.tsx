@@ -14,8 +14,8 @@
  * 2. dispose={null}：对象由本组件 effect 显式释放，禁止 R3F 二次释放；
  * 3. 纹理降级（Canvas 不可得）不阻断挂载：材质退为纯色，地面照常接收阴影。
  */
-import { useEffect, useMemo } from 'react'
-import { useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import { Group } from 'three'
 import type { SceneBounds } from '../model/types'
 import { createGroundSurface } from '../scene/groundSurface'
@@ -37,14 +37,22 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
   const gl = useThree((state) => state.gl)
   const group = useMemo(() => new Group(), [])
   /**
+   * 动画帧号由图层统一推进，使水晶透射预通道和主通道共用同帧倒影。
+   * 反射句柄换代时同步替换引用，卸载后不再访问旧资源。
+   */
+  const reflectionRef = useRef<ReturnType<typeof createGroundReflection> | null>(null)
+  useFrame(() => reflectionRef.current?.beginFrame())
+  /**
    * 地坪句柄必须在每次副作用设置时新建，不能复用严格模式清理过的句柄。
    * 稳定组负责挂载位置，实际网格由同一副作用添加、移除和释放。
    */
   useEffect(() => {
     const surface = createGroundSurface(bounds, gl.capabilities.getMaxAnisotropy())
     const reflection = createGroundReflection(surface.mesh)
+    reflectionRef.current = reflection
     group.add(surface.mesh)
     return () => {
+      if (reflectionRef.current === reflection) reflectionRef.current = null
       reflection.dispose()
       group.remove(surface.mesh)
       surface.dispose()

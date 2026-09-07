@@ -10,6 +10,7 @@ import type { DiagnosticsReporter } from '@/shared/diagnostics'
 import type { WorldTransform } from '@/shared/spatial'
 import type { FleetRuntime } from '../model/createFleetRuntime'
 import type { InstanceSlotTable } from '../model/instanceSlots'
+import type { CulledVehicleBatch } from '../scene/culledVehicleBatch'
 import type { VehiclePrimaryDisplayState } from '../model/types'
 import { STATUS_LIGHT_STYLES, statusLightBrightness } from '../scene/vehicleStatusLights'
 import {
@@ -25,13 +26,12 @@ import {
   type PartPlacement,
   type VehiclePartKind,
   vehiclePartVisible,
-  PICKABLE_PARTS,
   LOAD_PARTS,
 } from '../scene/createVehicleGeometry'
 
-/** 一个批次的可写网格集合：七个部件 InstancedMesh（批次序号即数组序号） */
+/** 一个批次的可写部件集合：保留固定槽位，绘制按各相机逐部件剔除 */
 export interface FleetBatchMeshes {
-  readonly parts: Record<VehiclePartKind, THREE.InstancedMesh>
+  readonly parts: Record<VehiclePartKind, CulledVehicleBatch>
   /**
    * 模型加载后才启用精修部件，切换批次身份会触发既有全量回填机制。
    * 未加载和恢复过程中使用程序模型，槽位与车辆映射保持一致。
@@ -567,6 +567,11 @@ function flushDirtyBatches(
   for (let b = 0; b < batches.length; b += 1) {
     for (let k = 0; k < PART_COUNT; k += 1) {
       const mesh = batches[b].parts[VEHICLE_PART_KINDS[k]]
+      /**
+       * 先把业务草稿提交到合批纹理；主画面、阴影和倒影随后各自生成可见绘制列表。
+       * CPU 槽位不随相机压缩，删除补录和交互映射保持稳定。
+       */
+      mesh.commit(controller.matrixDirty[b][k], controller.colorDirty[b][k])
       if (controller.matrixDirty[b][k]) {
         controller.matrixDirty[b][k] = false
         /**
@@ -580,21 +585,9 @@ function flushDirtyBatches(
         }
         mesh.count = count
         mesh.visible = count > 0
-        mesh.instanceMatrix.needsUpdate = true
-        // 外壳可拾取（SPEC §5.2）：实例矩阵变化后同步重算拾取包围球。
-        // InstancedMesh 的 boundingSphere 只在 null 时被惰性计算，若在挂载期
-        // 实例全零时被提前计算并缓存为「原点半径 0」，此后 raycast 的包围球
-        // 预检将永远失败（真实浏览器实测复现）；这里按脏帧重算保证拾取球
-        // 恒与最新实例数据一致（含车辆移出旧球的情形）。
-        if (PICKABLE_PARTS.has(VEHICLE_PART_KINDS[k]) && mesh.geometry.getAttribute('position')) {
-          mesh.computeBoundingSphere()
-        }
       }
       if (controller.colorDirty[b][k]) {
         controller.colorDirty[b][k] = false
-        if (mesh.instanceColor !== null) {
-          mesh.instanceColor.needsUpdate = true
-        }
       }
     }
   }

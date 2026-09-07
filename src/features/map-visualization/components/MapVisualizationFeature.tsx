@@ -63,6 +63,7 @@ import { PhysicalPathsLayer } from './PhysicalPathsLayer'
 import { LandmarksLayer } from './LandmarksLayer'
 import { GroundLayer } from './GroundLayer'
 import { FactoryLayer } from './FactoryLayer'
+import { SceneBloom } from './SceneBloom'
 
 export interface MapVisualizationFeatureProps {
   /** 地图视图描述符；null 表示尚无可加载的地图（保持清屏色） */
@@ -178,6 +179,9 @@ export function MapVisualizationFeature({
       ) : null}
       {/* 环境与灯光位于图层之后（不变量 6）：恢复提交中环境重建恒在地图
           资源之后落地；方向光对象身份与场景图位置无关，语义不变 */}
+      {/* 自发光在线性高动态范围内生成光晕，保留水晶内芯和灯带细节。
+          后处理跟随上下文代重建，输出尺寸始终与主画布一致。 */}
+      <SceneBloom generation={contextGeneration} />
       <SceneLighting
         bounds={factoryLayout?.bounds ?? null}
         wallHeight={factoryLayout?.config.wallHeightM ?? 12}

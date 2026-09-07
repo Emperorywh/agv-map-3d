@@ -63,9 +63,15 @@ export function createStatusLightGround(): { geometry: THREE.BufferGeometry; mat
        */
       #include <common>
       #include <logdepthbuf_pars_vertex>
+      #include <batching_pars_vertex>
       varying vec2 vGroundPosition;
       varying vec3 vLightColor;
       void main() {
+        /*
+         * 多绘制批次从数据纹理读取当前实例矩阵和颜色，保留原照地形状与呼吸节奏。
+         * 普通实例路径继续可用，两种方式都在世界变换前应用局部车辆位姿。
+         */
+        #include <batching_vertex>
         vGroundPosition = position.xz;
         vLightColor = vec3(1.0);
         vec4 worldPosition = vec4(position, 1.0);
@@ -74,6 +80,12 @@ export function createStatusLightGround(): { geometry: THREE.BufferGeometry; mat
         #endif
         #ifdef USE_INSTANCING_COLOR
           vLightColor = instanceColor;
+        #endif
+        #ifdef USE_BATCHING
+          worldPosition = batchingMatrix * worldPosition;
+        #endif
+        #ifdef USE_BATCHING_COLOR
+          vLightColor = getBatchingColor(getIndirectIndex(gl_DrawID)).rgb;
         #endif
         gl_Position = projectionMatrix * modelViewMatrix * worldPosition;
         #include <logdepthbuf_vertex>

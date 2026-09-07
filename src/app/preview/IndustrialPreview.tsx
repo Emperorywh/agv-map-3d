@@ -10,9 +10,11 @@ import { FleetMonitoringFeature, FleetRuntimeProvider, createFollowTargetReader,
 import { CameraNavigationFeature, type CameraNavigationCommands } from '@/features/camera-navigation'
 import { useFleetMonitoringStore } from '@/features/fleet-monitoring/model/fleetMonitoringStore'
 import { GroundLayer } from '@/features/map-visualization/components/GroundLayer'
+import { ChargingTowersLayer } from '@/features/map-visualization/components/ChargingTowersLayer'
+import { SceneBloom } from '@/features/map-visualization/components/SceneBloom'
 import { createGradientEnvironment } from '@/features/map-visualization/scene/createSceneEnvironment'
 import { MAP_CLEAR_COLOR, DIRECTIONAL_LIGHT_INTENSITY } from '@/features/map-visualization/scene/mapAppearance'
-import { createChargingCabinet, createIndustrialRack, instanceFacility } from '@/shared/industrial/facilities'
+import { createIndustrialRack, instanceFacility } from '@/shared/industrial/facilities'
 import { createCartonGeometry, createPalletGeometry } from '@/shared/industrial/geometry'
 import { createIndustrialMaterials } from '@/shared/industrial/materials'
 import type { WorldTransform } from '@/shared/spatial'
@@ -62,6 +64,9 @@ export default function IndustrialPreview() {
         相机保持固定世界机位，画布按剩余宽度更新投影比例。 */}
     <Canvas style={{ marginLeft: 330, width: 'calc(100% - 330px)', height: '100%' }} shadows={previewShadows} camera={previewCamera} gl={previewRenderer}>
       <color attach="background" args={[MAP_CLEAR_COLOR]} />
+      {/* 样板复用正式场景的光晕输出，模型材质和后处理参数保持一致。
+          重建按钮同步重建高动态范围渲染目标。 */}
+      <SceneBloom generation={generation} />
       <PreviewStage view={view} count={settings.count} onMetrics={setMetrics} generation={generation} commands={commands} followReader={followReader} onFollowedChange={setFollowing} />
       <FleetRuntimeProvider source={source} onRuntimeAvailable={setRuntime}>
         <FleetMonitoringFeature worldTransform={transform} contextGeneration={generation} onFollowRequest={(key) => commands.current?.follow(key)} />
@@ -140,10 +145,9 @@ function PreviewStage({ view, count, onMetrics, generation, commands, followRead
 
 function SampleFacilities() {
   const resources = useMemo(() => {
-    const cabinet = createChargingCabinet()
     const rack = createIndustrialRack(SAMPLE_LAYOUT.rack.dimensions)
     const matrix = (pose: { x: number; y: number; z: number; rotation: number }) => new Float32Array(new THREE.Matrix4().makeRotationY(pose.rotation).setPosition(pose.x, pose.y, pose.z).elements)
-    const instances = [instanceFacility(cabinet, matrix(SAMPLE_LAYOUT.cabinet)), instanceFacility(rack, matrix(SAMPLE_LAYOUT.rack))]
+    const instances = [instanceFacility(rack, matrix(SAMPLE_LAYOUT.rack))]
     const materials = createIndustrialMaterials()
     const geometries = [createPalletGeometry(), createCartonGeometry(), createCartonGeometry(true)]
     const group = new THREE.Group()
@@ -155,13 +159,18 @@ function SampleFacilities() {
       mesh.scale.set(p.length * (i === 0 ? 1 : 0.97), i === 0 ? p.height : 0.36, p.width * (i === 0 ? 1 : 0.97))
       mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh)
     }
-    return { group, dispose() {
+    return { group, chargeMatrices: matrix(SAMPLE_LAYOUT.cabinet), dispose() {
       for (const instance of instances) instance.dispose()
-      cabinet.dispose(); rack.dispose()
+      rack.dispose()
       for (const geometry of geometries) geometry.dispose()
       for (const material of Object.values(materials)) material.dispose()
     } }
   }, [])
   useEffect(() => () => resources.dispose(), [resources])
-  return <primitive object={resources.group} dispose={null} />
+  return <>
+    {/* 充电设施与正式地图共用完整 GLB，独立放置矩阵保持样板原有位置。
+        货架和托盘仍由本组件持有，模型异步资源由充电塔图层释放。 */}
+    <primitive object={resources.group} dispose={null} />
+    <ChargingTowersLayer matrices={resources.chargeMatrices} />
+  </>
 }

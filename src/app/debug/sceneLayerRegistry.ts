@@ -63,12 +63,11 @@ export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
   {
     key: 'charge',
     label: '充电设施',
-    objectNames: [
-      'map-charge-piles',
-      'map-charge-rings',
-      'map-charge-bolts',
-      'map-charge-lights',
-    ],
+    /**
+     * 完整充电塔和局部能量灯同属此根节点，调试开关同步控制全部部件。
+     * 保留单一匹配入口，避免旧充电柜名称导致设施图层开关失效。
+     */
+    objectNames: ['map-charge-towers'],
   },
   {
     key: 'vehicles',

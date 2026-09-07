@@ -75,6 +75,9 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   material.needsUpdate = true
   const hidden: THREE.Object3D[] = []
   let capturing = false
+  let frame = 0
+  let capturedFrame = -1
+  let capturedCamera: THREE.Camera | null = null
 
   /**
    * 在主相机真正绘制地面时采集，确保车辆位置、墙体剖切已经更新。
@@ -84,6 +87,11 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   mesh.onBeforeRender = (renderer, scene, camera, renderGeometry, renderMaterial, group) => {
     if (capturing) return
     originalRender.call(mesh, renderer, scene, camera, renderGeometry, renderMaterial, group)
+    /**
+     * 透射预通道与主体通道会在同一帧重复绘制地坪，共用同一相机的倒影即可。
+     * 按外层动画帧而非渲染器计数去重，嵌套镜像渲染不会误判为新的一帧。
+     */
+    if (capturedFrame === frame && capturedCamera === camera) return
     capturing = true
     const renderTarget = renderer.getRenderTarget()
     const xrEnabled = renderer.xr.enabled
@@ -108,6 +116,8 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
       reflector.onBeforeRender(renderer, scene, camera, geometry, reflectorMaterial, group)
       worldProjection.copy(reflectorMaterial.uniforms.textureMatrix.value).multiply(inverseReflector)
       ready.value = 1
+      capturedFrame = frame
+      capturedCamera = camera
     } finally {
       scene.background = background
       renderer.setClearColor(clearColor, clearAlpha)
@@ -121,6 +131,11 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   }
   let disposed = false
   return {
+    /**
+     * 每个动画帧允许重新采集一次完整倒影，车辆运动和灯光动画仍逐帧同步。
+     * 这里只消除同帧重复采集，不降低倒影分辨率或刷新频率。
+     */
+    beginFrame() { frame += 1 },
     dispose() {
       if (disposed) return
       disposed = true

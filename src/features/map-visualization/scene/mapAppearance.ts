@@ -118,21 +118,10 @@ export const BACKGROUND_VIGNETTE_STRENGTH = 0
 /* ==================== TASK-005 地图业务语义图层 ==================== */
 
 /**
- * 充电设施总览 LOD（P2-1/8.4）：59 处充电柜的柜体与柜面闪电标识在总览成排
- * 抢戏，按「柜体高度」（CABINET_
- * CONFIG.height）的投影尺寸在 [end, start] 像素区间平滑淡出，柜体/标识/
- * 指示灯同步隐现保持语义成组。
+ * 充电塔中心距停靠定位点两米，沿用既有设施布局和朝向停靠点的变换。
+ * 这是展示层的米制退让距离；只移动设施，不改变调度节点与车辆上报位置。
  */
-export const CHARGE_FADE_START_PX = 7
-export const CHARGE_FADE_END_PX = 2.5
-
-/**
- * 充电柜指示灯呼吸脉冲（P2-1）：低频呼吸周期与最暗亮度（装饰动画可整体
- * 关闭）。工业充电柜没有独立呼吸灯球，面板指示灯是充电呼吸感的唯一载体，
- * 脉冲只调制亮度、不改变色相与业务语义。
- */
-export const CHARGE_LIGHT_PERIOD_S = 2.4
-export const CHARGE_LIGHT_MIN_BRIGHTNESS = 0.25
+export const CHARGE_CABINET_OFFSET_M = 2
 
 /** 停车点 slab 足迹边长（紫色） */
 export const PARK_PAD_SIZE_M = 1.4
