@@ -18,6 +18,9 @@ const DIST = path.join(ROOT, 'dist')
 
 const COPIES = [
   { source: path.join(ROOT, 'json', 'map.json'), target: path.join(DIST, 'json', 'map.json') },
+  // 连接失败后的静态车辆快照必须随构建产物发布。
+  // 保留原始文件内容，让生产环境与本地开发展示同一批车辆。
+  { source: path.join(ROOT, 'json', 'vehicleList.json'), target: path.join(DIST, 'json', 'vehicleList.json') },
   { source: path.join(ROOT, 'public', 'config.json'), target: path.join(DIST, 'config.json') },
 ]
 

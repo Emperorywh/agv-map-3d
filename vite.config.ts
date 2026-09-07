@@ -14,8 +14,11 @@ import react from '@vitejs/plugin-react'
 // dist/json/map.json，并由 scripts/verifyDist.mjs 校验产物完整性。
 const ROOT_DIR = __dirname
 
-/** 允许经开发服务器访问的仓库根目录 json 资源（白名单防目录穿越） */
-const DEV_JSON_FILES = new Set(['/map.json', '/vehicle.json'])
+/**
+ * 允许经开发服务器访问的仓库根目录 json 资源（白名单防目录穿越）。
+ * 车辆列表用于实时连接失败后的静态展示，与生产资源路径保持一致。
+ */
+const DEV_JSON_FILES = new Set(['/map.json', '/vehicle.json', '/vehicleList.json'])
 
 /**
  * 开发服务器中间件：把 /json/map.json、/json/vehicle.json 映射到仓库根目录

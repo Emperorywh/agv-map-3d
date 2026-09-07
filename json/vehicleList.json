@@ -1,0 +1,6952 @@
+[
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957450",
+        "agvName": "压力测试1L-2092065442896957450",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 3.1416,
+            "x": 158.7716,
+            "y": 34.9632
+        },
+        "batteryState": {
+            "batteryCharge": 86.87,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275389,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "d68a830bfe154306a0d84ee72b334c3b",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    155.12,
+                    34.6,
+                    159.32,
+                    34.6,
+                    155.12,
+                    35.32,
+                    159.32,
+                    35.32
+                ],
+                [
+                    155.7,
+                    34.6,
+                    157.52,
+                    34.6,
+                    155.7,
+                    35.32,
+                    157.52,
+                    35.32
+                ],
+                [
+                    157.5,
+                    34.6,
+                    159.32,
+                    34.6,
+                    157.5,
+                    35.32,
+                    159.32,
+                    35.32
+                ],
+                [
+                    159.3,
+                    34.6,
+                    161.12,
+                    34.6,
+                    159.3,
+                    35.32,
+                    161.12,
+                    35.32
+                ],
+                [
+                    156.92,
+                    34.6,
+                    161.12,
+                    34.6,
+                    156.92,
+                    35.32,
+                    161.12,
+                    35.32
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957459",
+        "agvName": "压力测试1L-2092065442896957459",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 147.9216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275377,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    148.27,
+                    -12.55,
+                    148.27,
+                    -10.75,
+                    147.57,
+                    -12.55,
+                    147.57,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957454",
+        "agvName": "压力测试1L-2092065442896957454",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 151.5216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275369,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    151.87,
+                    -12.55,
+                    151.87,
+                    -10.75,
+                    151.17,
+                    -12.55,
+                    151.17,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957453",
+        "agvName": "压力测试1L-2092065442896957453",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 197.5297,
+            "y": 27.0589
+        },
+        "batteryState": {
+            "batteryCharge": 87.48,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275366,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "041525e6980a4d87a1acec87ca4e6b13",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    199.58,
+                    27.42,
+                    195.38,
+                    27.42,
+                    199.58,
+                    26.7,
+                    195.38,
+                    26.7
+                ],
+                [
+                    197.2,
+                    27.42,
+                    195.38,
+                    27.42,
+                    197.2,
+                    26.7,
+                    195.38,
+                    26.7
+                ],
+                [
+                    199,
+                    27.42,
+                    197.18,
+                    27.42,
+                    199,
+                    26.7,
+                    197.18,
+                    26.7
+                ],
+                [
+                    201.38,
+                    27.42,
+                    197.18,
+                    27.42,
+                    201.38,
+                    26.7,
+                    197.18,
+                    26.7
+                ],
+                [
+                    200.8,
+                    27.42,
+                    198.98,
+                    27.42,
+                    200.8,
+                    26.7,
+                    198.98,
+                    26.7
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957452",
+        "agvName": "压力测试1L-2092065442896957452",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 149.7216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275364,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    150.07,
+                    -12.55,
+                    150.07,
+                    -10.75,
+                    149.37,
+                    -12.55,
+                    149.37,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957451",
+        "agvName": "压力测试1L-2092065442896957451",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 5.4764,
+            "y": -21.7186
+        },
+        "batteryState": {
+            "batteryCharge": 87.63,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275361,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "ed1457e452d54ff59b2b1375943edfad",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    8.84,
+                    -30.88,
+                    8.84,
+                    -29.06,
+                    8.12,
+                    -30.88,
+                    8.12,
+                    -29.06
+                ],
+                [
+                    8.84,
+                    -26.26,
+                    8.84,
+                    -22.36,
+                    8.12,
+                    -26.26,
+                    8.12,
+                    -22.36
+                ],
+                [
+                    8.64,
+                    -21.36,
+                    5.82,
+                    -21.36,
+                    8.64,
+                    -22.08,
+                    5.82,
+                    -22.08
+                ],
+                [
+                    8.22,
+                    -21.36,
+                    4.82,
+                    -21.36,
+                    8.22,
+                    -22.08,
+                    4.82,
+                    -22.08
+                ],
+                [
+                    8.84,
+                    -28.28,
+                    8.84,
+                    -26.46,
+                    8.12,
+                    -28.28,
+                    8.12,
+                    -26.46
+                ],
+                [
+                    6.64,
+                    -21.36,
+                    4.82,
+                    -21.36,
+                    6.64,
+                    -22.08,
+                    4.82,
+                    -22.08
+                ],
+                [
+                    8.84,
+                    -31.46,
+                    8.84,
+                    -27.76,
+                    8.12,
+                    -31.46,
+                    8.12,
+                    -27.76
+                ],
+                [
+                    8.84,
+                    -25.68,
+                    8.84,
+                    -23.86,
+                    8.12,
+                    -25.68,
+                    8.12,
+                    -23.86
+                ],
+                [
+                    8.84,
+                    -28.86,
+                    8.84,
+                    -25.16,
+                    8.12,
+                    -28.86,
+                    8.12,
+                    -25.16
+                ],
+                [
+                    8.84,
+                    -30.16,
+                    8.84,
+                    -26.46,
+                    8.12,
+                    -30.16,
+                    8.12,
+                    -26.46
+                ],
+                [
+                    8.84,
+                    -27.56,
+                    8.84,
+                    -23.86,
+                    8.12,
+                    -27.56,
+                    8.12,
+                    -23.86
+                ],
+                [
+                    8.85,
+                    -24.17,
+                    8.83,
+                    -22.35,
+                    8.13,
+                    -24.18,
+                    8.11,
+                    -22.36
+                ],
+                [
+                    8.84,
+                    -24.18,
+                    8.84,
+                    -22.36,
+                    8.12,
+                    -24.18,
+                    8.12,
+                    -22.36
+                ],
+                [
+                    8.64,
+                    -21.36,
+                    6.82,
+                    -21.36,
+                    8.64,
+                    -22.08,
+                    6.82,
+                    -22.08
+                ],
+                [
+                    8.65,
+                    -21.39,
+                    6.83,
+                    -21.34,
+                    8.63,
+                    -22.11,
+                    6.81,
+                    -22.06
+                ],
+                [
+                    7.64,
+                    -21.36,
+                    5.82,
+                    -21.36,
+                    7.64,
+                    -22.08,
+                    5.82,
+                    -22.08
+                ],
+                [
+                    8.84,
+                    -29.58,
+                    8.84,
+                    -27.76,
+                    8.12,
+                    -29.58,
+                    8.12,
+                    -27.76
+                ],
+                [
+                    8.84,
+                    -26.98,
+                    8.84,
+                    -25.16,
+                    8.12,
+                    -26.98,
+                    8.12,
+                    -25.16
+                ],
+                [
+                    8.65,
+                    -21.39,
+                    6.83,
+                    -21.34,
+                    8.63,
+                    -22.11,
+                    6.81,
+                    -22.06
+                ],
+                [
+                    9.15,
+                    -21.61,
+                    7.36,
+                    -21.28,
+                    9.02,
+                    -22.32,
+                    7.23,
+                    -21.99
+                ],
+                [
+                    9.38,
+                    -22.26,
+                    7.91,
+                    -21.19,
+                    8.95,
+                    -22.84,
+                    7.49,
+                    -21.77
+                ],
+                [
+                    9.12,
+                    -23.05,
+                    8.5,
+                    -21.35,
+                    8.45,
+                    -23.3,
+                    7.82,
+                    -21.59
+                ],
+                [
+                    8.91,
+                    -23.59,
+                    8.76,
+                    -21.77,
+                    8.19,
+                    -23.64,
+                    8.04,
+                    -21.83
+                ],
+                [
+                    8.86,
+                    -24.75,
+                    8.83,
+                    -22.35,
+                    8.14,
+                    -24.76,
+                    8.11,
+                    -22.36
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    6.63,
+                    -21.37,
+                    4.83,
+                    -21.37,
+                    6.63,
+                    -22.07,
+                    4.83,
+                    -22.07
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957458",
+        "agvName": "压力测试1L-2092065442896957458",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 153.3216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275358,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    153.67,
+                    -12.55,
+                    153.67,
+                    -10.75,
+                    152.97,
+                    -12.55,
+                    152.97,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957457",
+        "agvName": "压力测试1L-2092065442896957457",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 187.9616,
+            "y": 8.2032
+        },
+        "batteryState": {
+            "batteryCharge": 87.17,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275356,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "efcb977716af46b48444942e2fa17fdd",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    188.32,
+                    2.08,
+                    188.32,
+                    3.9,
+                    187.6,
+                    2.08,
+                    187.6,
+                    3.9
+                ],
+                [
+                    188.32,
+                    5.1,
+                    188.32,
+                    9.37,
+                    187.6,
+                    5.1,
+                    187.6,
+                    9.37
+                ],
+                [
+                    188.32,
+                    5.68,
+                    188.32,
+                    7.5,
+                    187.6,
+                    5.68,
+                    187.6,
+                    7.5
+                ],
+                [
+                    188.32,
+                    7.55,
+                    188.32,
+                    9.37,
+                    187.6,
+                    7.55,
+                    187.6,
+                    9.37
+                ],
+                [
+                    188.32,
+                    1.5,
+                    188.32,
+                    7.5,
+                    187.6,
+                    1.5,
+                    187.6,
+                    7.5
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957456",
+        "agvName": "压力测试1L-2092065442896957456",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 155.1216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275355,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    155.47,
+                    -12.55,
+                    155.47,
+                    -10.75,
+                    154.77,
+                    -12.55,
+                    154.77,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957455",
+        "agvName": "压力测试1L-2092065442896957455",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 144.3216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275353,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    144.67,
+                    -12.55,
+                    144.67,
+                    -10.75,
+                    143.97,
+                    -12.55,
+                    143.97,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957449",
+        "agvName": "压力测试1L-2092065442896957449",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 140.1996,
+            "y": 26.0685
+        },
+        "batteryState": {
+            "batteryCharge": 87.02,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275340,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "97c6d96e13504d63b1d581d7acb73b2e",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    140.56,
+                    24.84,
+                    140.56,
+                    26.66,
+                    139.84,
+                    24.84,
+                    139.84,
+                    26.66
+                ],
+                [
+                    140.56,
+                    23.04,
+                    140.56,
+                    24.86,
+                    139.84,
+                    23.04,
+                    139.84,
+                    24.86
+                ],
+                [
+                    140.56,
+                    22.46,
+                    140.56,
+                    26.66,
+                    139.84,
+                    22.46,
+                    139.84,
+                    26.66
+                ],
+                [
+                    140.56,
+                    24.26,
+                    140.56,
+                    28.46,
+                    139.84,
+                    24.26,
+                    139.84,
+                    28.46
+                ],
+                [
+                    140.56,
+                    26.64,
+                    140.56,
+                    28.46,
+                    139.84,
+                    26.64,
+                    139.84,
+                    28.46
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957448",
+        "agvName": "压力测试1L-2092065442896957448",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -27.5543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275339,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -27.2,
+                    112.62,
+                    -27.2,
+                    114.42,
+                    -27.9,
+                    112.62,
+                    -27.9
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957443",
+        "agvName": "压力测试1L-2092065442896957443",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -23.9543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275336,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -23.6,
+                    112.62,
+                    -23.6,
+                    114.42,
+                    -24.3,
+                    112.62,
+                    -24.3
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957442",
+        "agvName": "压力测试1L-2092065442896957442",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 21.5466,
+            "y": -52.4456
+        },
+        "batteryState": {
+            "batteryCharge": 88.23,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275334,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "eb548984cf2c48ceb44580b2becfd1c3",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    26.66,
+                    -52.09,
+                    22.45,
+                    -52.09,
+                    26.66,
+                    -52.81,
+                    22.45,
+                    -52.81
+                ],
+                [
+                    24.27,
+                    -52.09,
+                    22.45,
+                    -52.09,
+                    24.27,
+                    -52.81,
+                    22.45,
+                    -52.81
+                ],
+                [
+                    26.08,
+                    -52.09,
+                    24.26,
+                    -52.09,
+                    26.08,
+                    -52.81,
+                    24.26,
+                    -52.81
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    24.27,
+                    -52.09,
+                    22.45,
+                    -52.09,
+                    24.27,
+                    -52.81,
+                    22.45,
+                    -52.81
+                ],
+                [
+                    22.47,
+                    -52.09,
+                    20.65,
+                    -52.09,
+                    22.47,
+                    -52.81,
+                    20.65,
+                    -52.81
+                ],
+                [
+                    24.85,
+                    -52.09,
+                    20.65,
+                    -52.09,
+                    24.85,
+                    -52.81,
+                    20.65,
+                    -52.81
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957441",
+        "agvName": "压力测试1L-2092065442896957441",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 189.6397,
+            "y": 16.6939
+        },
+        "batteryState": {
+            "batteryCharge": 87.17,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275333,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "e3d7a967abbb4d859c43dd05cda66f31",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    189.28,
+                    16.97,
+                    189.28,
+                    15.15,
+                    190,
+                    16.97,
+                    190,
+                    15.15
+                ],
+                [
+                    189.29,
+                    16.96,
+                    189.29,
+                    15.16,
+                    189.99,
+                    16.96,
+                    189.99,
+                    15.16
+                ],
+                [
+                    189.28,
+                    19.42,
+                    189.28,
+                    15.15,
+                    190,
+                    19.42,
+                    190,
+                    15.15
+                ],
+                [
+                    189.28,
+                    23.17,
+                    189.28,
+                    17.02,
+                    190,
+                    23.17,
+                    190,
+                    17.02
+                ],
+                [
+                    189.28,
+                    18.84,
+                    189.28,
+                    17.02,
+                    190,
+                    18.84,
+                    190,
+                    17.02
+                ],
+                [
+                    189.28,
+                    22.59,
+                    189.28,
+                    20.77,
+                    190,
+                    22.59,
+                    190,
+                    20.77
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957440",
+        "agvName": "压力测试1L-2092065442896957440",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -34.7543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275331,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -34.4,
+                    112.62,
+                    -34.4,
+                    114.42,
+                    -35.1,
+                    112.62,
+                    -35.1
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957447",
+        "agvName": "压力测试1L-2092065442896957447",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 3.1416,
+            "x": 186.0116,
+            "y": 19.9632
+        },
+        "batteryState": {
+            "batteryCharge": 86.87,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275330,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "ccf9290f97a4496b86b9e3cd4c3c0ec7",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    182.7,
+                    19.6,
+                    186.32,
+                    19.6,
+                    182.7,
+                    20.32,
+                    186.32,
+                    20.32
+                ],
+                [
+                    182.7,
+                    19.6,
+                    184.52,
+                    19.6,
+                    182.7,
+                    20.32,
+                    184.52,
+                    20.32
+                ],
+                [
+                    182.7,
+                    19.62,
+                    184.52,
+                    19.59,
+                    182.71,
+                    20.34,
+                    184.53,
+                    20.31
+                ],
+                [
+                    184.5,
+                    19.6,
+                    186.32,
+                    19.6,
+                    184.5,
+                    20.32,
+                    186.32,
+                    20.32
+                ],
+                [
+                    186.29,
+                    19.63,
+                    188.11,
+                    19.59,
+                    186.31,
+                    20.35,
+                    188.13,
+                    20.31
+                ],
+                [
+                    186.3,
+                    19.6,
+                    188.12,
+                    19.6,
+                    186.3,
+                    20.32,
+                    188.12,
+                    20.32
+                ],
+                [
+                    183.92,
+                    19.6,
+                    188.12,
+                    19.6,
+                    183.92,
+                    20.32,
+                    188.12,
+                    20.32
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957446",
+        "agvName": "压力测试1L-2092065442896957446",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 158.7216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275328,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    159.07,
+                    -12.55,
+                    159.07,
+                    -10.75,
+                    158.37,
+                    -12.55,
+                    158.37,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957445",
+        "agvName": "压力测试1L-2092065442896957445",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 14.5343,
+            "y": -52.4456
+        },
+        "batteryState": {
+            "batteryCharge": 87.78,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275326,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "80a8d24def074a96923854319d6211c5",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    19.43,
+                    -52.09,
+                    15.23,
+                    -52.09,
+                    19.43,
+                    -52.81,
+                    15.23,
+                    -52.81
+                ],
+                [
+                    17.63,
+                    -52.09,
+                    13.42,
+                    -52.09,
+                    17.63,
+                    -52.81,
+                    13.42,
+                    -52.81
+                ],
+                [
+                    15.24,
+                    -52.09,
+                    13.42,
+                    -52.09,
+                    15.24,
+                    -52.81,
+                    13.42,
+                    -52.81
+                ],
+                [
+                    17.05,
+                    -52.09,
+                    15.23,
+                    -52.09,
+                    17.05,
+                    -52.81,
+                    15.23,
+                    -52.81
+                ],
+                [
+                    18.86,
+                    -52.09,
+                    17.04,
+                    -52.09,
+                    18.86,
+                    -52.81,
+                    17.04,
+                    -52.81
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2092065442896957444",
+        "agvName": "压力测试1L-2092065442896957444",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 5.3143,
+            "y": -41.6671
+        },
+        "batteryState": {
+            "batteryCharge": 87.02,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787622275323,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "e0ef3f5e04c742d1b5ee475603ddb09f",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    5.67,
+                    -41.67,
+                    5.67,
+                    -39.85,
+                    4.95,
+                    -41.67,
+                    4.95,
+                    -39.85
+                ],
+                [
+                    5.67,
+                    -43.6,
+                    5.67,
+                    -39.85,
+                    4.95,
+                    -43.6,
+                    4.95,
+                    -39.85
+                ],
+                [
+                    5.67,
+                    -43.02,
+                    5.67,
+                    -41.2,
+                    4.95,
+                    -43.02,
+                    4.95,
+                    -41.2
+                ],
+                [
+                    5.67,
+                    -44.37,
+                    5.67,
+                    -42.55,
+                    4.95,
+                    -44.37,
+                    4.95,
+                    -42.55
+                ],
+                [
+                    5.67,
+                    -44.95,
+                    5.67,
+                    -41.2,
+                    4.95,
+                    -44.95,
+                    4.95,
+                    -41.2
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588096",
+        "agvName": "压力测试1L-2091809569859588096",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -36.5543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251862,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -36.2,
+                    112.62,
+                    -36.2,
+                    114.42,
+                    -36.9,
+                    112.62,
+                    -36.9
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588099",
+        "agvName": "压力测试1L-2091809569859588099",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 156.9216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251856,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    157.27,
+                    -12.55,
+                    157.27,
+                    -10.75,
+                    156.57,
+                    -12.55,
+                    156.57,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588097",
+        "agvName": "压力测试1L-2091809569859588097",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -25.7543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251855,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -25.4,
+                    112.62,
+                    -25.4,
+                    114.42,
+                    -26.1,
+                    112.62,
+                    -26.1
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588098",
+        "agvName": "压力测试1L-2091809569859588098",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 142.5216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251854,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    142.87,
+                    -12.55,
+                    142.87,
+                    -10.75,
+                    142.17,
+                    -12.55,
+                    142.17,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569855393792",
+        "agvName": "压力测试1L-2091809569855393792",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5997,
+            "x": 203.2358,
+            "y": 20.791
+        },
+        "batteryState": {
+            "batteryCharge": 87.63,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251849,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "1ed526e8d63f43af9a61feb9fd01b9a9",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    200.29,
+                    19.18,
+                    202.11,
+                    19.21,
+                    200.27,
+                    19.9,
+                    202.09,
+                    19.93
+                ],
+                [
+                    200.27,
+                    19.23,
+                    202.09,
+                    19.18,
+                    200.29,
+                    19.95,
+                    202.11,
+                    19.9
+                ],
+                [
+                    203.6,
+                    19.9,
+                    203.6,
+                    21.72,
+                    202.88,
+                    19.9,
+                    202.88,
+                    21.72
+                ],
+                [
+                    203.51,
+                    19.42,
+                    203.63,
+                    21.24,
+                    202.79,
+                    19.47,
+                    202.91,
+                    21.28
+                ],
+                [
+                    203.3,
+                    19.04,
+                    203.67,
+                    20.82,
+                    202.59,
+                    19.19,
+                    202.97,
+                    20.97
+                ],
+                [
+                    202.87,
+                    18.8,
+                    203.72,
+                    20.4,
+                    202.23,
+                    19.14,
+                    203.09,
+                    20.74
+                ],
+                [
+                    202.27,
+                    18.8,
+                    203.68,
+                    19.94,
+                    201.82,
+                    19.36,
+                    203.23,
+                    20.5
+                ],
+                [
+                    201.74,
+                    18.96,
+                    203.46,
+                    19.56,
+                    201.5,
+                    19.64,
+                    203.22,
+                    20.24
+                ],
+                [
+                    201.31,
+                    19.09,
+                    203.11,
+                    19.35,
+                    201.2,
+                    19.8,
+                    203,
+                    20.06
+                ],
+                [
+                    200.84,
+                    19.16,
+                    202.66,
+                    19.25,
+                    200.8,
+                    19.87,
+                    202.62,
+                    19.97
+                ],
+                [
+                    200.29,
+                    19.18,
+                    202.11,
+                    19.21,
+                    200.27,
+                    19.9,
+                    202.09,
+                    19.93
+                ],
+                [
+                    202.11,
+                    19.9,
+                    200.29,
+                    19.95,
+                    202.09,
+                    19.18,
+                    200.27,
+                    19.23
+                ],
+                [
+                    202.66,
+                    19.86,
+                    200.84,
+                    19.97,
+                    202.61,
+                    19.14,
+                    200.79,
+                    19.25
+                ],
+                [
+                    203.1,
+                    19.75,
+                    201.3,
+                    20.03,
+                    202.99,
+                    19.04,
+                    201.19,
+                    19.31
+                ],
+                [
+                    203.45,
+                    19.54,
+                    201.73,
+                    20.15,
+                    203.21,
+                    18.86,
+                    201.49,
+                    19.47
+                ],
+                [
+                    203.67,
+                    19.17,
+                    202.25,
+                    20.31,
+                    203.22,
+                    18.61,
+                    201.8,
+                    19.75
+                ],
+                [
+                    203.72,
+                    18.71,
+                    202.84,
+                    20.31,
+                    203.08,
+                    18.37,
+                    202.21,
+                    19.96
+                ],
+                [
+                    203.67,
+                    18.29,
+                    203.27,
+                    20.07,
+                    202.97,
+                    18.14,
+                    202.57,
+                    19.91
+                ],
+                [
+                    203.63,
+                    17.88,
+                    203.49,
+                    19.69,
+                    202.91,
+                    17.83,
+                    202.78,
+                    19.64
+                ],
+                [
+                    203.62,
+                    16.82,
+                    203.58,
+                    19.22,
+                    202.9,
+                    16.81,
+                    202.86,
+                    19.21
+                ],
+                [
+                    203.6,
+                    19.9,
+                    203.6,
+                    21.72,
+                    202.88,
+                    19.9,
+                    202.88,
+                    21.72
+                ],
+                [
+                    203.6,
+                    19.9,
+                    203.6,
+                    21.72,
+                    202.88,
+                    19.9,
+                    202.88,
+                    21.72
+                ],
+                [
+                    202.86,
+                    19.21,
+                    202.89,
+                    17.39,
+                    203.58,
+                    19.22,
+                    203.61,
+                    17.4
+                ],
+                [
+                    202.88,
+                    19.22,
+                    202.88,
+                    17.4,
+                    203.6,
+                    19.22,
+                    203.6,
+                    17.4
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588103",
+        "agvName": "压力测试1L-2091809569859588103",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -31.1543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251834,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -30.8,
+                    112.62,
+                    -30.8,
+                    114.42,
+                    -31.5,
+                    112.62,
+                    -31.5
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588104",
+        "agvName": "压力测试1L-2091809569859588104",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 146.1216,
+            "y": -11.3985
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251833,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    146.47,
+                    -12.55,
+                    146.47,
+                    -10.75,
+                    145.77,
+                    -12.55,
+                    145.77,
+                    -10.75
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588101",
+        "agvName": "压力测试1L-2091809569859588101",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 149.5816,
+            "y": 12.4632
+        },
+        "batteryState": {
+            "batteryCharge": 87.32,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251831,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "e4d9e30a1a4645bba686d6c42067a493",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    153.2,
+                    12.82,
+                    149,
+                    12.82,
+                    153.2,
+                    12.1,
+                    149,
+                    12.1
+                ],
+                [
+                    151.4,
+                    12.82,
+                    147.2,
+                    12.82,
+                    151.4,
+                    12.1,
+                    147.2,
+                    12.1
+                ],
+                [
+                    152.62,
+                    12.82,
+                    150.8,
+                    12.82,
+                    152.62,
+                    12.1,
+                    150.8,
+                    12.1
+                ],
+                [
+                    150.82,
+                    12.82,
+                    149,
+                    12.82,
+                    150.82,
+                    12.1,
+                    149,
+                    12.1
+                ],
+                [
+                    149.02,
+                    12.82,
+                    147.2,
+                    12.82,
+                    149.02,
+                    12.1,
+                    147.2,
+                    12.1
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588102",
+        "agvName": "压力测试1L-2091809569859588102",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -29.3543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251829,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -29,
+                    112.62,
+                    -29,
+                    114.42,
+                    -29.7,
+                    112.62,
+                    -29.7
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2091809569859588100",
+        "agvName": "压力测试1L-2091809569859588100",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -32.9543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1787561251826,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -32.6,
+                    112.62,
+                    -32.6,
+                    114.42,
+                    -33.3,
+                    112.62,
+                    -33.3
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561024",
+        "agvName": "KSDY-001",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 173.8116,
+            "y": 27.4632
+        },
+        "batteryState": {
+            "batteryCharge": 87.02,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093422,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "a2b3a7e790e84c36b3d939210b391e3c",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    177.82,
+                    27.82,
+                    176,
+                    27.82,
+                    177.82,
+                    27.1,
+                    176,
+                    27.1
+                ],
+                [
+                    178.4,
+                    27.82,
+                    174.2,
+                    27.82,
+                    178.4,
+                    27.1,
+                    174.2,
+                    27.1
+                ],
+                [
+                    174.22,
+                    27.82,
+                    172.4,
+                    27.82,
+                    174.22,
+                    27.1,
+                    172.4,
+                    27.1
+                ],
+                [
+                    176.6,
+                    27.82,
+                    172.4,
+                    27.82,
+                    176.6,
+                    27.1,
+                    172.4,
+                    27.1
+                ],
+                [
+                    176.02,
+                    27.82,
+                    174.2,
+                    27.82,
+                    176.02,
+                    27.1,
+                    174.2,
+                    27.1
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561025",
+        "agvName": "KSDY-002",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -22.1543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093421,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -21.8,
+                    112.62,
+                    -21.8,
+                    114.42,
+                    -22.5,
+                    112.62,
+                    -22.5
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561026",
+        "agvName": "KSDY-003",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 33.1402,
+            "y": -21.7469
+        },
+        "batteryState": {
+            "batteryCharge": 87.78,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093420,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "e9fef574caf74979b7d2917b3214b982",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    32.78,
+                    -19.62,
+                    32.78,
+                    -23.32,
+                    33.5,
+                    -19.62,
+                    33.5,
+                    -23.32
+                ],
+                [
+                    33.5,
+                    -20.72,
+                    33.5,
+                    -18.9,
+                    32.78,
+                    -20.72,
+                    32.78,
+                    -18.9
+                ],
+                [
+                    32.78,
+                    -18.32,
+                    32.78,
+                    -22.02,
+                    33.5,
+                    -18.32,
+                    33.5,
+                    -22.02
+                ],
+                [
+                    33.5,
+                    -22.02,
+                    33.5,
+                    -20.2,
+                    32.78,
+                    -22.02,
+                    32.78,
+                    -20.2
+                ],
+                [
+                    33.5,
+                    -23.32,
+                    33.5,
+                    -21.5,
+                    32.78,
+                    -23.32,
+                    32.78,
+                    -21.5
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": -0.1,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561027",
+        "agvName": "KSDY-004",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -0.1033,
+            "x": 4.7948,
+            "y": -45.9214
+        },
+        "batteryState": {
+            "batteryCharge": 87.17,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093419,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "d4e61907c0fb40228f0db879d27e3624",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    4.96,
+                    -46.24,
+                    4.95,
+                    -48.06,
+                    5.68,
+                    -46.25,
+                    5.67,
+                    -48.07
+                ],
+                [
+                    4.9,
+                    -45.63,
+                    4.99,
+                    -47.44,
+                    5.62,
+                    -45.59,
+                    5.71,
+                    -47.41
+                ],
+                [
+                    4.59,
+                    -45.38,
+                    5.17,
+                    -47.1,
+                    5.27,
+                    -45.15,
+                    5.85,
+                    -46.87
+                ],
+                [
+                    4.05,
+                    -45.77,
+                    5.58,
+                    -46.75,
+                    4.44,
+                    -45.16,
+                    5.97,
+                    -46.14
+                ],
+                [
+                    3.76,
+                    -46.17,
+                    5.57,
+                    -46.36,
+                    3.83,
+                    -45.46,
+                    5.64,
+                    -45.65
+                ],
+                [
+                    2.73,
+                    -46.27,
+                    5.13,
+                    -46.26,
+                    2.72,
+                    -45.55,
+                    5.12,
+                    -45.54
+                ],
+                [
+                    5.12,
+                    -45.54,
+                    3.3,
+                    -45.55,
+                    5.13,
+                    -46.26,
+                    3.31,
+                    -46.27
+                ],
+                [
+                    5.12,
+                    -45.55,
+                    3.3,
+                    -45.55,
+                    5.12,
+                    -46.27,
+                    3.3,
+                    -46.27
+                ],
+                [
+                    2.3,
+                    -46.27,
+                    5.12,
+                    -46.27,
+                    2.3,
+                    -45.55,
+                    5.12,
+                    -45.55
+                ],
+                [
+                    5.67,
+                    -48.07,
+                    5.67,
+                    -46.25,
+                    4.95,
+                    -48.07,
+                    4.95,
+                    -46.25
+                ],
+                [
+                    5.67,
+                    -48.07,
+                    5.68,
+                    -46.25,
+                    4.95,
+                    -48.06,
+                    4.96,
+                    -46.24
+                ],
+                [
+                    4.12,
+                    -45.55,
+                    2.3,
+                    -45.55,
+                    4.12,
+                    -46.27,
+                    2.3,
+                    -46.27
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561028",
+        "agvName": "KSDY-005",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 8.4764,
+            "y": -25.4386
+        },
+        "batteryState": {
+            "batteryCharge": 88.08,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093414,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "04e74bf89aae428689ec4fab2790146a",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    8.12,
+                    -22.78,
+                    8.12,
+                    -26.48,
+                    8.84,
+                    -22.78,
+                    8.84,
+                    -26.48
+                ],
+                [
+                    8.12,
+                    -21.28,
+                    8.12,
+                    -25.18,
+                    8.84,
+                    -21.28,
+                    8.84,
+                    -25.18
+                ],
+                [
+                    8.12,
+                    -23.36,
+                    8.12,
+                    -25.18,
+                    8.84,
+                    -23.36,
+                    8.84,
+                    -25.18
+                ],
+                [
+                    8.12,
+                    -21.86,
+                    8.12,
+                    -23.68,
+                    8.84,
+                    -21.86,
+                    8.84,
+                    -23.68
+                ],
+                [
+                    8.12,
+                    -24.66,
+                    8.12,
+                    -26.48,
+                    8.84,
+                    -24.66,
+                    8.84,
+                    -26.48
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561029",
+        "agvName": "KSDY-006",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 113.2666,
+            "y": -20.3543
+        },
+        "batteryState": {
+            "batteryCharge": 100,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": true
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093412,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    114.42,
+                    -20,
+                    112.62,
+                    -20,
+                    114.42,
+                    -20.7,
+                    112.62,
+                    -20.7
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "CHARGE",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561030",
+        "agvName": "KSDY-007",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 230.0797,
+            "y": 12.0589
+        },
+        "batteryState": {
+            "batteryCharge": 87.32,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093403,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "2133981d446d42e994da3a1d07cb6b35",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    231.4,
+                    12.43,
+                    229.58,
+                    12.41,
+                    231.4,
+                    11.71,
+                    229.58,
+                    11.69
+                ],
+                [
+                    231.96,
+                    12.45,
+                    230.14,
+                    12.41,
+                    231.97,
+                    11.73,
+                    230.15,
+                    11.69
+                ],
+                [
+                    232.45,
+                    12.48,
+                    230.63,
+                    12.42,
+                    232.47,
+                    11.76,
+                    230.66,
+                    11.7
+                ],
+                [
+                    232.87,
+                    12.54,
+                    231.05,
+                    12.42,
+                    232.92,
+                    11.82,
+                    231.1,
+                    11.7
+                ],
+                [
+                    233.22,
+                    12.63,
+                    231.41,
+                    12.41,
+                    233.31,
+                    11.92,
+                    231.5,
+                    11.7
+                ],
+                [
+                    233.5,
+                    12.78,
+                    231.72,
+                    12.4,
+                    233.64,
+                    12.07,
+                    231.86,
+                    11.7
+                ],
+                [
+                    233.69,
+                    12.98,
+                    231.97,
+                    12.39,
+                    233.92,
+                    12.3,
+                    232.2,
+                    11.71
+                ],
+                [
+                    233.77,
+                    13.24,
+                    232.18,
+                    12.35,
+                    234.12,
+                    12.61,
+                    232.53,
+                    11.73
+                ],
+                [
+                    233.75,
+                    13.53,
+                    232.38,
+                    12.32,
+                    234.22,
+                    12.99,
+                    232.86,
+                    11.78
+                ],
+                [
+                    233.64,
+                    13.81,
+                    232.59,
+                    12.32,
+                    234.23,
+                    13.39,
+                    233.17,
+                    11.9
+                ],
+                [
+                    233.5,
+                    14.06,
+                    232.78,
+                    12.39,
+                    234.16,
+                    13.77,
+                    233.44,
+                    12.1
+                ],
+                [
+                    233.39,
+                    14.31,
+                    232.94,
+                    12.54,
+                    234.09,
+                    14.13,
+                    233.64,
+                    12.36
+                ],
+                [
+                    233.31,
+                    14.58,
+                    233.06,
+                    12.78,
+                    234.03,
+                    14.48,
+                    233.77,
+                    12.68
+                ],
+                [
+                    233.26,
+                    14.9,
+                    233.14,
+                    13.08,
+                    233.98,
+                    14.85,
+                    233.86,
+                    13.04
+                ],
+                [
+                    233.23,
+                    15.86,
+                    233.19,
+                    13.46,
+                    233.95,
+                    15.84,
+                    233.91,
+                    13.44
+                ],
+                [
+                    229.6,
+                    12.42,
+                    227.78,
+                    12.42,
+                    229.6,
+                    11.7,
+                    227.78,
+                    11.7
+                ],
+                [
+                    233.22,
+                    15.28,
+                    233.19,
+                    13.46,
+                    233.94,
+                    15.26,
+                    233.91,
+                    13.44
+                ],
+                [
+                    233.2,
+                    15.27,
+                    233.2,
+                    13.45,
+                    233.92,
+                    15.27,
+                    233.92,
+                    13.45
+                ],
+                [
+                    231.4,
+                    12.42,
+                    227.78,
+                    12.42,
+                    231.4,
+                    11.7,
+                    227.78,
+                    11.7
+                ],
+                [
+                    231.4,
+                    12.42,
+                    229.58,
+                    12.42,
+                    231.4,
+                    11.7,
+                    229.58,
+                    11.7
+                ],
+                [
+                    231.4,
+                    12.43,
+                    229.58,
+                    12.41,
+                    231.4,
+                    11.71,
+                    229.58,
+                    11.69
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561031",
+        "agvName": "KSDY-008",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 28.4132,
+            "y": -52.4456
+        },
+        "batteryState": {
+            "batteryCharge": 87.32,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093401,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "5cd3ca62973c40debfbdcb14cba0ce7c",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    31.49,
+                    -52.09,
+                    29.67,
+                    -52.09,
+                    31.49,
+                    -52.81,
+                    29.67,
+                    -52.81
+                ],
+                [
+                    29.69,
+                    -52.09,
+                    27.87,
+                    -52.09,
+                    29.69,
+                    -52.81,
+                    27.87,
+                    -52.81
+                ],
+                [
+                    30.27,
+                    -52.09,
+                    26.06,
+                    -52.09,
+                    30.27,
+                    -52.81,
+                    26.06,
+                    -52.81
+                ],
+                [
+                    32.07,
+                    -52.09,
+                    27.87,
+                    -52.09,
+                    32.07,
+                    -52.81,
+                    27.87,
+                    -52.81
+                ],
+                [
+                    27.88,
+                    -52.09,
+                    26.06,
+                    -52.09,
+                    27.88,
+                    -52.81,
+                    26.06,
+                    -52.81
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561032",
+        "agvName": "KSDY-009",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 53.3955,
+            "y": -52.9118
+        },
+        "batteryState": {
+            "batteryCharge": 87.47,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093400,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "caedf2a2940c4b0498d6fe197a236fc0",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    55.14,
+                    -52.55,
+                    53.32,
+                    -52.55,
+                    55.14,
+                    -53.27,
+                    53.32,
+                    -53.27
+                ],
+                [
+                    57.53,
+                    -52.55,
+                    53.32,
+                    -52.55,
+                    57.53,
+                    -53.27,
+                    53.32,
+                    -53.27
+                ],
+                [
+                    53.34,
+                    -52.55,
+                    51.52,
+                    -52.55,
+                    53.34,
+                    -53.27,
+                    51.52,
+                    -53.27
+                ],
+                [
+                    56.95,
+                    -52.55,
+                    55.13,
+                    -52.55,
+                    56.95,
+                    -53.27,
+                    55.13,
+                    -53.27
+                ],
+                [
+                    55.72,
+                    -52.55,
+                    51.52,
+                    -52.55,
+                    55.72,
+                    -53.27,
+                    51.52,
+                    -53.27
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0.25,
+            "length": 1.8,
+            "loadLength": 1.8,
+            "loadWidth": 0.7,
+            "width": 0.7
+        },
+        "agvKey": "2088197502770561033",
+        "agvName": "KSDY-010",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 3.1416,
+            "x": 45.8418,
+            "y": -51.4448
+        },
+        "batteryState": {
+            "batteryCharge": 86.88,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786700093398,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "a7ee5396751d4b29937759c1c7f7afff",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    45.39,
+                    -51.8,
+                    47.21,
+                    -51.8,
+                    45.39,
+                    -51.08,
+                    47.21,
+                    -51.08
+                ],
+                [
+                    43.59,
+                    -51.8,
+                    45.41,
+                    -51.8,
+                    43.59,
+                    -51.08,
+                    45.41,
+                    -51.08
+                ],
+                [
+                    41.79,
+                    -51.8,
+                    43.61,
+                    -51.8,
+                    41.79,
+                    -51.08,
+                    43.61,
+                    -51.08
+                ],
+                [
+                    43.01,
+                    -51.8,
+                    47.21,
+                    -51.8,
+                    43.01,
+                    -51.08,
+                    47.21,
+                    -51.08
+                ],
+                [
+                    41.21,
+                    -51.8,
+                    45.41,
+                    -51.8,
+                    41.21,
+                    -51.08,
+                    45.41,
+                    -51.08
+                ]
+            ]
+        },
+        "type": 1,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400459",
+        "agvName": "压力测试1L-2088190808791400459",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 45,
+            "y": 29
+        },
+        "batteryState": {
+            "batteryCharge": 87.32,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472069,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "f3f82bac74474fb4a7a96d52ba749c4b",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    31.96,
+                    25.59,
+                    35.61,
+                    25.59,
+                    31.96,
+                    26.41,
+                    35.61,
+                    26.41
+                ],
+                [
+                    45.41,
+                    26.46,
+                    45.41,
+                    29.61,
+                    44.59,
+                    26.46,
+                    44.59,
+                    29.61
+                ],
+                [
+                    11.96,
+                    25.59,
+                    15.61,
+                    25.59,
+                    11.96,
+                    26.41,
+                    15.61,
+                    26.41
+                ],
+                [
+                    14.39,
+                    25.59,
+                    15.61,
+                    25.59,
+                    14.39,
+                    26.41,
+                    15.61,
+                    26.41
+                ],
+                [
+                    45.41,
+                    25.39,
+                    45.41,
+                    28.11,
+                    44.59,
+                    25.39,
+                    44.59,
+                    28.11
+                ],
+                [
+                    44.59,
+                    28.11,
+                    44.59,
+                    26.89,
+                    45.41,
+                    28.11,
+                    45.41,
+                    26.89
+                ],
+                [
+                    16.39,
+                    25.59,
+                    17.61,
+                    25.59,
+                    16.39,
+                    26.41,
+                    17.61,
+                    26.41
+                ],
+                [
+                    44.59,
+                    26.61,
+                    44.59,
+                    25.39,
+                    45.41,
+                    26.61,
+                    45.41,
+                    25.39
+                ],
+                [
+                    44.34,
+                    26.32,
+                    44.95,
+                    25.27,
+                    45.05,
+                    26.73,
+                    45.66,
+                    25.68
+                ],
+                [
+                    44.27,
+                    25.95,
+                    45.32,
+                    25.34,
+                    44.68,
+                    26.66,
+                    45.73,
+                    26.05
+                ],
+                [
+                    44.39,
+                    25.59,
+                    45.61,
+                    25.59,
+                    44.39,
+                    26.41,
+                    45.61,
+                    26.41
+                ],
+                [
+                    28.39,
+                    25.59,
+                    29.61,
+                    25.59,
+                    28.39,
+                    26.41,
+                    29.61,
+                    26.41
+                ],
+                [
+                    8.39,
+                    25.59,
+                    9.61,
+                    25.59,
+                    8.39,
+                    26.41,
+                    9.61,
+                    26.41
+                ],
+                [
+                    26.39,
+                    25.59,
+                    27.61,
+                    25.59,
+                    26.39,
+                    26.41,
+                    27.61,
+                    26.41
+                ],
+                [
+                    4.39,
+                    25.59,
+                    5.61,
+                    25.59,
+                    4.39,
+                    26.41,
+                    5.61,
+                    26.41
+                ],
+                [
+                    12.39,
+                    25.59,
+                    13.61,
+                    25.59,
+                    12.39,
+                    26.41,
+                    13.61,
+                    26.41
+                ],
+                [
+                    7.96,
+                    25.59,
+                    11.61,
+                    25.59,
+                    7.96,
+                    26.41,
+                    11.61,
+                    26.41
+                ],
+                [
+                    10.39,
+                    25.59,
+                    11.61,
+                    25.59,
+                    10.39,
+                    26.41,
+                    11.61,
+                    26.41
+                ],
+                [
+                    37.96,
+                    25.59,
+                    41.61,
+                    25.59,
+                    37.96,
+                    26.41,
+                    41.61,
+                    26.41
+                ],
+                [
+                    42.39,
+                    25.59,
+                    43.61,
+                    25.59,
+                    42.39,
+                    26.41,
+                    43.61,
+                    26.41
+                ],
+                [
+                    25.96,
+                    25.59,
+                    29.61,
+                    25.59,
+                    25.96,
+                    26.41,
+                    29.61,
+                    26.41
+                ],
+                [
+                    36.39,
+                    25.59,
+                    37.61,
+                    25.59,
+                    36.39,
+                    26.41,
+                    37.61,
+                    26.41
+                ],
+                [
+                    35.96,
+                    25.59,
+                    39.61,
+                    25.59,
+                    35.96,
+                    26.41,
+                    39.61,
+                    26.41
+                ],
+                [
+                    41.96,
+                    25.59,
+                    45.61,
+                    25.59,
+                    41.96,
+                    26.41,
+                    45.61,
+                    26.41
+                ],
+                [
+                    34.39,
+                    25.59,
+                    35.61,
+                    25.59,
+                    34.39,
+                    26.41,
+                    35.61,
+                    26.41
+                ],
+                [
+                    9.96,
+                    25.59,
+                    13.61,
+                    25.59,
+                    9.96,
+                    26.41,
+                    13.61,
+                    26.41
+                ],
+                [
+                    27.96,
+                    25.59,
+                    31.61,
+                    25.59,
+                    27.96,
+                    26.41,
+                    31.61,
+                    26.41
+                ],
+                [
+                    32.39,
+                    25.59,
+                    33.61,
+                    25.59,
+                    32.39,
+                    26.41,
+                    33.61,
+                    26.41
+                ],
+                [
+                    33.96,
+                    25.59,
+                    37.61,
+                    25.59,
+                    33.96,
+                    26.41,
+                    37.61,
+                    26.41
+                ],
+                [
+                    38.39,
+                    25.59,
+                    39.61,
+                    25.59,
+                    38.39,
+                    26.41,
+                    39.61,
+                    26.41
+                ],
+                [
+                    19.96,
+                    25.59,
+                    23.61,
+                    25.59,
+                    19.96,
+                    26.41,
+                    23.61,
+                    26.41
+                ],
+                [
+                    18.39,
+                    25.59,
+                    19.61,
+                    25.59,
+                    18.39,
+                    26.41,
+                    19.61,
+                    26.41
+                ],
+                [
+                    44.59,
+                    29.61,
+                    44.59,
+                    28.39,
+                    45.41,
+                    29.61,
+                    45.41,
+                    28.39
+                ],
+                [
+                    29.96,
+                    25.59,
+                    33.61,
+                    25.59,
+                    29.96,
+                    26.41,
+                    33.61,
+                    26.41
+                ],
+                [
+                    15.96,
+                    25.59,
+                    19.61,
+                    25.59,
+                    15.96,
+                    26.41,
+                    19.61,
+                    26.41
+                ],
+                [
+                    5.96,
+                    25.59,
+                    9.61,
+                    25.59,
+                    5.96,
+                    26.41,
+                    9.61,
+                    26.41
+                ],
+                [
+                    24.39,
+                    25.59,
+                    25.61,
+                    25.59,
+                    24.39,
+                    26.41,
+                    25.61,
+                    26.41
+                ],
+                [
+                    23.96,
+                    25.59,
+                    27.61,
+                    25.59,
+                    23.96,
+                    26.41,
+                    27.61,
+                    26.41
+                ],
+                [
+                    30.39,
+                    25.59,
+                    31.61,
+                    25.59,
+                    30.39,
+                    26.41,
+                    31.61,
+                    26.41
+                ],
+                [
+                    1.39,
+                    25.59,
+                    5.61,
+                    25.59,
+                    1.39,
+                    26.41,
+                    5.61,
+                    26.41
+                ],
+                [
+                    3.96,
+                    25.59,
+                    7.61,
+                    25.59,
+                    3.96,
+                    26.41,
+                    7.61,
+                    26.41
+                ],
+                [
+                    1.39,
+                    25.59,
+                    2.61,
+                    25.59,
+                    1.39,
+                    26.41,
+                    2.61,
+                    26.41
+                ],
+                [
+                    1.68,
+                    25.34,
+                    2.73,
+                    25.95,
+                    1.27,
+                    26.05,
+                    2.32,
+                    26.66
+                ],
+                [
+                    2.05,
+                    25.27,
+                    2.66,
+                    26.32,
+                    1.34,
+                    25.68,
+                    1.95,
+                    26.73
+                ],
+                [
+                    2.41,
+                    25.39,
+                    2.41,
+                    26.61,
+                    1.59,
+                    25.39,
+                    1.59,
+                    26.61
+                ],
+                [
+                    13.96,
+                    25.59,
+                    17.61,
+                    25.59,
+                    13.96,
+                    26.41,
+                    17.61,
+                    26.41
+                ],
+                [
+                    21.96,
+                    25.59,
+                    25.61,
+                    25.59,
+                    21.96,
+                    26.41,
+                    25.61,
+                    26.41
+                ],
+                [
+                    40.39,
+                    25.59,
+                    41.61,
+                    25.59,
+                    40.39,
+                    26.41,
+                    41.61,
+                    26.41
+                ],
+                [
+                    20.39,
+                    25.59,
+                    21.61,
+                    25.59,
+                    20.39,
+                    26.41,
+                    21.61,
+                    26.41
+                ],
+                [
+                    39.96,
+                    25.59,
+                    43.61,
+                    25.59,
+                    39.96,
+                    26.41,
+                    43.61,
+                    26.41
+                ],
+                [
+                    6.39,
+                    25.59,
+                    7.61,
+                    25.59,
+                    6.39,
+                    26.41,
+                    7.61,
+                    26.41
+                ],
+                [
+                    17.96,
+                    25.59,
+                    21.61,
+                    25.59,
+                    17.96,
+                    26.41,
+                    21.61,
+                    26.41
+                ],
+                [
+                    22.39,
+                    25.59,
+                    23.61,
+                    25.59,
+                    22.39,
+                    26.41,
+                    23.61,
+                    26.41
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    44.6,
+                    29.6,
+                    44.6,
+                    28.4,
+                    45.4,
+                    29.6,
+                    45.4,
+                    28.4
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400458",
+        "agvName": "压力测试1L-2088190808791400458",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 41.77,
+            "y": 40
+        },
+        "batteryState": {
+            "batteryCharge": 87.93,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472065,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "0bda1b9a16d34863a469cdb316600823",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    44.61,
+                    40.41,
+                    43.39,
+                    40.41,
+                    44.61,
+                    39.59,
+                    43.39,
+                    39.59
+                ],
+                [
+                    43.04,
+                    40.41,
+                    39.39,
+                    40.41,
+                    43.04,
+                    39.59,
+                    39.39,
+                    39.59
+                ],
+                [
+                    42.61,
+                    40.41,
+                    41.39,
+                    40.41,
+                    42.61,
+                    39.59,
+                    41.39,
+                    39.59
+                ],
+                [
+                    40.61,
+                    40.41,
+                    39.39,
+                    40.41,
+                    40.61,
+                    39.59,
+                    39.39,
+                    39.59
+                ],
+                [
+                    45.04,
+                    40.41,
+                    41.39,
+                    40.41,
+                    45.04,
+                    39.59,
+                    41.39,
+                    39.59
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400455",
+        "agvName": "压力测试1L-2088190808791400455",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 28.9408,
+            "y": 26
+        },
+        "batteryState": {
+            "batteryCharge": 87.63,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472061,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "8c9e8bc82cb24bbda797e0e0d63f943c",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    29.41,
+                    23.39,
+                    29.41,
+                    24.61,
+                    28.59,
+                    23.39,
+                    28.59,
+                    24.61
+                ],
+                [
+                    27.61,
+                    26.41,
+                    26.39,
+                    26.41,
+                    27.61,
+                    25.59,
+                    26.39,
+                    25.59
+                ],
+                [
+                    29.61,
+                    26.41,
+                    28.39,
+                    26.41,
+                    29.61,
+                    25.59,
+                    28.39,
+                    25.59
+                ],
+                [
+                    29.73,
+                    26.05,
+                    28.68,
+                    26.66,
+                    29.32,
+                    25.34,
+                    28.27,
+                    25.95
+                ],
+                [
+                    29.66,
+                    25.68,
+                    29.05,
+                    26.73,
+                    28.95,
+                    25.27,
+                    28.34,
+                    26.32
+                ],
+                [
+                    29.41,
+                    25.39,
+                    29.41,
+                    26.61,
+                    28.59,
+                    25.39,
+                    28.59,
+                    26.61
+                ],
+                [
+                    29.41,
+                    22.96,
+                    29.41,
+                    26.61,
+                    28.59,
+                    22.96,
+                    28.59,
+                    26.61
+                ],
+                [
+                    29.61,
+                    26.41,
+                    26.39,
+                    26.41,
+                    29.61,
+                    25.59,
+                    26.39,
+                    25.59
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 0.38,
+            "vy": 0.38
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400454",
+        "agvName": "压力测试1L-2088190808791400454",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 3.1416,
+            "x": 27.34,
+            "y": 43.3381
+        },
+        "batteryState": {
+            "batteryCharge": 87.02,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472057,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "ee88bc3f5da243a9a4938abb5dc293be",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    26.39,
+                    42.93,
+                    27.61,
+                    42.93,
+                    26.39,
+                    43.75,
+                    27.61,
+                    43.75
+                ],
+                [
+                    23.96,
+                    42.93,
+                    27.61,
+                    42.93,
+                    23.96,
+                    43.75,
+                    27.61,
+                    43.75
+                ],
+                [
+                    25.96,
+                    42.93,
+                    29.61,
+                    42.93,
+                    25.96,
+                    43.75,
+                    29.61,
+                    43.75
+                ],
+                [
+                    24.39,
+                    42.93,
+                    25.61,
+                    42.93,
+                    24.39,
+                    43.75,
+                    25.61,
+                    43.75
+                ],
+                [
+                    28.39,
+                    42.93,
+                    29.61,
+                    42.93,
+                    28.39,
+                    43.75,
+                    29.61,
+                    43.75
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400457",
+        "agvName": "压力测试1L-2088190808791400457",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 20.17,
+            "y": 26
+        },
+        "batteryState": {
+            "batteryCharge": 87.78,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472053,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "063c70afd8784ba5916ba78a243ff3d5",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    23.61,
+                    26.41,
+                    22.39,
+                    26.41,
+                    23.61,
+                    25.59,
+                    22.39,
+                    25.59
+                ],
+                [
+                    19.61,
+                    26.41,
+                    18.39,
+                    26.41,
+                    19.61,
+                    25.59,
+                    18.39,
+                    25.59
+                ],
+                [
+                    24.04,
+                    26.41,
+                    20.39,
+                    26.41,
+                    24.04,
+                    25.59,
+                    20.39,
+                    25.59
+                ],
+                [
+                    21.61,
+                    26.41,
+                    20.39,
+                    26.41,
+                    21.61,
+                    25.59,
+                    20.39,
+                    25.59
+                ],
+                [
+                    22.04,
+                    26.41,
+                    18.39,
+                    26.41,
+                    22.04,
+                    25.59,
+                    18.39,
+                    25.59
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400456",
+        "agvName": "压力测试1L-2088190808791400456",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 25.77,
+            "y": 5
+        },
+        "batteryState": {
+            "batteryCharge": 87.17,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472049,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "85168614f27c4e43bc20c52317aff03c",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    30.04,
+                    5.41,
+                    26.39,
+                    5.41,
+                    30.04,
+                    4.59,
+                    26.39,
+                    4.59
+                ],
+                [
+                    29.61,
+                    5.41,
+                    28.39,
+                    5.41,
+                    29.61,
+                    4.59,
+                    28.39,
+                    4.59
+                ],
+                [
+                    27.61,
+                    5.41,
+                    26.39,
+                    5.41,
+                    27.61,
+                    4.59,
+                    26.39,
+                    4.59
+                ],
+                [
+                    25.61,
+                    5.41,
+                    24.39,
+                    5.41,
+                    25.61,
+                    4.59,
+                    24.39,
+                    4.59
+                ],
+                [
+                    28.04,
+                    5.41,
+                    24.39,
+                    5.41,
+                    28.04,
+                    4.59,
+                    24.39,
+                    4.59
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400451",
+        "agvName": "压力测试1L-2088190808791400451",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 45,
+            "y": 16
+        },
+        "batteryState": {
+            "batteryCharge": 86.87,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472044,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "0028f616b9474b0ca1682e03658b50aa",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    47.61,
+                    16.41,
+                    46.39,
+                    16.41,
+                    47.61,
+                    15.59,
+                    46.39,
+                    15.59
+                ],
+                [
+                    45.61,
+                    16.41,
+                    44.39,
+                    16.41,
+                    45.61,
+                    15.59,
+                    44.39,
+                    15.59
+                ],
+                [
+                    50.64,
+                    16.28,
+                    48.42,
+                    16.46,
+                    50.58,
+                    15.46,
+                    48.36,
+                    15.64
+                ],
+                [
+                    50.04,
+                    16.41,
+                    46.39,
+                    16.41,
+                    50.04,
+                    15.59,
+                    46.39,
+                    15.59
+                ],
+                [
+                    49.61,
+                    16.41,
+                    48.39,
+                    16.41,
+                    49.61,
+                    15.59,
+                    48.39,
+                    15.59
+                ],
+                [
+                    49.64,
+                    16.36,
+                    48.42,
+                    16.46,
+                    49.58,
+                    15.54,
+                    48.36,
+                    15.64
+                ],
+                [
+                    48.04,
+                    16.41,
+                    44.39,
+                    16.41,
+                    48.04,
+                    15.59,
+                    44.39,
+                    15.59
+                ],
+                [
+                    50.64,
+                    16.28,
+                    49.42,
+                    16.38,
+                    50.58,
+                    15.46,
+                    49.36,
+                    15.56
+                ],
+                [
+                    50.37,
+                    16.55,
+                    49.27,
+                    16.03,
+                    50.73,
+                    15.81,
+                    49.63,
+                    15.29
+                ],
+                [
+                    50.01,
+                    16.66,
+                    49.32,
+                    15.65,
+                    50.68,
+                    16.19,
+                    49.99,
+                    15.19
+                ],
+                [
+                    49.64,
+                    16.56,
+                    49.54,
+                    15.35,
+                    50.46,
+                    16.5,
+                    50.36,
+                    15.28
+                ],
+                [
+                    49.59,
+                    16.53,
+                    49.59,
+                    15.31,
+                    50.41,
+                    16.53,
+                    50.41,
+                    15.31
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    45.6,
+                    16.4,
+                    44.4,
+                    16.4,
+                    45.6,
+                    15.6,
+                    44.4,
+                    15.6
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400450",
+        "agvName": "压力测试1L-2088190808791400450",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 50,
+            "y": 33.47
+        },
+        "batteryState": {
+            "batteryCharge": 87.78,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472038,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "06c28bdb468c471682801610fb765e19",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    49.59,
+                    36.04,
+                    49.59,
+                    33.14,
+                    50.41,
+                    36.04,
+                    50.41,
+                    33.14
+                ],
+                [
+                    49.59,
+                    34.79,
+                    49.59,
+                    31.89,
+                    50.41,
+                    34.79,
+                    50.41,
+                    31.89
+                ],
+                [
+                    49.59,
+                    34.36,
+                    49.59,
+                    33.14,
+                    50.41,
+                    34.36,
+                    50.41,
+                    33.14
+                ],
+                [
+                    49.59,
+                    35.61,
+                    49.59,
+                    34.39,
+                    50.41,
+                    35.61,
+                    50.41,
+                    34.39
+                ],
+                [
+                    49.59,
+                    33.11,
+                    49.59,
+                    31.89,
+                    50.41,
+                    33.11,
+                    50.41,
+                    31.89
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400453",
+        "agvName": "压力测试1L-2088190808791400453",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 38.08,
+            "y": 26
+        },
+        "batteryState": {
+            "batteryCharge": 87.17,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472034,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "1ed2422c088d4593a1b962e1990d0836",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    42.04,
+                    26.41,
+                    38.39,
+                    26.41,
+                    42.04,
+                    25.59,
+                    38.39,
+                    25.59
+                ],
+                [
+                    41.61,
+                    26.41,
+                    40.39,
+                    26.41,
+                    41.61,
+                    25.59,
+                    40.39,
+                    25.59
+                ],
+                [
+                    37.61,
+                    26.41,
+                    36.39,
+                    26.41,
+                    37.61,
+                    25.59,
+                    36.39,
+                    25.59
+                ],
+                [
+                    39.61,
+                    26.41,
+                    38.39,
+                    26.41,
+                    39.61,
+                    25.59,
+                    38.39,
+                    25.59
+                ],
+                [
+                    40.04,
+                    26.41,
+                    36.39,
+                    26.41,
+                    40.04,
+                    25.59,
+                    36.39,
+                    25.59
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400452",
+        "agvName": "压力测试1L-2088190808791400452",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 50,
+            "y": 17.375
+        },
+        "batteryState": {
+            "batteryCharge": 87.63,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472030,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "bd0c5f7f1cb44992808fe04d429a5866",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    49.59,
+                    19.36,
+                    49.59,
+                    18.14,
+                    50.41,
+                    19.36,
+                    50.41,
+                    18.14
+                ],
+                [
+                    49.59,
+                    19.79,
+                    49.59,
+                    16.77,
+                    50.41,
+                    19.79,
+                    50.41,
+                    16.77
+                ],
+                [
+                    49.59,
+                    17.99,
+                    49.59,
+                    16.77,
+                    50.41,
+                    17.99,
+                    50.41,
+                    16.77
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    49.6,
+                    17.98,
+                    49.6,
+                    16.78,
+                    50.4,
+                    17.98,
+                    50.4,
+                    16.78
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400448",
+        "agvName": "压力测试1L-2088190808791400448",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 47,
+            "y": 16
+        },
+        "batteryState": {
+            "batteryCharge": 88.39,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472026,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "94543490d9ed4681a00d581497013334",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    50.64,
+                    16.28,
+                    48.42,
+                    16.46,
+                    50.58,
+                    15.46,
+                    48.36,
+                    15.64
+                ],
+                [
+                    47.61,
+                    16.41,
+                    46.39,
+                    16.41,
+                    47.61,
+                    15.59,
+                    46.39,
+                    15.59
+                ],
+                [
+                    50.04,
+                    16.41,
+                    46.39,
+                    16.41,
+                    50.04,
+                    15.59,
+                    46.39,
+                    15.59
+                ],
+                [
+                    49.61,
+                    16.41,
+                    48.39,
+                    16.41,
+                    49.61,
+                    15.59,
+                    48.39,
+                    15.59
+                ],
+                [
+                    49.64,
+                    16.36,
+                    48.42,
+                    16.46,
+                    49.58,
+                    15.54,
+                    48.36,
+                    15.64
+                ],
+                [
+                    50.64,
+                    16.28,
+                    49.42,
+                    16.38,
+                    50.58,
+                    15.46,
+                    49.36,
+                    15.56
+                ],
+                [
+                    50.37,
+                    16.55,
+                    49.27,
+                    16.03,
+                    50.73,
+                    15.81,
+                    49.63,
+                    15.29
+                ],
+                [
+                    50.01,
+                    16.66,
+                    49.32,
+                    15.65,
+                    50.68,
+                    16.19,
+                    49.99,
+                    15.19
+                ],
+                [
+                    49.64,
+                    16.56,
+                    49.54,
+                    15.35,
+                    50.46,
+                    16.5,
+                    50.36,
+                    15.28
+                ],
+                [
+                    49.59,
+                    16.53,
+                    49.59,
+                    15.31,
+                    50.41,
+                    16.53,
+                    50.41,
+                    15.31
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    47.6,
+                    16.4,
+                    46.4,
+                    16.4,
+                    47.6,
+                    15.6,
+                    46.4,
+                    15.6
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400449",
+        "agvName": "压力测试1L-2088190808791400449",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 62.393,
+            "y": 19.9868
+        },
+        "batteryState": {
+            "batteryCharge": 87.03,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472019,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "47a507ebfec94e8290874cc96f54e628",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    63,
+                    20.4,
+                    59.78,
+                    20.4,
+                    63,
+                    19.58,
+                    59.78,
+                    19.58
+                ],
+                [
+                    63,
+                    20.4,
+                    61.78,
+                    20.4,
+                    63,
+                    19.58,
+                    61.78,
+                    19.58
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400466",
+        "agvName": "压力测试1L-2088190808791400466",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5498,
+            "x": 50,
+            "y": 10.5
+        },
+        "batteryState": {
+            "batteryCharge": 88.08,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472014,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "09e088e5d92a47af91873ffe3840100a",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    52.32,
+                    10.91,
+                    49.39,
+                    10.91,
+                    52.32,
+                    10.09,
+                    49.39,
+                    10.09
+                ],
+                [
+                    51.89,
+                    10.91,
+                    50.67,
+                    10.91,
+                    51.89,
+                    10.09,
+                    50.67,
+                    10.09
+                ],
+                [
+                    49.59,
+                    11.11,
+                    49.59,
+                    8.52,
+                    50.41,
+                    11.11,
+                    50.41,
+                    8.52
+                ],
+                [
+                    49.59,
+                    11.11,
+                    49.59,
+                    9.89,
+                    50.41,
+                    11.11,
+                    50.41,
+                    9.89
+                ],
+                [
+                    49.95,
+                    11.23,
+                    49.34,
+                    10.18,
+                    50.66,
+                    10.82,
+                    50.05,
+                    9.77
+                ],
+                [
+                    50.32,
+                    11.16,
+                    49.27,
+                    10.55,
+                    50.73,
+                    10.45,
+                    49.68,
+                    9.84
+                ],
+                [
+                    50.61,
+                    10.91,
+                    49.39,
+                    10.91,
+                    50.61,
+                    10.09,
+                    49.39,
+                    10.09
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0.2,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400465",
+        "agvName": "压力测试1L-2088190808791400465",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 50,
+            "y": 20.125
+        },
+        "batteryState": {
+            "batteryCharge": 87.48,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472008,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "c09c18d75c72400bb27651c9cd3b018d",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    43.96,
+                    25.59,
+                    47.61,
+                    25.59,
+                    43.96,
+                    26.41,
+                    47.61,
+                    26.41
+                ],
+                [
+                    49.59,
+                    23.92,
+                    49.59,
+                    20.73,
+                    50.41,
+                    23.92,
+                    50.41,
+                    20.73
+                ],
+                [
+                    49.59,
+                    22.38,
+                    49.59,
+                    19.52,
+                    50.41,
+                    22.38,
+                    50.41,
+                    19.52
+                ],
+                [
+                    48.39,
+                    25.59,
+                    49.61,
+                    25.59,
+                    48.39,
+                    26.41,
+                    49.61,
+                    26.41
+                ],
+                [
+                    37.41,
+                    21.39,
+                    37.41,
+                    24.61,
+                    36.59,
+                    21.39,
+                    36.59,
+                    24.61
+                ],
+                [
+                    44.39,
+                    25.59,
+                    45.61,
+                    25.59,
+                    44.39,
+                    26.41,
+                    45.61,
+                    26.41
+                ],
+                [
+                    46.39,
+                    25.59,
+                    47.61,
+                    25.59,
+                    46.39,
+                    26.41,
+                    47.61,
+                    26.41
+                ],
+                [
+                    37.96,
+                    25.59,
+                    41.61,
+                    25.59,
+                    37.96,
+                    26.41,
+                    41.61,
+                    26.41
+                ],
+                [
+                    49.59,
+                    26.61,
+                    49.59,
+                    25.39,
+                    50.41,
+                    26.61,
+                    50.41,
+                    25.39
+                ],
+                [
+                    49.34,
+                    26.32,
+                    49.95,
+                    25.27,
+                    50.05,
+                    26.73,
+                    50.66,
+                    25.68
+                ],
+                [
+                    49.27,
+                    25.95,
+                    50.32,
+                    25.34,
+                    49.68,
+                    26.66,
+                    50.73,
+                    26.05
+                ],
+                [
+                    49.39,
+                    25.59,
+                    50.61,
+                    25.59,
+                    49.39,
+                    26.41,
+                    50.61,
+                    26.41
+                ],
+                [
+                    37.41,
+                    22.96,
+                    37.41,
+                    26.61,
+                    36.59,
+                    22.96,
+                    36.59,
+                    26.61
+                ],
+                [
+                    40.39,
+                    25.59,
+                    41.61,
+                    25.59,
+                    40.39,
+                    26.41,
+                    41.61,
+                    26.41
+                ],
+                [
+                    42.39,
+                    25.59,
+                    43.61,
+                    25.59,
+                    42.39,
+                    26.41,
+                    43.61,
+                    26.41
+                ],
+                [
+                    39.96,
+                    25.59,
+                    43.61,
+                    25.59,
+                    39.96,
+                    26.41,
+                    43.61,
+                    26.41
+                ],
+                [
+                    36.39,
+                    25.59,
+                    39.61,
+                    25.59,
+                    36.39,
+                    26.41,
+                    39.61,
+                    26.41
+                ],
+                [
+                    47.96,
+                    25.59,
+                    50.61,
+                    25.59,
+                    47.96,
+                    26.41,
+                    50.61,
+                    26.41
+                ],
+                [
+                    49.59,
+                    20.74,
+                    49.59,
+                    19.52,
+                    50.41,
+                    20.74,
+                    50.41,
+                    19.52
+                ],
+                [
+                    49.59,
+                    24.86,
+                    49.59,
+                    23.64,
+                    50.41,
+                    24.86,
+                    50.41,
+                    23.64
+                ],
+                [
+                    49.59,
+                    25.29,
+                    49.59,
+                    22.27,
+                    50.41,
+                    25.29,
+                    50.41,
+                    22.27
+                ],
+                [
+                    37.41,
+                    23.39,
+                    37.41,
+                    24.61,
+                    36.59,
+                    23.39,
+                    36.59,
+                    24.61
+                ],
+                [
+                    45.96,
+                    25.59,
+                    49.61,
+                    25.59,
+                    45.96,
+                    26.41,
+                    49.61,
+                    26.41
+                ],
+                [
+                    37.41,
+                    21.39,
+                    37.41,
+                    22.61,
+                    36.59,
+                    21.39,
+                    36.59,
+                    22.61
+                ],
+                [
+                    49.59,
+                    23.49,
+                    49.59,
+                    22.27,
+                    50.41,
+                    23.49,
+                    50.41,
+                    22.27
+                ],
+                [
+                    49.59,
+                    21.95,
+                    49.59,
+                    20.73,
+                    50.41,
+                    21.95,
+                    50.41,
+                    20.73
+                ],
+                [
+                    41.96,
+                    25.59,
+                    45.61,
+                    25.59,
+                    41.96,
+                    26.41,
+                    45.61,
+                    26.41
+                ],
+                [
+                    36.39,
+                    25.59,
+                    37.61,
+                    25.59,
+                    36.39,
+                    26.41,
+                    37.61,
+                    26.41
+                ],
+                [
+                    36.68,
+                    25.34,
+                    37.73,
+                    25.95,
+                    36.27,
+                    26.05,
+                    37.32,
+                    26.66
+                ],
+                [
+                    37.05,
+                    25.27,
+                    37.66,
+                    26.32,
+                    36.34,
+                    25.68,
+                    36.95,
+                    26.73
+                ],
+                [
+                    37.41,
+                    25.39,
+                    37.41,
+                    26.61,
+                    36.59,
+                    25.39,
+                    36.59,
+                    26.61
+                ],
+                [
+                    38.39,
+                    25.59,
+                    39.61,
+                    25.59,
+                    38.39,
+                    26.41,
+                    39.61,
+                    26.41
+                ],
+                [
+                    49.59,
+                    26.61,
+                    49.59,
+                    23.64,
+                    50.41,
+                    26.61,
+                    50.41,
+                    23.64
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    49.6,
+                    20.73,
+                    49.6,
+                    19.53,
+                    50.4,
+                    20.73,
+                    50.4,
+                    19.53
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400467",
+        "agvName": "压力测试1L-2088190808791400467",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 1.5708,
+            "x": 50,
+            "y": 15.9211
+        },
+        "batteryState": {
+            "batteryCharge": 86.87,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698472003,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "45f3c997af7b414994f434a98d61724e",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    50.64,
+                    16.28,
+                    49.42,
+                    16.38,
+                    50.58,
+                    15.46,
+                    49.36,
+                    15.56
+                ],
+                [
+                    50.37,
+                    16.55,
+                    49.27,
+                    16.03,
+                    50.73,
+                    15.81,
+                    49.63,
+                    15.29
+                ],
+                [
+                    50.01,
+                    16.66,
+                    49.32,
+                    15.65,
+                    50.68,
+                    16.19,
+                    49.99,
+                    15.19
+                ],
+                [
+                    49.64,
+                    16.56,
+                    49.54,
+                    15.35,
+                    50.46,
+                    16.5,
+                    50.36,
+                    15.28
+                ],
+                [
+                    49.59,
+                    16.53,
+                    49.59,
+                    15.31,
+                    50.41,
+                    16.53,
+                    50.41,
+                    15.31
+                ],
+                [
+                    49.59,
+                    18.42,
+                    49.59,
+                    15.31,
+                    50.41,
+                    18.42,
+                    50.41,
+                    15.31
+                ],
+                [
+                    49.59,
+                    17.99,
+                    49.59,
+                    16.77,
+                    50.41,
+                    17.99,
+                    50.41,
+                    16.77
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    49.6,
+                    16.52,
+                    49.6,
+                    15.32,
+                    50.4,
+                    16.52,
+                    50.4,
+                    15.32
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400462",
+        "agvName": "压力测试1L-2088190808791400462",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 3.1416,
+            "x": 31.68,
+            "y": 35.5
+        },
+        "batteryState": {
+            "batteryCharge": 87.48,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698471997,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "6b9501d50a1e4dca98418129de2c289a",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    28.39,
+                    35.09,
+                    29.61,
+                    35.09,
+                    28.39,
+                    35.91,
+                    29.61,
+                    35.91
+                ],
+                [
+                    27.96,
+                    35.09,
+                    31.61,
+                    35.09,
+                    27.96,
+                    35.91,
+                    31.61,
+                    35.91
+                ],
+                [
+                    29.96,
+                    35.09,
+                    33.61,
+                    35.09,
+                    29.96,
+                    35.91,
+                    33.61,
+                    35.91
+                ],
+                [
+                    32.39,
+                    35.09,
+                    33.61,
+                    35.09,
+                    32.39,
+                    35.91,
+                    33.61,
+                    35.91
+                ],
+                [
+                    30.39,
+                    35.09,
+                    31.61,
+                    35.09,
+                    30.39,
+                    35.91,
+                    31.61,
+                    35.91
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400461",
+        "agvName": "压力测试1L-2088190808791400461",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 0,
+            "x": 43,
+            "y": 16
+        },
+        "batteryState": {
+            "batteryCharge": 87.33,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698471989,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "86eb6d498ae549a3b3358e7405348900",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    47.61,
+                    16.41,
+                    46.39,
+                    16.41,
+                    47.61,
+                    15.59,
+                    46.39,
+                    15.59
+                ],
+                [
+                    48.04,
+                    16.41,
+                    44.39,
+                    16.41,
+                    48.04,
+                    15.59,
+                    44.39,
+                    15.59
+                ],
+                [
+                    50.04,
+                    16.41,
+                    46.39,
+                    16.41,
+                    50.04,
+                    15.59,
+                    46.39,
+                    15.59
+                ],
+                [
+                    46.04,
+                    16.41,
+                    42.39,
+                    16.41,
+                    46.04,
+                    15.59,
+                    42.39,
+                    15.59
+                ],
+                [
+                    49.61,
+                    16.41,
+                    48.39,
+                    16.41,
+                    49.61,
+                    15.59,
+                    48.39,
+                    15.59
+                ],
+                [
+                    49.64,
+                    16.36,
+                    48.42,
+                    16.46,
+                    49.58,
+                    15.54,
+                    48.36,
+                    15.64
+                ],
+                [
+                    50.64,
+                    16.28,
+                    49.42,
+                    16.38,
+                    50.58,
+                    15.46,
+                    49.36,
+                    15.56
+                ],
+                [
+                    50.37,
+                    16.55,
+                    49.27,
+                    16.03,
+                    50.73,
+                    15.81,
+                    49.63,
+                    15.29
+                ],
+                [
+                    50.01,
+                    16.66,
+                    49.32,
+                    15.65,
+                    50.68,
+                    16.19,
+                    49.99,
+                    15.19
+                ],
+                [
+                    49.64,
+                    16.56,
+                    49.54,
+                    15.35,
+                    50.46,
+                    16.5,
+                    50.36,
+                    15.28
+                ],
+                [
+                    49.59,
+                    16.53,
+                    49.59,
+                    15.31,
+                    50.41,
+                    16.53,
+                    50.41,
+                    15.31
+                ],
+                [
+                    45.61,
+                    16.41,
+                    44.39,
+                    16.41,
+                    45.61,
+                    15.59,
+                    44.39,
+                    15.59
+                ],
+                [
+                    43.61,
+                    16.41,
+                    42.39,
+                    16.41,
+                    43.61,
+                    15.59,
+                    42.39,
+                    15.59
+                ],
+                [
+                    50.64,
+                    16.28,
+                    48.42,
+                    16.46,
+                    50.58,
+                    15.46,
+                    48.36,
+                    15.64
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    43.6,
+                    16.4,
+                    42.4,
+                    16.4,
+                    43.6,
+                    15.6,
+                    42.4,
+                    15.6
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400464",
+        "agvName": "压力测试1L-2088190808791400464",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": 3.1416,
+            "x": 2.75,
+            "y": 16
+        },
+        "batteryState": {
+            "batteryCharge": 88.55,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698471976,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "f1801f9e93904ecb926b507111e400da",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    1.39,
+                    15.59,
+                    2.61,
+                    15.59,
+                    1.39,
+                    16.41,
+                    2.61,
+                    16.41
+                ],
+                [
+                    1.68,
+                    15.34,
+                    2.73,
+                    15.95,
+                    1.27,
+                    16.05,
+                    2.32,
+                    16.66
+                ],
+                [
+                    2.05,
+                    15.27,
+                    2.66,
+                    16.32,
+                    1.34,
+                    15.68,
+                    1.95,
+                    16.73
+                ],
+                [
+                    2.41,
+                    15.39,
+                    2.41,
+                    16.61,
+                    1.59,
+                    15.39,
+                    1.59,
+                    16.61
+                ],
+                [
+                    2.41,
+                    14.02,
+                    2.41,
+                    15.24,
+                    1.59,
+                    14.02,
+                    1.59,
+                    15.24
+                ],
+                [
+                    4.39,
+                    15.59,
+                    5.61,
+                    15.59,
+                    4.39,
+                    16.41,
+                    5.61,
+                    16.41
+                ],
+                [
+                    2.41,
+                    13.58,
+                    2.41,
+                    16.61,
+                    1.59,
+                    13.58,
+                    1.59,
+                    16.61
+                ],
+                [
+                    1.39,
+                    15.59,
+                    5.61,
+                    15.59,
+                    1.39,
+                    16.41,
+                    5.61,
+                    16.41
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400463",
+        "agvName": "压力测试1L-2088190808791400463",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 2,
+            "y": 37.31
+        },
+        "batteryState": {
+            "batteryCharge": 87.93,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698471970,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": true,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "2e4e869a86484fcab0d0f103ecbd5c37",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [],
+            "lockedRectangles": [
+                [
+                    2.41,
+                    35.64,
+                    2.41,
+                    36.86,
+                    1.59,
+                    35.64,
+                    1.59,
+                    36.86
+                ],
+                [
+                    2.41,
+                    36.89,
+                    2.41,
+                    38.11,
+                    1.59,
+                    36.89,
+                    1.59,
+                    38.11
+                ],
+                [
+                    2.41,
+                    35.21,
+                    2.41,
+                    38.11,
+                    1.59,
+                    35.21,
+                    1.59,
+                    38.11
+                ],
+                [
+                    2.41,
+                    33.96,
+                    2.41,
+                    36.86,
+                    1.59,
+                    33.96,
+                    1.59,
+                    36.86
+                ],
+                [
+                    2.41,
+                    34.39,
+                    2.41,
+                    35.61,
+                    1.59,
+                    34.39,
+                    1.59,
+                    35.61
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "PROCESSING",
+        "velocity": {
+            "omega": 0,
+            "vx": 1,
+            "vy": 1
+        }
+    },
+    {
+        "agvDimension": {
+            "centerOffset": 0,
+            "length": 1.2,
+            "loadLength": 1.2,
+            "loadWidth": 0.8,
+            "width": 0.8
+        },
+        "agvKey": "2088190808791400460",
+        "agvName": "压力测试1L-2088190808791400460",
+        "agvPosition": {
+            "localizationScore": 1,
+            "theta": -1.5708,
+            "x": 41,
+            "y": 22
+        },
+        "batteryState": {
+            "batteryCharge": 88.39,
+            "batteryHealth": 100,
+            "batteryVoltage": 220,
+            "charging": false
+        },
+        "connectionState": "ONLINE",
+        "createTime": 1786698471965,
+        "dispatchState": "ENABLE",
+        "errorEntryList": [],
+        "loaded": false,
+        "orderState": "PROCESSING",
+        "orderTaskKey": "50d390bfbf0d457a82250be963c81ac5",
+        "paused": false,
+        "trafficShapeResources": {
+            "applyingRectangles": [
+                [
+                    36.39,
+                    25.59,
+                    37.61,
+                    25.59,
+                    36.39,
+                    26.41,
+                    37.61,
+                    26.41
+                ],
+                [
+                    10.39,
+                    25.59,
+                    11.61,
+                    25.59,
+                    10.39,
+                    26.41,
+                    11.61,
+                    26.41
+                ],
+                [
+                    14.39,
+                    25.59,
+                    15.61,
+                    25.59,
+                    14.39,
+                    26.41,
+                    15.61,
+                    26.41
+                ],
+                [
+                    9.96,
+                    25.59,
+                    13.61,
+                    25.59,
+                    9.96,
+                    26.41,
+                    13.61,
+                    26.41
+                ],
+                [
+                    35.96,
+                    25.59,
+                    39.61,
+                    25.59,
+                    35.96,
+                    26.41,
+                    39.61,
+                    26.41
+                ],
+                [
+                    1.39,
+                    25.59,
+                    5.61,
+                    25.59,
+                    1.39,
+                    26.41,
+                    5.61,
+                    26.41
+                ],
+                [
+                    5.96,
+                    25.59,
+                    9.61,
+                    25.59,
+                    5.96,
+                    26.41,
+                    9.61,
+                    26.41
+                ],
+                [
+                    37.96,
+                    25.59,
+                    41.61,
+                    25.59,
+                    37.96,
+                    26.41,
+                    41.61,
+                    26.41
+                ],
+                [
+                    20.39,
+                    25.59,
+                    21.61,
+                    25.59,
+                    20.39,
+                    26.41,
+                    21.61,
+                    26.41
+                ],
+                [
+                    1.39,
+                    25.59,
+                    2.61,
+                    25.59,
+                    1.39,
+                    26.41,
+                    2.61,
+                    26.41
+                ],
+                [
+                    1.68,
+                    25.34,
+                    2.73,
+                    25.95,
+                    1.27,
+                    26.05,
+                    2.32,
+                    26.66
+                ],
+                [
+                    2.05,
+                    25.27,
+                    2.66,
+                    26.32,
+                    1.34,
+                    25.68,
+                    1.95,
+                    26.73
+                ],
+                [
+                    2.41,
+                    25.39,
+                    2.41,
+                    26.61,
+                    1.59,
+                    25.39,
+                    1.59,
+                    26.61
+                ],
+                [
+                    16.39,
+                    25.59,
+                    17.61,
+                    25.59,
+                    16.39,
+                    26.41,
+                    17.61,
+                    26.41
+                ],
+                [
+                    29.96,
+                    25.59,
+                    33.61,
+                    25.59,
+                    29.96,
+                    26.41,
+                    33.61,
+                    26.41
+                ],
+                [
+                    22.39,
+                    25.59,
+                    23.61,
+                    25.59,
+                    22.39,
+                    26.41,
+                    23.61,
+                    26.41
+                ],
+                [
+                    12.39,
+                    25.59,
+                    13.61,
+                    25.59,
+                    12.39,
+                    26.41,
+                    13.61,
+                    26.41
+                ],
+                [
+                    8.39,
+                    25.59,
+                    9.61,
+                    25.59,
+                    8.39,
+                    26.41,
+                    9.61,
+                    26.41
+                ],
+                [
+                    13.96,
+                    25.59,
+                    17.61,
+                    25.59,
+                    13.96,
+                    26.41,
+                    17.61,
+                    26.41
+                ],
+                [
+                    27.96,
+                    25.59,
+                    31.61,
+                    25.59,
+                    27.96,
+                    26.41,
+                    31.61,
+                    26.41
+                ],
+                [
+                    41.41,
+                    21.39,
+                    41.41,
+                    22.61,
+                    40.59,
+                    21.39,
+                    40.59,
+                    22.61
+                ],
+                [
+                    24.39,
+                    25.59,
+                    25.61,
+                    25.59,
+                    24.39,
+                    26.41,
+                    25.61,
+                    26.41
+                ],
+                [
+                    31.96,
+                    25.59,
+                    35.61,
+                    25.59,
+                    31.96,
+                    26.41,
+                    35.61,
+                    26.41
+                ],
+                [
+                    32.39,
+                    25.59,
+                    33.61,
+                    25.59,
+                    32.39,
+                    26.41,
+                    33.61,
+                    26.41
+                ],
+                [
+                    33.96,
+                    25.59,
+                    37.61,
+                    25.59,
+                    33.96,
+                    26.41,
+                    37.61,
+                    26.41
+                ],
+                [
+                    3.96,
+                    25.59,
+                    7.61,
+                    25.59,
+                    3.96,
+                    26.41,
+                    7.61,
+                    26.41
+                ],
+                [
+                    6.39,
+                    25.59,
+                    7.61,
+                    25.59,
+                    6.39,
+                    26.41,
+                    7.61,
+                    26.41
+                ],
+                [
+                    15.96,
+                    25.59,
+                    19.61,
+                    25.59,
+                    15.96,
+                    26.41,
+                    19.61,
+                    26.41
+                ],
+                [
+                    26.39,
+                    25.59,
+                    27.61,
+                    25.59,
+                    26.39,
+                    26.41,
+                    27.61,
+                    26.41
+                ],
+                [
+                    21.96,
+                    25.59,
+                    25.61,
+                    25.59,
+                    21.96,
+                    26.41,
+                    25.61,
+                    26.41
+                ],
+                [
+                    34.39,
+                    25.59,
+                    35.61,
+                    25.59,
+                    34.39,
+                    26.41,
+                    35.61,
+                    26.41
+                ],
+                [
+                    7.96,
+                    25.59,
+                    11.61,
+                    25.59,
+                    7.96,
+                    26.41,
+                    11.61,
+                    26.41
+                ],
+                [
+                    28.39,
+                    25.59,
+                    29.61,
+                    25.59,
+                    28.39,
+                    26.41,
+                    29.61,
+                    26.41
+                ],
+                [
+                    19.96,
+                    25.59,
+                    23.61,
+                    25.59,
+                    19.96,
+                    26.41,
+                    23.61,
+                    26.41
+                ],
+                [
+                    41.41,
+                    25.39,
+                    41.41,
+                    26.61,
+                    40.59,
+                    25.39,
+                    40.59,
+                    26.61
+                ],
+                [
+                    41.05,
+                    25.27,
+                    41.66,
+                    26.32,
+                    40.34,
+                    25.68,
+                    40.95,
+                    26.73
+                ],
+                [
+                    40.68,
+                    25.34,
+                    41.73,
+                    25.95,
+                    40.27,
+                    26.05,
+                    41.32,
+                    26.66
+                ],
+                [
+                    40.39,
+                    25.59,
+                    41.61,
+                    25.59,
+                    40.39,
+                    26.41,
+                    41.61,
+                    26.41
+                ],
+                [
+                    38.39,
+                    25.59,
+                    39.61,
+                    25.59,
+                    38.39,
+                    26.41,
+                    39.61,
+                    26.41
+                ],
+                [
+                    41.41,
+                    23.39,
+                    41.41,
+                    24.61,
+                    40.59,
+                    23.39,
+                    40.59,
+                    24.61
+                ],
+                [
+                    4.39,
+                    25.59,
+                    5.61,
+                    25.59,
+                    4.39,
+                    26.41,
+                    5.61,
+                    26.41
+                ],
+                [
+                    25.96,
+                    25.59,
+                    29.61,
+                    25.59,
+                    25.96,
+                    26.41,
+                    29.61,
+                    26.41
+                ],
+                [
+                    40.59,
+                    25.04,
+                    40.59,
+                    21.39,
+                    41.41,
+                    25.04,
+                    41.41,
+                    21.39
+                ],
+                [
+                    17.96,
+                    25.59,
+                    21.61,
+                    25.59,
+                    17.96,
+                    26.41,
+                    21.61,
+                    26.41
+                ],
+                [
+                    11.96,
+                    25.59,
+                    15.61,
+                    25.59,
+                    11.96,
+                    26.41,
+                    15.61,
+                    26.41
+                ],
+                [
+                    23.96,
+                    25.59,
+                    27.61,
+                    25.59,
+                    23.96,
+                    26.41,
+                    27.61,
+                    26.41
+                ],
+                [
+                    30.39,
+                    25.59,
+                    31.61,
+                    25.59,
+                    30.39,
+                    26.41,
+                    31.61,
+                    26.41
+                ],
+                [
+                    40.59,
+                    26.61,
+                    40.59,
+                    23.39,
+                    41.41,
+                    26.61,
+                    41.41,
+                    23.39
+                ],
+                [
+                    18.39,
+                    25.59,
+                    19.61,
+                    25.59,
+                    18.39,
+                    26.41,
+                    19.61,
+                    26.41
+                ]
+            ],
+            "lockedRectangles": [
+                [
+                    41.4,
+                    21.4,
+                    41.4,
+                    22.6,
+                    40.6,
+                    21.4,
+                    40.6,
+                    22.6
+                ]
+            ]
+        },
+        "type": 2,
+        "vehicleProcStatus": "TRAFFIC",
+        "velocity": {
+            "omega": 0,
+            "vx": 0,
+            "vy": 0
+        }
+    }
+]

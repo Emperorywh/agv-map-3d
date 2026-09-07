@@ -36,6 +36,7 @@ import {
 } from '@/features/fleet-monitoring'
 import { createMockVehicleDataSource } from '@/features/mock-simulation'
 import type { RuntimeConfig } from './loadRuntimeConfig'
+import { withStaticVehicleFallback } from './withStaticVehicleFallback'
 
 export interface SelectVehicleDataSourceOptions {
   /** 已校验的运行时配置（dataSource 与 wsUrl 的来源） */
@@ -90,7 +91,11 @@ export function selectVehicleDataSource(
     if (options.socketFactory !== undefined) {
       wsOptions.socketFactory = options.socketFactory
     }
-    return createWebSocketVehicleDataSource(wsOptions)
+    // 实时连接不可用时使用本地车辆列表，保持快照中的位置与朝向。
+    // 回退包装保留后台重连，收到真实全量快照后自动恢复实时显示。
+    return withStaticVehicleFallback(
+      createWebSocketVehicleDataSource(wsOptions), mapId, config.staleAfterMs, diagnostics,
+    )
   }
 
   // dataSource='mock'：内核需要真实拓扑，MapModel 未就绪时降级为无车队数据

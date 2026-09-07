@@ -85,6 +85,19 @@ if (await exists(configPath)) {
   }
 }
 
+// 静态车辆快照是断连展示所需的运行资源，发布时校验存在性与数组结构。
+// 避免生产包遗漏该文件，直到 WebSocket 不可用时才暴露问题。
+const vehicleListPath = path.join(DIST, 'json', 'vehicleList.json')
+check(await exists(vehicleListPath), 'dist/json/vehicleList.json 存在')
+if (await exists(vehicleListPath)) {
+  try {
+    const vehicles = JSON.parse(await readFile(vehicleListPath, 'utf8'))
+    check(Array.isArray(vehicles) && vehicles.length > 0, 'vehicleList.json 是非空车辆数组')
+  } catch (error) {
+    check(false, `vehicleList.json 可解析（错误：${error.message}）`)
+  }
+}
+
 // 4. 地图资源
 const mapPath = path.join(DIST, 'json', 'map.json')
 check(await exists(mapPath), 'dist/json/map.json 存在')
