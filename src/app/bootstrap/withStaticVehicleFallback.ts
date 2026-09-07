@@ -1,6 +1,8 @@
 /**
  * 为实时车辆源接入本地静态快照，连接失败或长时间无首帧时启用。
  * 快照只重复发布原始位置与状态，不启动仿真；真实全量快照到达后恢复实时数据。
+ * 实时地址被配置校验停用时允许 primary 为 null，立即使用同一份静态快照。
+ * 两条入口共用订阅、取消与资源清理，地图启动不依赖实时连接是否可用。
  */
 import {
   createDispatcherProtocolAdapter,
@@ -11,7 +13,7 @@ import {
 import { isAbortError, type DiagnosticsReporter } from '@/shared/diagnostics'
 
 export function withStaticVehicleFallback(
-  primary: VehicleDataSource,
+  primary: VehicleDataSource | null,
   mapId: string | Promise<string>,
   staleAfterMs: number,
   diagnostics?: DiagnosticsReporter,
@@ -116,7 +118,7 @@ export function withStaticVehicleFallback(
        * 恢复必须以真实全量快照为准，仅连接打开或心跳不能清除模拟车辆。
        */
       const fallbackTimer = setTimeout(() => { void showFallback() }, 3_000)
-      const unsubscribeEvent = primary.onEvent((event) => {
+      const unsubscribeEvent = primary?.onEvent((event) => {
         if (event.type === 'snapshot') {
           live = true
           clearTimeout(fallbackTimer)
@@ -124,7 +126,7 @@ export function withStaticVehicleFallback(
         }
         if (live) publish(event)
       })
-      const unsubscribeStatus = primary.onStatusChange((status) => {
+      const unsubscribeStatus = primary?.onStatusChange((status) => {
         if (status === 'RECONNECTING' || status === 'ERROR') {
           live = false
           void showFallback()
@@ -138,19 +140,27 @@ export function withStaticVehicleFallback(
         active = false
         clearTimeout(fallbackTimer)
         stopRefresh()
-        unsubscribeEvent()
-        unsubscribeStatus()
+        unsubscribeEvent?.()
+        unsubscribeStatus?.()
         signal?.removeEventListener('abort', onAbort)
         controller.abort()
-        primary.disconnect()
+        primary?.disconnect()
         resolveSession()
         session = null
         cleanup = null
       }
       signal?.addEventListener('abort', onAbort, { once: true })
-      void primary.connect(controller.signal).then(resolveSession, (error: unknown) => {
-        if (active && !isAbortError(error)) void showFallback()
-      })
+      /**
+       * 无实时源时立即加载快照，不等待握手超时，也不尝试不安全的地址。
+       * 有实时源时维持原有重连与全量快照恢复逻辑。
+       */
+      if (primary === null) {
+        void showFallback()
+      } else {
+        void primary.connect(controller.signal).then(resolveSession, (error: unknown) => {
+          if (active && !isAbortError(error)) void showFallback()
+        })
+      }
       return promise
     },
     disconnect(): void {
@@ -158,12 +168,14 @@ export function withStaticVehicleFallback(
     },
     requestSnapshot(): void {
       requestFallback?.()
-      primary.requestSnapshot()
+      primary?.requestSnapshot()
     },
     get status() {
-      return primary.status
+      // 无实时源时保持未连接状态，避免把静态快照误标成实时连接成功。
+      // 快照的展示由车辆事件驱动，与连接状态独立。
+      return primary?.status ?? 'IDLE'
     },
-    onStatusChange: (cb) => primary.onStatusChange(cb),
+    onStatusChange: (cb) => primary?.onStatusChange(cb) ?? (() => {}),
     onEvent(cb) {
       subscribers.add(cb)
       return () => { subscribers.delete(cb) }

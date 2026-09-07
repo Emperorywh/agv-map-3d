@@ -2,8 +2,8 @@
  * 运行时配置读取与严格校验（SPEC §10.1；TASK-002）。
  *
  * 职责：从与 index.html 同部署根目录的 config.json 读取公开运行参数，
- *       逐字段严格校验后返回深度冻结的 RuntimeConfig；任何失败都以携带
- *       稳定错误码的 StructuredError 抛出，由启动编排层统一上报诊断。
+ *       逐字段校验后返回深度冻结的 RuntimeConfig；地图与渲染配置失败抛出
+ *       StructuredError，实时连接配置失败只告警并交给车辆快照兜底。
  * 边界：只负责配置本体——不发起地图或数据源连接、不解析地图业务内容、
  *       不渲染任何 DOM、不读取 VITE_*（后者只允许开发默认值）。
  * 关键不变量：
@@ -11,13 +11,13 @@
  *    产物天然支持根路径与子路径部署，无需重新构建；
  * 2. 校验是严格白名单：未知字段（含疑似密钥/令牌字段）直接拒绝，保证敏感
  *    凭据无法借配置文件进入前端；
- * 3. wsUrl 策略：dataSource='ws' 必须提供 wsUrl；HTTPS 页面只允许 wss: 或
- *    同源 https 安全代理地址，明文 ws:/http: 一律拒绝；
+ * 3. wsUrl 策略：HTTPS 页面只允许 wss: 或同源 https 安全代理地址；
+ *    不可用的连接地址归一为 null，不发起连接，也不阻断地图启动；
  * 4. 请求使用 no-cache：配置变更必须即时生效（缓存策略由静态服务器配合）；
  * 5. 取消（AbortError）原样向上抛出，不包装成配置错误。
  */
 import { isFiniteNumber, isPlainObject } from '@/shared/validation'
-import { describeError, isAbortError, StructuredError } from '@/shared/diagnostics'
+import { describeError, isAbortError, StructuredError, type DiagnosticsReporter } from '@/shared/diagnostics'
 
 /** 数据源形态：Mock 仿真（TASK-009）或真实 WebSocket（TASK-007） */
 export type ConfigDataSource = 'mock' | 'ws'
@@ -44,6 +44,10 @@ export interface CoordinateTransformConfig {
 export interface RuntimeConfig {
   dataSource: ConfigDataSource
   mapUrl: string
+  /**
+   * null 表示实时连接不可用或当前使用仿真数据。
+   * ws 模式下仍保留车辆数据源，由静态快照接管显示。
+   */
   wsUrl: string | null
   maxVehicles: number
   staleAfterMs: number
@@ -246,10 +250,10 @@ function requireBoolean(raw: Record<string, unknown>, key: string, field: string
 }
 
 /**
- * 对已解析的 JSON 做严格白名单校验（纯函数，可独立单测）。
- * 校验失败按字段抛出携带稳定错误码的 StructuredError。
+ * 对已解析的 JSON 做白名单校验，地图和渲染字段失败仍然阻断启动。
+ * 实时连接属于可降级能力，地址错误只记警告并启用既有车辆快照兜底。
  */
-export function validateRuntimeConfig(raw: unknown, baseUrl: string): RuntimeConfig {
+export function validateRuntimeConfig(raw: unknown, baseUrl: string, diagnostics?: DiagnosticsReporter): RuntimeConfig {
   if (!isPlainObject(raw)) {
     throw fieldError('(root)', 'JSON 对象', raw)
   }
@@ -262,7 +266,6 @@ export function validateRuntimeConfig(raw: unknown, baseUrl: string): RuntimeCon
   const dataSource: ConfigDataSource = dataSourceValue
 
   const mapUrl = validateMapUrl(raw, baseUrl)
-  const wsUrl = validateWsUrl(raw, dataSource, baseUrl)
   const maxVehicles = requirePositiveInteger(raw, 'maxVehicles')
   const staleAfterMs = requirePositiveFinite(raw, 'staleAfterMs')
 
@@ -289,6 +292,22 @@ export function validateRuntimeConfig(raw: unknown, baseUrl: string): RuntimeCon
     translateY: requireFinite(transformRaw, 'translateY', 'coordinateTransform.translateY'),
   }
 
+  /**
+   * 仅隔离车辆连接地址的校验失败，避免 CONFIG_WS_* 被应用当成启动终态。
+   * mock 模式完全不消费 wsUrl，遗留的内网地址不能影响独立仿真。
+   */
+  let wsUrl: string | null = null
+  if (dataSource === 'ws') {
+    try {
+      wsUrl = validateWsUrl(raw, dataSource, baseUrl)
+    } catch (error) {
+      if (!(error instanceof StructuredError)) throw error
+      diagnostics?.report(error.code, 'warn', `${error.message}；已停用实时连接，使用本地车辆快照，地图继续加载`, {
+        ...error.context,
+      })
+    }
+  }
+
   return deepFreeze({
     dataSource,
     mapUrl,
@@ -301,6 +320,11 @@ export function validateRuntimeConfig(raw: unknown, baseUrl: string): RuntimeCon
 }
 
 export interface LoadRuntimeConfigOptions {
+  /**
+   * 实时连接配置降级的诊断通道，由启动编排统一传入。
+   * 地图与渲染等致命配置错误仍由调用方捕获和上报。
+   */
+  diagnostics?: DiagnosticsReporter
   /** 取消信号：中止后以 AbortError 拒绝，不产生配置错误 */
   signal?: AbortSignal
   /** fetch 注入点；默认全局 fetch，测试用桩替换 */
@@ -374,5 +398,5 @@ export async function loadRuntimeConfig(
     })
   }
 
-  return { config: validateRuntimeConfig(raw, baseUrl), href: configUrl.href }
+  return { config: validateRuntimeConfig(raw, baseUrl, options.diagnostics), href: configUrl.href }
 }

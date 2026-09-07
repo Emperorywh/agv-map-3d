@@ -15,9 +15,8 @@
  * 关键不变量：
  * 1. WS 数据源绑定启动时解析出的地图上下文（mapId），实体键 (mapId, agvKey)
  *    因此与地图模型一致（SPEC §2.4）；
- * 2. dataSource='ws' 而 wsUrl 缺失、dataSource='mock' 而 mapModel 缺失，都是
- *    配置/编排层已拦截或尚未就绪的状态，此处纵深防御：记诊断并返回 null，
- *    绝不抛出中断启动，也绝不伪造数据源；
+ * 2. dataSource='ws' 而 wsUrl 不可用时创建静态车辆快照源；
+ *    dataSource='mock' 而 mapModel 尚未就绪时返回 null，均不阻断地图；
  * 3. 返回 null 的语义统一为「本轮无车队数据」——地图场景必须照常渲染
  *    （SPEC §11.2：无数据或断连不影响静态地图）；
  * 4. 本模块保持纯工厂：不做任何全局副作用。`window.__AGV_MOCK__` 开发桥的
@@ -62,8 +61,8 @@ export interface SelectVehicleDataSourceOptions {
 
 /**
  * 按配置构造车辆数据源。
- * 返回 null 表示当前配置下没有可用数据源（Mock 缺地图拓扑 / wsUrl 缺失），
- * 调用方以「无车队数据」稳态继续运行。
+ * 返回 null 表示 Mock 尚缺地图拓扑，调用方以无车队数据稳态继续运行。
+ * wsUrl 不可用时仍返回静态快照源，使车辆兜底与地图加载同时可用。
  */
 export function selectVehicleDataSource(
   options: SelectVehicleDataSourceOptions,
@@ -72,14 +71,15 @@ export function selectVehicleDataSource(
 
   if (config.dataSource === 'ws') {
     if (config.wsUrl === null) {
-      // 配置校验层（CONFIG_WS_REQUIRED）已拦截；此处纵深防御不中断启动
+      // 实时连接配置已被降级为不可用，直接复用本地车辆快照加载流程。
+      // 不创建 WebSocket，也不因返回空数据源而绕过已有车辆兜底。
       diagnostics?.report(
         'DATA_SOURCE_UNAVAILABLE',
         'warn',
-        'dataSource=ws 但 wsUrl 缺失，本轮以无车队数据稳态运行',
+        '实时车辆地址不可用，已启用本地车辆快照',
         { dataSource: config.dataSource },
       )
-      return null
+      return withStaticVehicleFallback(null, mapId, config.staleAfterMs, diagnostics)
     }
     const wsOptions: WebSocketDataSourceOptions = {
       wsUrl: config.wsUrl,

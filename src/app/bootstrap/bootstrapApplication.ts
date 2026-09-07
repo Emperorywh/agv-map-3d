@@ -77,6 +77,9 @@ export async function loadStartupConfig(
   const stageStartedAt = performance.now()
   try {
     const { config, href } = await loadRuntimeConfig({
+      // 车辆连接地址失败通过同一诊断通道告警，不再抛给启动终态分支。
+      // 有效地图配置继续向后传递，数据源选择负责静态车辆兜底。
+      diagnostics,
       signal: options.signal,
       fetchImpl: options.fetchImpl,
       baseUrl: options.baseUrl,
