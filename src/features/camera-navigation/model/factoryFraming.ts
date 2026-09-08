@@ -5,10 +5,11 @@
 import type { FactoryLayout } from '@/features/map-visualization'
 
 /**
- * 常规监控保留十二米观察距离，避免把相机降成贴地漫游。
+ * 最近观察距离放宽到三米，便于放大查看车辆与设备细节。
+ * 自由浏览与车辆跟随共用此下限，离地净空仍由地面约束保护。
  * 极小地图或狭长视口若无法容纳该距离，优先保证完整画面仍落在厂房内。
  */
-export const CAMERA_MIN_DISTANCE_M = 12
+export const CAMERA_MIN_DISTANCE_M = 1
 /**
  * 左键旋转最低俯角放宽到二十五度，允许观察设备侧面和厂房纵深。
  * 默认监控采用三十八度，让远墙与地坪共同提供纵深，仍可手动切换高位总览。
