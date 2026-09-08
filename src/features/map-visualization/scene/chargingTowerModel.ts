@@ -1,12 +1,38 @@
 /**
  * 充电塔以整塔材质部件实例化，按距离切换三档几何并限制远景水晶的透射开销。
  * 几何、材质与光源在资源代内共享并统一释放，近景保留原资产尺寸和真实水晶。
+ * 塔基发光底环叠加低频呼吸脉冲（P2-1），总览投影过小时整体淡出。
  */
 import * as THREE from 'three'
-import { GROUND_SURFACE_Y } from './mapAppearance'
+import {
+  CHARGE_RING_FADE_END_PX,
+  CHARGE_RING_FADE_START_PX,
+  CHARGE_RING_INNER_RADIUS_M,
+  CHARGE_RING_LIFT_M,
+  CHARGE_RING_OPACITY,
+  CHARGE_RING_OUTER_RADIUS_M,
+  CHARGE_RING_PULSE_MIN_BRIGHTNESS,
+  CHARGE_RING_PULSE_PERIOD_S,
+  GROUND_SURFACE_Y,
+} from './mapAppearance'
+import {
+  createScreenSizeFadeUniforms,
+  injectBrightnessPulse,
+  injectScreenSizeFade,
+  type PulseUniforms,
+  type ScreenSizeFadeUniforms,
+} from './semanticMaterials'
 import { loadChargingTowerAsset } from './chargingTowerAsset'
 import { StaticLodBatch } from '@/shared/rendering/staticLodBatch'
 import { setReflectionMaterial } from '@/shared/rendering/reflectionMaterials'
+
+/** 图层逐帧写入的共享 uniforms：底环淡出与脉冲的帧驱动入口 */
+export interface ChargingTowerFrameUniforms {
+  /** 底环投影尺寸淡出：视口高度（像素）由图层逐帧写入 */
+  readonly ringFade: ScreenSizeFadeUniforms
+  /** 底环亮度脉冲：单调累计秒由图层逐帧写入 */
+  readonly ringPulse: PulseUniforms
+}
 
 /**
  * 资产加载器负责字节缓存与三档几何，场景句柄只装配静态实例和灯位。
@@ -132,6 +158,46 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
     }
     glow.computeBoundingSphere()
     group.add(glow)
+    /**
+     * 塔基发光底环（P2-1）：静态地面光斑之上的呼吸圆环，环抱塔基。
+     * 投影尺寸淡出与亮度脉冲都注入共享材质（纯 GPU 完成），59 处底环在总览
+     * 同步渐隐、中近景同步呼吸；淡出作用于 alpha、脉冲调制 rgb，可复合注入。
+     */
+    const ringFadeUniforms = createScreenSizeFadeUniforms(CHARGE_RING_OUTER_RADIUS_M * 2)
+    ringFadeUniforms.uFadeStartPx.value = CHARGE_RING_FADE_START_PX
+    ringFadeUniforms.uFadeEndPx.value = CHARGE_RING_FADE_END_PX
+    const ringPulseUniforms: PulseUniforms = {
+      uTime: { value: 0 },
+      uPulsePeriod: { value: CHARGE_RING_PULSE_PERIOD_S },
+      uPulseMin: { value: CHARGE_RING_PULSE_MIN_BRIGHTNESS },
+    }
+    const ringGeometry = new THREE.RingGeometry(
+      CHARGE_RING_INNER_RADIUS_M,
+      CHARGE_RING_OUTER_RADIUS_M,
+      48,
+    ).rotateX(-Math.PI / 2)
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0x42bfff,
+      transparent: true,
+      opacity: CHARGE_RING_OPACITY,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+    injectScreenSizeFade(ringMaterial, ringFadeUniforms, 'map-charge-ring')
+    injectBrightnessPulse(ringMaterial, ringPulseUniforms, 'map-charge-ring-pulse')
+    geometries.add(ringGeometry)
+    materials.add(ringMaterial)
+    const ring = new THREE.InstancedMesh(ringGeometry, ringMaterial, towerCount)
+    instances.push(ring)
+    ring.name = 'charge-tower-base-ring'
+    ring.renderOrder = 8
+    ring.raycast = () => {}
+    for (let index = 0; index < towerCount; index += 1) {
+      placementMatrix.identity().setPosition(lightPositions[index].x, GROUND_SURFACE_Y + CHARGE_RING_LIFT_M, lightPositions[index].z)
+      ring.setMatrixAt(index, placementMatrix)
+    }
+    ring.computeBoundingSphere()
+    group.add(ring)
     group.updateMatrixWorld(true)
     const frustum = new THREE.Frustum()
     const projection = new THREE.Matrix4()
@@ -196,7 +262,13 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
         }
       }
     }
-    return { group, updateForCamera, dispose }
+    return {
+      group,
+      updateForCamera,
+      /** 底环帧驱动 uniforms：图层 useFrame 逐帧写入视口高度与时间 */
+      frameUniforms: { ringFade: ringFadeUniforms, ringPulse: ringPulseUniforms } satisfies ChargingTowerFrameUniforms,
+      dispose,
+    }
   } catch (error) {
     dispose()
     throw error

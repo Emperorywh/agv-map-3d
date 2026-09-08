@@ -1,6 +1,7 @@
 /**
- * 地标位置继续来自地图语义节点，停车底板保留，P 字标交由节点几何统一绘制。
- * 充电设施直接使用完整 GLB，保留透明水晶、自发光分区和真实装配层级。
+ * 地标位置继续来自地图语义节点：停车凸起 slab + 微光光晕（P2-2），白色 P
+ * 字标经名称图集合批四边形绘制（图集缺失时优雅降级为仅 slab）；充电设施
+ * 直接使用完整 GLB，保留透明水晶、自发光分区和真实装配层级。
  * 塔体始终完整显示，不再按屏幕尺寸淡出或覆写模型材质。
  * 几何、材质与实例缓冲由本组件统一释放，地图与上下文换代时重新创建。
  */
@@ -10,9 +11,15 @@ import type { MapModel } from '../model/types'
 import type { WorldTransform } from '@/shared/spatial'
 import { buildLandmarkData, type LandmarkData } from '../scene/buildLandmarkData'
 import { ChargingTowersLayer } from './ChargingTowersLayer'
-import type { MapNameAtlas } from '../scene/mapNameAtlas'
+import { PARK_GLYPH_KEY, buildNameQuadGeometry, type MapNameAtlas } from '../scene/mapNameAtlas'
+import { createNameFadeMaterial } from '../scene/semanticMaterials'
 import {
+  LANDMARK_NAME_FADE_FAR_M,
+  LANDMARK_NAME_FADE_NEAR_M,
+  NAME_QUAD_Y,
   NODE_COLORS,
+  PARK_GLYPH_HEIGHT_M,
+  PARK_GLYPH_OFFSET_Z_M,
   PARK_SLAB_HALO_LIFT_M,
   PARK_SLAB_HALO_OPACITY,
   PARK_SLAB_HEIGHT_M,
@@ -23,8 +30,8 @@ export interface LandmarksLayerProps {
   readonly mapModel: MapModel
   readonly worldTransform: WorldTransform
   /**
-   * 保留地图名称资源接口；停车 P 已改为节点原生几何，不依赖图集。
-   * 图集缺失时，停车与充电的语义标识仍然完整可见。
+   * 名称图集（停车 P 字形单元）：由 Feature 单一持有，本组件只消费。
+   * 图集缺失（无 Canvas 环境降级）时 P 字形不可见，slab 与光晕语义仍完整。
    */
   readonly nameAtlas: MapNameAtlas | null
 }
@@ -35,6 +42,8 @@ interface LandmarkResources {
   readonly id: number
   parkSlabs: THREE.InstancedMesh
   parkHalos: THREE.InstancedMesh
+  /** 停车 P 字形合批四边形；图集缺失或无 park 节点时为 null */
+  parkGlyphs: THREE.Mesh | null
   /** 创建的全部 geometry/material（不含外部图集纹理），释放责任清单 */
   owned: { dispose(): void }[]
 }
@@ -45,14 +54,15 @@ let landmarkResourcesSeq = 0
 export function LandmarksLayer({
   mapModel,
   worldTransform,
+  nameAtlas,
 }: LandmarksLayerProps) {
   const data = useMemo(
     () => buildLandmarkData(mapModel, worldTransform),
     [mapModel, worldTransform],
   )
   const resources = useMemo(
-    () => createLandmarkResources(data),
-    [data],
+    () => createLandmarkResources(data, nameAtlas),
+    [data, nameAtlas],
   )
   useEffect(() => () => disposeLandmarkResources(resources), [resources])
 
@@ -64,6 +74,9 @@ export function LandmarksLayer({
           key 变化强制 React 走干净的卸载/挂载路径，旧对象必然离场。 */}
       <primitive key={`park-slabs-${resources.id}`} object={resources.parkSlabs} dispose={null} />
       <primitive key={`park-halos-${resources.id}`} object={resources.parkHalos} dispose={null} />
+      {resources.parkGlyphs !== null ? (
+        <primitive key={`park-glyphs-${resources.id}`} object={resources.parkGlyphs} dispose={null} />
+      ) : null}
       <ChargingTowersLayer matrices={data.chargeMatrices} />
     </>
   )
@@ -71,10 +84,12 @@ export function LandmarksLayer({
 
 /**
  * 上载停车静态实例数据并创建对应 GPU 对象，几何仅构建一次。
+ * P 字形四边形依赖图集单元格（缺单元格 = 不渲染，绝不悬空引用 UV 区域）；
  * 充电塔由独立异步图层加载，停车标记不依赖模型请求完成。
  */
 function createLandmarkResources(
   data: LandmarkData,
+  nameAtlas: MapNameAtlas | null,
 ): LandmarkResources {
   const owned: { dispose(): void }[] = []
   const id = ++landmarkResourcesSeq
@@ -113,10 +128,40 @@ function createLandmarkResources(
   uploadStaticInstances(parkHalos, data.parkSlabCount, data.parkHaloMatrices, null)
   owned.push(parkHalos)
 
+  // —— 停车白色 P 字形（P2-2/8.5）：名称图集单元格烘焙为贴地合批四边形，
+  // 沿 +z 偏移让 P 完整落在 slab 前半幅，距离淡出（近全显、远全隐）由材质
+  // 注入完成。图集纹理归 Feature 所有，这里只释放几何与材质。 ——
+  const glyphCell = nameAtlas?.cells.get(PARK_GLYPH_KEY)
+  let parkGlyphs: THREE.Mesh | null = null
+  if (nameAtlas !== null && glyphCell !== undefined && data.parkAnchors.length > 0) {
+    const glyphGeometry = buildNameQuadGeometry(
+      data.parkAnchors.map((anchor) => ({
+        x: anchor.x,
+        z: anchor.z + PARK_GLYPH_OFFSET_Z_M,
+        cell: glyphCell,
+        heightM: PARK_GLYPH_HEIGHT_M,
+      })),
+      NAME_QUAD_Y,
+    )
+    owned.push(glyphGeometry)
+    const glyphMaterial = createNameFadeMaterial(
+      nameAtlas.texture,
+      LANDMARK_NAME_FADE_NEAR_M,
+      LANDMARK_NAME_FADE_FAR_M,
+    )
+    owned.push(glyphMaterial)
+    parkGlyphs = new THREE.Mesh(glyphGeometry, glyphMaterial)
+    parkGlyphs.name = 'map-park-glyphs'
+    // 晚于 slab/光晕混合绘制；深度测试保持开启（quad 高于贴花顶端）
+    parkGlyphs.renderOrder = 6
+    parkGlyphs.raycast = () => {}
+  }
+
   return {
     id,
     parkSlabs,
     parkHalos,
+    parkGlyphs,
     owned,
   }
 }

@@ -106,14 +106,15 @@ export const ENVIRONMENT_HORIZON_COLOR = '#a4aaad'
 export const ENVIRONMENT_GROUND_COLOR = '#8b9296'
 
 /**
- * 背景使用接近厂房墙板的冷灰渐变，关闭黑色暗角。
- * 常规机位由实体地坪和内墙填满画面，高位总览用背景衬托厂房外轮廓。
+ * 背景使用接近厂房墙板的冷灰渐变，四角叠加轻暗角（P2-6）。
+ * 常规机位由实体地坪和内墙填满画面，高位总览用背景衬托厂房外轮廓；
+ * 暗角只提供轻微的聚焦感，避免浅灰背景下四角发灰蒙。
  */
 export const BACKGROUND_TEXTURE_PX = 512
 export const BACKGROUND_TOP_COLOR = '#c8cdcf'
 export const BACKGROUND_BOTTOM_COLOR = FACTORY_WALL_COLOR
 /** 四角暗角强度：角点颜色向黑压暗的比例（0 = 无暗角） */
-export const BACKGROUND_VIGNETTE_STRENGTH = 0
+export const BACKGROUND_VIGNETTE_STRENGTH = 0.12
 
 /* ==================== TASK-005 地图业务语义图层 ==================== */
 
@@ -122,6 +123,24 @@ export const BACKGROUND_VIGNETTE_STRENGTH = 0
  * 这是展示层的米制退让距离；只移动设施，不改变调度节点与车辆上报位置。
  */
 export const CHARGE_CABINET_OFFSET_M = 2
+
+/**
+ * 充电塔发光底环（P2-1/8.4）：贴地圆环叠加低频亮度脉冲。
+ * 环径略大于塔基（塔身半径约 0.74m），落在地面光斑范围之内；总览下投影
+ * 过小时整体淡出——59 处充电设施不变成排闪烁光源（与节点 LOD 同一策略），
+ * 近景恢复呼吸感。环为无光照贴花，不进地坪倒影、不投影。
+ */
+export const CHARGE_RING_INNER_RADIUS_M = 0.85
+export const CHARGE_RING_OUTER_RADIUS_M = 1.05
+/** 底环抬升：略高于地面光斑（+0.006）避免共面闪烁 */
+export const CHARGE_RING_LIFT_M = 0.007
+export const CHARGE_RING_OPACITY = 0.32
+/** 底环总览淡出区间（投影像素）：小于 start 开始淡出，end 以下完全隐藏 */
+export const CHARGE_RING_FADE_START_PX = 8
+export const CHARGE_RING_FADE_END_PX = 2.5
+/** 底环脉冲：正弦周期（秒）与最暗亮度比例 */
+export const CHARGE_RING_PULSE_PERIOD_S = 2.4
+export const CHARGE_RING_PULSE_MIN_BRIGHTNESS = 0.35
 
 /** 停车点 slab 足迹边长（紫色） */
 export const PARK_PAD_SIZE_M = 1.4

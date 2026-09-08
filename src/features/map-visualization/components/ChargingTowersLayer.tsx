@@ -44,9 +44,16 @@ export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
 
   /**
    * 渲染列表收集之前选择主画面的水晶材质，避免远景仍触发透射预通道。
-   * 相机和窗口未变化时跳过更新；几何剔除继续按实际绘制相机进行。
+   * 底环淡出与脉冲 uniforms（P2-1）先于相机更新写入——相机未变提前返回时
+   * uniform 也已就位；几何剔除继续按实际绘制相机进行。
    */
-  useFrame(({ camera, size }) => resourceRef.current?.updateForCamera(camera, size.height))
+  useFrame(({ camera, size, clock }) => {
+    const resource = resourceRef.current
+    if (resource === null) return
+    resource.frameUniforms.ringFade.uViewportHeightPx.value = size.height
+    resource.frameUniforms.ringPulse.uTime.value = clock.elapsedTime
+    resource.updateForCamera(camera, size.height)
+  })
 
   return <group ref={root} dispose={null}>
     {/* 加载失败明确显示原因，避免在设施缺失时仍让使用者误认为完整加载。
