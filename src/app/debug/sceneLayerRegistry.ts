@@ -76,6 +76,12 @@ export const DEBUG_LAYERS: readonly DebugLayerSpec[] = [
     excludedNamePrefixes: ['fleet-label-'],
   },
   { key: 'vehicleLabels', label: '车辆标签', objectNamePrefixes: ['fleet-label-'] },
+  /**
+   * 两类交管区域分别控制父组，几何更新不会覆盖调试显隐。
+   * 名称使用独立前缀，避免与车体批次的匹配规则重叠。
+   */
+  { key: 'trafficApplying', label: '路径申请区（红）', objectNames: ['traffic-applying-regions'] },
+  { key: 'trafficLocked', label: '路径解锁区（绿 · 已锁定）', objectNames: ['traffic-locked-regions'] },
 ]
 
 /**

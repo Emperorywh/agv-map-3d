@@ -135,7 +135,11 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
           }
         }
         const unlit = object instanceof THREE.Mesh && !Array.isArray(object.material) && object.material instanceof THREE.MeshBasicMaterial
-        if (object.visible && (object === mesh || unlit || object.name === 'fleet-labels')) {
+        /**
+         * 允许监控贴花通过中立标记整组退出反射采集，兼容虚线等自定义材质。
+         * 标记只影响镜像相机，主画面可见性仍在采集完成后原样恢复。
+         */
+        if (object.visible && (object === mesh || unlit || object.name === 'fleet-labels' || object.userData['excludeFromGroundReflection'] === true)) {
           hidden.push(object)
           object.visible = false
         }

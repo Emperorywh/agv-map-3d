@@ -1,12 +1,16 @@
 /**
- * 独立料箱保留交付 GLB 的层级与贴图，在运行时校准尺寸、原点和哑光材质。
+ * 库区站点使用满载货架，保留交付 GLB 的层级与贴图，在运行时校准尺寸、原点和哑光材质。
  * 二进制请求共享缓存，几何与材质由每次加载单独持有，随地图资源代释放。
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import materialBinUrl from '../../../../assets/shelf_20260908_01/shelf.glb?url'
-import materialBinLod1Url from '../../../../assets/shelf_20260908_01/shelf_LOD1.glb?url'
-import materialBinLod2Url from '../../../../assets/shelf_20260908_01/shelf_LOD2.glb?url'
+/**
+ * 近景与两档远景统一使用满载货架资产，避免视距切换时退回旧料箱外观。
+ * 沿用库区站点的尺寸校准与底面定位，三档共用同一缩放和原点。
+ */
+import materialBinUrl from '../../../../assets/agv_shelf_20260907_01/shelf_loaded.glb?url'
+import materialBinLod1Url from '../../../../assets/agv_shelf_20260907_01/shelf_loaded_LOD1.glb?url'
+import materialBinLod2Url from '../../../../assets/agv_shelf_20260907_01/shelf_loaded_LOD2.glb?url'
 
 const MATERIAL_BIN_WIDTH_M = 1.2
 const binaries = new Map<string, Promise<ArrayBuffer>>()
@@ -30,6 +34,7 @@ export async function loadMaterialBinModel() {
     /**
      * 三档共用原模型的米制缩放与底面中心，不分别归一化减面后的包围盒。
      * 这样切换档位不会出现平移、缩放或高度跳动，地图节点坐标保持一致。
+     * 保留资产原始朝向，由各库位按接入路径独立旋转，脚底仍贴合地坪。
      */
     const bounds = new THREE.Box3().setFromObject(primary.scene, true)
     const size = bounds.getSize(new THREE.Vector3())
@@ -85,17 +90,30 @@ async function loadLevel(url: string) {
     }
   })
   /**
-   * 原始纸箱反射率偏高，在厂房顶光和 ACES 输出下会接近白色并进入泛光亮区。
-   * 按参考图校准为牛皮纸棕色，降低环境补光、提高粗糙度，保留受光面与背光面的层次。
-   * 按集合逐材质处理，多个箱体共用的材质只校准一次；托盘继续使用原始颜色贴图。
+   * 满载货架使用自身的材质名称校准，将白漆降为哑光浅灰，保留箱体与标签贴图。
+   * 所有部件关闭自发光并降低环境反射，避免架体在厂房顶光下呈现灯带般的亮边。
+   * 按集合逐材质处理，多个箱体共用的材质只校准一次，近中远三档外观保持一致。
    */
   for (const material of materials) {
     if (!(material instanceof THREE.MeshStandardMaterial)) continue
+    material.emissive.set(0x000000)
+    material.emissiveIntensity = 0
+    material.metalness = 0
     material.roughness = 0.95
     material.envMapIntensity = 0.12
-    if (material.name === '3d66-CoronaLegacyMtl-18517304-087') material.color.set('#937b59')
-    else if (material.name === '3d66-CoronaLegacyMtl-18517304-085') material.color.set('#806c49')
-    else if (material.name === '3d66-CoronaLegacyMtl-18517304-092') material.color.multiplyScalar(0.35)
+    if (material.name === 'PowderCoat_OffWhite') material.color.set('#a5adae')
+    else if (material.name === 'Label_Ivory') material.color.set('#b9b6aa')
+    /**
+     * 场景泛光按最高颜色通道提取亮区，仅关闭自发光仍可能被强光反射触发。
+     * 货架在输出前将线性亮度限制为一，低于一点二的泛光阈值，保留正常受光与阴影。
+     */
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+        outgoingLight = min(outgoingLight, vec3(1.0));
+        #include <opaque_fragment>
+      `)
+    }
+    material.customProgramCacheKey = () => 'warehouse-shelf-matte-v1'
   }
   return { scene: gltf.scene, dispose }
 }

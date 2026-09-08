@@ -193,10 +193,14 @@ export function createVehicleResources(model?: IndustrialModel, shelf?: ShelfMod
   }
   /**
    * 整队共用一份满载架几何和原材质，每辆车仅增加实例矩阵。
+   * 车载货架绕竖直轴旋转九十度改为横放，近中远景同步烘焙，保持脚底高度不变。
+   * 此处只调整车队独立持有的几何，地面货架继续使用原始朝向。
    * 未就绪时建立空部件以保持槽位结构稳定，内嵌标签贴图随资源统一回收。
    */
   for (const kind of Object.values(SHELF_MATERIAL_PARTS)) {
     parts[kind] = shelf?.parts[kind] ?? { geometry: new THREE.BufferGeometry(), material: materials.paint }
+    parts[kind].geometry.rotateY(Math.PI / 2)
+    for (const geometry of parts[kind].lodGeometries ?? []) geometry.rotateY(Math.PI / 2)
   }
   return {
     parts,

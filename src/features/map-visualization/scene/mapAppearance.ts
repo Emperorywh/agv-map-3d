@@ -253,7 +253,7 @@ export const GROUND_SEAM_LIGHT_ALPHA = 0.008
 
 /**
  * 粗糙度直接存入贴图灰度，材质乘子保持一。
- * 平滑涂层提供干净高光，实体倒影的柔化由反射纹理独立控制。
+ * 光源镜面高光由地坪着色器移除，粗糙度仍参与独立实体倒影的柔化。
  */
 export const GROUND_ROUGHNESS_BASE = 0.18
 export const GROUND_ROUGHNESS_VARIATION = 0.006
@@ -265,7 +265,7 @@ export const GROUND_ROUGHNESS_VARIATION = 0.006
 export const GROUND_BUMP_SCALE = 0.00004
 
 /**
- * 涂层地坪保持非金属材质，环境强度控制顶部柔光。
+ * 涂层地坪保持非金属材质，环境强度控制漫反射底色。
  * 实体倒影由独立的平面反射补充，关闭反射时仍保留标准材质受光。
  */
 export const GROUND_METALNESS = 0

@@ -1,0 +1,122 @@
+{
+  "status": "PASS",
+  "loader": "项目已安装的 Three.js GLTFLoader",
+  "glbSha256": "0a564089f8f2b4fdd8821131307bfd93e19d1b3bac31bc0e8eebc3f6f369c436",
+  "boundsGltfMeters": {
+    "min": [
+      -0.3154999911785126,
+      0,
+      -0.5111894011497498
+    ],
+    "max": [
+      0.3154999911785126,
+      1.6399999856948853,
+      0.526667686021543
+    ],
+    "size": [
+      0.6309999823570251,
+      1.6399999856948853,
+      1.0378570871712927
+    ]
+  },
+  "rootPosition": [
+    0,
+    0,
+    0
+  ],
+  "rootScale": [
+    1,
+    1,
+    1
+  ],
+  "meshCount": 49,
+  "materialCount": 10,
+  "lights": [
+    {
+      "name": "LED_Body_Front_Left",
+      "material": "LED_Cyan_Emission",
+      "intensity": 2
+    },
+    {
+      "name": "LED_Body_Front_Right",
+      "material": "LED_Cyan_Emission",
+      "intensity": 2
+    },
+    {
+      "name": "LED_Body_Rear_Left",
+      "material": "LED_Cyan_Emission",
+      "intensity": 2
+    },
+    {
+      "name": "LED_Body_Rear_Right",
+      "material": "LED_Cyan_Emission",
+      "intensity": 2
+    },
+    {
+      "name": "LED_Mast_Top_Ring",
+      "material": "LED_Cyan_Emission",
+      "intensity": 2
+    }
+  ],
+  "wheels": [
+    {
+      "name": "Wheel_Aux_Front_Center",
+      "worldOrigin": [
+        0,
+        0.041999999433755875,
+        0.3959999978542328
+      ]
+    },
+    {
+      "name": "Wheel_Caster_Front_Left",
+      "worldOrigin": [
+        -0.2029999941587448,
+        0.032999999821186066,
+        0.3619999885559082
+      ]
+    },
+    {
+      "name": "Wheel_Caster_Front_Right",
+      "worldOrigin": [
+        0.2029999941587448,
+        0.032999999821186066,
+        0.3619999885559082
+      ]
+    },
+    {
+      "name": "Wheel_Caster_Rear_Left",
+      "worldOrigin": [
+        -0.2029999941587448,
+        0.032999999821186066,
+        -0.33399999141693115
+      ]
+    },
+    {
+      "name": "Wheel_Caster_Rear_Right",
+      "worldOrigin": [
+        0.2029999941587448,
+        0.032999999821186066,
+        -0.33399999141693115
+      ]
+    },
+    {
+      "name": "Wheel_Drive_Left",
+      "worldOrigin": [
+        -0.24500000476837158,
+        0.07699999958276749,
+        0
+      ]
+    },
+    {
+      "name": "Wheel_Drive_Right",
+      "worldOrigin": [
+        0.24500000476837158,
+        0.07699999958276749,
+        0
+      ]
+    }
+  ],
+  "front": "+Z",
+  "up": "+Y",
+  "wheelRotationAxis": "local X"
+}

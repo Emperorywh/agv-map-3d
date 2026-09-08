@@ -115,15 +115,24 @@ if (await exists(mapPath)) {
 }
 
 /**
- * 车辆派生资产属于发布必需资源，构建时用生产同版加载器核对交付内容。
+ * 设计一车辆三档通过静态导入发布，构建时用生产同版加载器核对带哈希的产物。
  * 同时核对材质分区、有限顶点、米制包围盒及减面数量，防止导出错误静默进入运行时。
  */
+const assetFiles = await readdir(path.join(DIST, 'assets'))
 let sourceMaterials = null
 let sourceBounds = null
 let sourceTriangles = 0
-for (const name of ['AGV_FUTURE.glb', 'AGV_FUTURE_LOD1.glb', 'AGV_FUTURE_LOD2.glb']) {
+for (const name of ['agv_design1', 'agv_design1_LOD1', 'agv_design1_LOD2']) {
   try {
-    const buffer = await readFile(path.join(DIST, 'models', name))
+    const file = assetFiles.find((entry) => entry.startsWith(`${name}-`) && entry.endsWith('.glb'))
+    if (file === undefined) throw new Error('构建产物缺少车辆模型文件')
+    const buffer = await readFile(path.join(DIST, 'assets', file))
+    /**
+     * 发布文件必须与指定资产字节一致，防止静态副本过期或错误车型进入构建。
+     * 原始和派生三档均核对来源，后续几何检查继续验证实际解析结果。
+     */
+    const source = await readFile(path.join(ROOT, 'assets', 'agv_design1', `${name}.glb`))
+    check(buffer.equals(source), `${name} 发布内容与源资产一致`)
     const model = await new GLTFLoader().parseAsync(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength), '')
     const materials = new Set()
     const geometries = new Set()
@@ -162,12 +171,11 @@ for (const name of ['AGV_FUTURE.glb', 'AGV_FUTURE_LOD1.glb', 'AGV_FUTURE_LOD2.gl
  * 设施三档通过 Vite 静态导入发布，核对带哈希的实际产物和运行时材质分组合同。
  * 构建环境只解析纹理元数据，图像字节范围另行检查，不把占位纹理当成像素解码验证。
  */
-const assetFiles = await readdir(path.join(DIST, 'assets'))
 /**
- * 库区料箱的三档也属于发布必需资源，与车辆和其他设施一起阻止低模缺失交付。
- * 料箱原始导出单位不是米，包围盒容差按运行时一点二米宽度换算。
+ * 库区站点共用满载货架的三档资源，与车辆和其他设施一起阻止低模缺失交付。
+ * 当前设施原始导出单位均为米，旧料箱已退出运行时，不再要求其发布产物。
  */
-for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded', 'shelf']) {
+for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded']) {
   let original = null
   for (const suffix of ['', '_LOD1', '_LOD2']) {
     const name = `${stem}${suffix}`
@@ -213,15 +221,8 @@ for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded', 'shelf'])
       check(finite && triangles > 0, `${name} 顶点属性有效，共 ${triangles} 三角形`)
       check(materialNames === original.materialNames, `${name} 保留完整材质分区`)
       check([...original.layouts].every((layout) => layouts.has(layout)), `${name} 顶点布局兼容运行时合批`)
-      const size = original.bounds.getSize(new THREE.Vector3())
-      const scale = stem === 'shelf' ? 1.2 / Math.max(size.x, size.z) : 1
-      check(bounds.min.distanceTo(original.bounds.min) * scale < 0.03 && bounds.max.distanceTo(original.bounds.max) * scale < 0.03, `${name} 包围盒与原模型一致（世界空间容差 3cm）`)
+      check(bounds.min.distanceTo(original.bounds.min) < 0.03 && bounds.max.distanceTo(original.bounds.max) < 0.03, `${name} 包围盒与原模型一致（世界空间容差 3cm）`)
       if (suffix !== '') check(triangles < original.triangles * 0.35, `${name} 三角形少于原资产的 35%`)
-      /**
-       * 限制料箱低模的实际几何预算，防止托盘重新混入精修网格而静默回退性能。
-       * 这里校验发布资产，不增加单元测试或浏览器视觉验收流程。
-       */
-      if (stem === 'shelf' && suffix !== '') check(triangles <= (suffix === '_LOD1' ? 450 : 250), `${name} 满足库区料箱中远景面数预算`)
     } catch (error) {
       check(false, `${name} 可用（${error.message}）`)
     } finally {

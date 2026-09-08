@@ -1,7 +1,7 @@
 /**
  * 车辆选择交互（SPEC §7.3、§8、§11.6、§12.5；TASK-012）。
  *
- * 职责：把「单击车辆外壳选中、Esc 或点击场景空白取消、双击上抛跟随请求、
+ * 职责：把「单击车辆外壳切换选中、Esc 或点击场景空白取消、双击上抛跟随请求、
  *       车辆删除立即清理选中」翻译为低频 store 命令——返回一组可展开在
  *       Feature 根组件包裹 group 上的 R3F 指针事件处理器（事件沿场景图冒泡，
  *       只有外壳 InstancedMesh 开启 raycast，因此命中必然是外壳）与 Esc 键
@@ -42,13 +42,16 @@ export interface VehicleSelectionOptions {
 export interface VehicleSelectionHandlers {
   /**
    * 悬停不阻止事件传播，地图轨道控制仍接收拖拽和滚轮。
-   * 移动时检查按键状态，只在未拖拽时显示简要标签。
+   * 移动时检查按键状态，只在未拖拽时记录悬停，不触发标签显示。
    */
   onPointerMove(event: ThreeEvent<PointerEvent>): void
   onPointerOut(event: ThreeEvent<PointerEvent>): void
   /** 记录按下位置（拖拽判定基准），展开在包裹 group 上 */
   onPointerDown(event: ThreeEvent<PointerEvent>): void
-  /** 命中外壳 → 选中；命中部件非外壳时 R3F 不会触发（raycast 已关闭） */
+  /**
+   * 命中外壳时切换选中：再次单击同一辆车取消选中并关闭标签。
+   * 命中其他车辆时切换到该车，拾取仍由已开启 raycast 的外壳负责。
+   */
   onClick(event: ThreeEvent<MouseEvent>): void
   /** 命中外壳 → 仅上抛跟随请求，不改变选中（SPEC §8） */
   onDoubleClick(event: ThreeEvent<MouseEvent>): void
@@ -165,7 +168,12 @@ export function useVehicleSelection(
       const key = resolveEntityKey(event.intersections.find((hit) => typeof hit.object.userData.batchId === 'number') ?? event)
       if (key !== null) {
         event.stopPropagation()
-        useFleetMonitoringStore.getState().select(key)
+        /**
+         * 每次有效单击切换当前车辆的选中状态，让标签支持单击开启、单击关闭。
+         * 直接读取最新状态，避免连续点击时使用上一帧的选中值。
+         */
+        const store = useFleetMonitoringStore.getState()
+        store.select(store.selectedKey === key ? null : key)
       }
     },
     onDoubleClick(event) {

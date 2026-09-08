@@ -1,6 +1,6 @@
 /**
- * 全部库区料箱共享一份已校准资产，按材质合批并逐实例剔除不可见节点。
- * 三档均由资产加载器提供，近景保留原模型，中远景使用包含低面数托盘的派生资产。
+ * 全部库区站点共享一份已校准的满载货架资产，按材质合批并逐实例剔除不可见节点。
+ * 三档均由资产加载器提供，近景保留原模型，中远景使用同一满载货架的派生资产。
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'

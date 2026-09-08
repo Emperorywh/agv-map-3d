@@ -1,5 +1,5 @@
 """
-使用 Blender 后台生成车辆中远景资产，原始精修模型始终保留。
+使用 Blender 后台从设计一原始资产生成同目录中远景模型，原始精修模型始终保留。
 每档重新导入原文件，保留材质名、层级、米制坐标和发光分区，避免累积减面误差。
 运行：blender --background --python scripts/buildVehicleLods.py
 """
@@ -8,7 +8,7 @@ from pathlib import Path
 import bpy
 
 root = Path(__file__).resolve().parent.parent
-source = root / 'public/models/AGV_FUTURE.glb'
+source = root / 'assets/agv_design1/agv_design1.glb'
 report = []
 for level, ratio in [(1, 0.22), (2, 0.055)]:
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -40,7 +40,9 @@ for level, ratio in [(1, 0.22), (2, 0.055)]:
         obj.data.validate(clean_customdata=False)
         obj.data.update()
         reduced[identity] = obj.data
-    output = root / f'public/models/AGV_FUTURE_LOD{level}.glb'
+    # 派生模型与原始资产放在同一目录，由前端静态导入统一发布。
+    # 文件名跟随当前车型，避免覆盖旧资产或混用其他车型的远景几何。
+    output = source.with_name(f'{source.stem}_LOD{level}.glb')
     bpy.ops.export_scene.gltf(filepath=str(output), export_format='GLB', export_animations=False, export_cameras=False, export_lights=False)
     triangles = sum(sum(len(face.vertices) - 2 for face in obj.data.polygons) for obj in bpy.context.scene.objects if obj.type == 'MESH')
     report.append({'level': level, 'ratio': ratio, 'triangles': triangles, 'bytes': output.stat().st_size})

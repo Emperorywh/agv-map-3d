@@ -5,12 +5,12 @@
  *       低频连接状态，由 FleetRuntimeProvider 注入），创建并单一持有共享结
  *       构：程序化 AGV 共用几何/材质资源（VehicleResources）、实例槽位表
  *       （车体/标签共用的「实体键 → (批次, 槽位)」映射）与批次数（唯一进入
- *       React state 的结构值）；组合车辆实例与图集化标签两个图层，并把选择
+ *       React state 的结构值）；组合车辆实例、图集化标签和交管区域，并把选择
  *       交互（useVehicleSelection）展开在包裹 group 上。
  *       本组件是 fleet-monitoring 在场景内的唯一公开根：app 组合层经它接入
  *       车辆渲染与交互回调，不感知内部组件与运行时细节。
  *       TASK-016 接入上下文恢复重建：contextGeneration 资源代递增时，共享
- *       几何/材质（车辆）整代重建（旧资源由所有权 effect 释放），两个图层
+ *       几何/材质（车辆）整代重建（旧资源由所有权 effect 释放），三个图层
  *       经 keyed Fragment 整体重挂——图集与批次几何随重挂全部重建，批次矩
  *       阵/标签实例属性由帧同步 Hook 以运行时实体表为唯一事实源全量重写收
  *       敛（恢复期间运行时继续保留的最新数据随之落地）。
@@ -30,7 +30,7 @@
  *    签，也不创建实例缓冲；运行时继续积累事件，地图就绪后首帧全量重写收敛；
  * 4. 选择是低频 store 状态：本组件不订阅 selectedKey（避免高频渲染），选中
  *    变化由标签的帧同步经 getState 在下一渲染帧表达（SPEC §4）；
- * 5. 恢复重建顺序（TASK-016，SPEC §11.9）：同一恢复提交内按「车辆 → 标签」
+ * 5. 恢复重建顺序（TASK-016，SPEC §11.9）：同一恢复提交内按「车辆 → 标签 → 交管区域」
  *    落地（Fragment 内图层 JSX 顺序 = React effect 执行顺序），且恒在地图
  *    Feature（地图 → 环境）之后；重建期间数据源与运行时不受影响，恢复后
  *    第一帧即与最新快照对齐。
@@ -48,6 +48,11 @@ import {
 } from '../model/instanceSlots'
 import { VehicleInstances } from './VehicleInstances'
 import { VehicleLabels } from './VehicleLabels'
+/**
+ * 交管图层与车体、标签共用运行时和世界坐标变换。
+ * 仅消费服务端路权矩形，不参与车辆选择或业务路径计算。
+ */
+import { TrafficRegionsLayer } from './TrafficRegionsLayer'
 
 export interface FleetMonitoringFeatureProps {
   /** 地图世界变换；null 表示地图尚未就绪（不渲染车队场景内容） */
@@ -60,7 +65,7 @@ export interface FleetMonitoringFeatureProps {
   diagnostics?: DiagnosticsReporter
   /**
    * GPU 资源代（TASK-016 上下文恢复）：0 为初始挂载；恢复时由 app 状态机
-   * 递增——共享几何/材质整代重建，两个图层经 keyed Fragment 整体重挂。
+   * 递增——共享几何/材质整代重建，三个图层经 keyed Fragment 整体重挂。
    */
   contextGeneration?: number
   /**
@@ -153,8 +158,8 @@ export function FleetMonitoringFeature({
       onDoubleClick={selection.onDoubleClick}
       onPointerMissed={selection.onPointerMissed}
     >
-      {/* key 绑定资源代（TASK-016）：上下文恢复时代号变化强制两个图层整体
-          卸载/挂载（JSX 顺序即恢复顺序：车辆→标签），图集与批次几何随重挂
+      {/* key 绑定资源代（TASK-016）：上下文恢复时代号变化强制三个图层整体
+          卸载/挂载（JSX 顺序即恢复顺序：车辆→标签→交管区域），图集与批次几何随重挂
           全部重建，规避 R3F 对已挂载 primitive 换 object 的重建丢弃问题；
           选择交互挂在外层 group 上不受重挂影响。 */}
       <Fragment key={`fleet-resources-${contextGeneration}`}>
@@ -174,6 +179,9 @@ export function FleetMonitoringFeature({
           batchCount={batchCount}
           diagnostics={effectiveDiagnostics}
         />
+        {/* 交管资源跟随资源代重挂，恢复时从最新快照重建申请区和已锁定区。
+            JSX 挂载在标签之后，实际透明合成次序由区域内部的渲染顺序控制。 */}
+        <TrafficRegionsLayer runtime={runtime} worldTransform={worldTransform} />
       </Fragment>
     </group>
   )

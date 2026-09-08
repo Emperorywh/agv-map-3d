@@ -93,7 +93,9 @@ export default function IndustrialPreview() {
       <button onClick={() => setGeneration((value) => value + 1)}>重建模型资源</button>
       <output>选中：{selected ?? '无'}<br />悬停：{hovered ?? '无'}<br />正在跟随：{following ?? '无'}</output>
       <output>{metrics}</output>
-      <p className="industrial-note">悬停查看摘要，点击展开信息，Esc 取消。双击跟随车辆，拖拽地图退出跟随。</p>
+      {/* 标签说明与正式地图共用的单击切换行为保持一致。
+          悬停与告警不再自动展示标签，选中后的信息仍可通过 Esc 关闭。 */}
+      <p className="industrial-note">单击车辆显示信息，再次单击关闭，Esc 取消。双击跟随车辆，拖拽地图退出跟随。</p>
       <a href="./">返回真实地图</a>
     </aside>
   </main>

@@ -168,6 +168,10 @@ export function createGroundSurface(
     shader.uniforms.groundBoundary = { value: boundary }
     shader.vertexShader = `varying vec3 vGroundPosition;\n${shader.vertexShader}`.replace('#include <project_vertex>', `#include <project_vertex>\nvGroundPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`)
     shader.fragmentShader = `uniform vec4 groundBoundary;\nvarying vec3 vGroundPosition;\n${shader.fragmentShader}`.replace('#include <opaque_fragment>', `
+// 地坪只合成漫反射与自发光，移除主灯和环境灯箱的镜面高光。
+// 低粗糙度会在俯视反射方向形成过亮白斑，单纯降低环境强度无法消除主灯高光。
+// 阴影仍随漫反射保留，车辆与墙体的实体倒影由后续地坪反射钩子独立叠加。
+outgoingLight = totalDiffuse + totalEmissiveRadiance;
 // 接触阴影沿墙根连续衰减，灯槽的柔光与地坪反射分开计算。
 vec2 wallDistances = min(vGroundPosition.xz - groundBoundary.xz, groundBoundary.yw - vGroundPosition.xz);
 float wallDistance = max(0.0, min(wallDistances.x, wallDistances.y));
@@ -176,7 +180,7 @@ float wallWash = exp(-pow((wallDistance - 0.85) / 1.4, 2.0)) * 0.055;
 outgoingLight = outgoingLight * (1.0 - wallContact) + vec3(0.93, 0.97, 1.0) * wallWash;
 #include <opaque_fragment>`)
   }
-  material.customProgramCacheKey = () => 'industrial-floor-contact-v2'
+  material.customProgramCacheKey = () => 'industrial-floor-contact-v3'
 
   let disposed = false
   groundSurfaceSeq += 1

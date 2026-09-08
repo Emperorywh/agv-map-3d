@@ -1,0 +1,97 @@
+{
+  "status": "PASS",
+  "errors": [],
+  "source_bounds_blender_m": {
+    "min": [
+      -0.3154999911785126,
+      -0.5266677141189575,
+      0.0
+    ],
+    "max": [
+      0.3154999911785126,
+      0.5111894011497498,
+      1.6399999856948853
+    ],
+    "size": [
+      0.6309999823570251,
+      1.0378571152687073,
+      1.6399999856948853
+    ]
+  },
+  "reimport_bounds_blender_m": {
+    "min": [
+      -0.3154999911785126,
+      -0.5266677141189575,
+      0.0
+    ],
+    "max": [
+      0.3154999911785126,
+      0.5111894011497498,
+      1.6399999856948853
+    ],
+    "size": [
+      0.6309999823570251,
+      1.0378571152687073,
+      1.6399999856948853
+    ]
+  },
+  "maximum_part_bounds_drift_m": 1.1920928955078125e-07,
+  "source_parts_matched": 127,
+  "export_mesh_count": 45,
+  "wheel_origins_blender_m": {
+    "Wheel_Drive_Left": [
+      -0.24500000476837158,
+      0.0,
+      0.07699999958276749
+    ],
+    "Wheel_Caster_Front_Left": [
+      -0.2029999941587448,
+      -0.3619999885559082,
+      0.032999999821186066
+    ],
+    "Wheel_Caster_Rear_Left": [
+      -0.2029999941587448,
+      0.33399999141693115,
+      0.032999999821186066
+    ],
+    "Wheel_Drive_Right": [
+      0.24500000476837158,
+      0.0,
+      0.07699999958276749
+    ],
+    "Wheel_Caster_Front_Right": [
+      0.2029999941587448,
+      -0.3619999885559082,
+      0.032999999821186066
+    ],
+    "Wheel_Caster_Rear_Right": [
+      0.2029999941587448,
+      0.33399999141693115,
+      0.032999999821186066
+    ]
+  },
+  "led_nodes": [
+    "LED_Body_Front_Left",
+    "LED_Body_Front_Right",
+    "LED_Body_Rear_Left",
+    "LED_Body_Rear_Right",
+    "LED_Mast_Top_Ring"
+  ],
+  "triangles": 69512,
+  "glb_nodes": 47,
+  "materials": 10,
+  "glb_bytes": 2283060,
+  "external_textures": 0,
+  "cameras_exported": 0,
+  "lights_exported": 0,
+  "glb_sha256": "0a564089f8f2b4fdd8821131307bfd93e19d1b3bac31bc0e8eebc3f6f369c436",
+  "extensions_used": [
+    "KHR_materials_emissive_strength",
+    "KHR_materials_specular"
+  ],
+  "reimport_preview_mean_absolute_rgb_difference_0_255": [
+    0.0048838383838383835,
+    0.004552525252525252,
+    0.0054575757575757574
+  ]
+}

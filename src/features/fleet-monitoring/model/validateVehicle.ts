@@ -103,7 +103,11 @@ export function validateVehicle(raw: unknown, mapId: string): ValidateVehicleRes
     rawErrorEntries: Array.isArray(raw['errorEntryList'])
       ? Object.freeze([...raw['errorEntryList']])
       : Object.freeze([]),
-    trafficShapeResources: readTrafficResources(raw['trafficShapeResources']),
+    /**
+     * 申请路径与锁定路径在入口统一映射为交通矩形，后续校验及渲染共用同一份数据。
+     * 同时兼容当前调度器的 trafficShapeResources 与车辆顶层路径字段。
+     */
+    trafficShapeResources: readTrafficResources(raw),
     serverTime: readFiniteOrNull(raw['createTime']),
   }
   return { ok: true, snapshot: Object.freeze(snapshot) }
@@ -177,18 +181,33 @@ function validateDimension(
   }
 }
 
-/** 交通资源原样保留：仅要求数组形态，条目不做任何解释（规范化属 TASK-012） */
-function readTrafficResources(raw: unknown): RawTrafficResources | null {
-  const obj = readObject(raw)
-  if (obj === null) {
+/**
+ * 顶层路径字段存在时优先使用，显式空数组或 null 表示该类路权已经清空。
+ * 未提供路径字段时兼容既有交通资源；不合并两套字段，避免绘制已经释放的旧区域。
+ */
+function readTrafficResources(raw: Record<string, unknown>): RawTrafficResources | null {
+  const obj = readObject(raw['trafficShapeResources'])
+  const locked = raw['lockedPath'] !== undefined ? raw['lockedPath'] : obj?.['lockedRectangles']
+  const applying = raw['applyingPath'] !== undefined ? raw['applyingPath'] : obj?.['applyingRectangles']
+  if (obj === null && locked === undefined && applying === undefined) {
     return null
   }
-  const locked = obj['lockedRectangles']
-  const applying = obj['applyingRectangles']
   return Object.freeze({
-    lockedRectangles: Object.freeze(Array.isArray(locked) ? [...locked] : []),
-    applyingRectangles: Object.freeze(Array.isArray(applying) ? [...applying] : []),
+    lockedRectangles: readTrafficRectangles(locked),
+    applyingRectangles: readTrafficRectangles(applying),
   })
+}
+
+/**
+ * 兼容单个八数值矩形和矩形列表，并复制冻结坐标数组，防止发布后被外部改写。
+ * 非法矩形条目继续保留，由已有凸四边形校验逐项跳过并传播车辆数据告警。
+ */
+function readTrafficRectangles(raw: unknown): readonly unknown[] {
+  if (!Array.isArray(raw)) return Object.freeze([])
+  const rectangles = raw.length === 8 && !raw.some(Array.isArray) ? [raw] : raw
+  return Object.freeze(rectangles.map((rectangle) =>
+    Array.isArray(rectangle) ? Object.freeze([...rectangle]) : rectangle,
+  ))
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {

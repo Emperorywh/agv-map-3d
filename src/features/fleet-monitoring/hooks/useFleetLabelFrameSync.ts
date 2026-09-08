@@ -1,7 +1,7 @@
 /**
  * 车辆标签继续共享车辆槽位和图集，快照更新只写变化的内容属性。
- * 普通车辆隐藏，悬停显示摘要，选中完整显示；异常进入持续提示候选。
- * 距离分级与质量预算保留，所有可见标签按优先级、数量和屏幕碰撞统一控制。
+ * 标签默认隐藏，仅单击选中的车辆完整显示；悬停与告警不自动展开标签。
+ * 再次单击取消选中后隐藏标签，屏幕投影与尺寸约束继续控制可见范围。
  * 标签显隐不消费车体脏集合、不修改业务告警，不改变实例到车辆的映射。
  */
 import { useEffect, useRef } from 'react'
@@ -31,7 +31,6 @@ import { LABEL_BG_ATTR, LABEL_BG_ATTRIBUTE_NAMES } from '../scene/labelMaterials
 import {
   labelAlertLevel,
   labelChipOf,
-  labelImportanceRank,
 } from '../scene/labelLod'
 import { computeVehicleWorldPose } from '../scene/createVehicleGeometry'
 
@@ -108,7 +107,6 @@ interface LabelFrameController {
   viewportWidth: number
   viewportHeight: number
   selectedKey: string | null
-  hoveredKey: string | null
   rectangles: { x: number; y: number; width: number; height: number }[]
   ordered: number[]
   admitted: Set<number>
@@ -152,7 +150,6 @@ function createLabelFrameController(): LabelFrameController {
     viewportWidth: -1,
     viewportHeight: -1,
     selectedKey: null,
-    hoveredKey: null,
     rectangles: [],
     ordered: [],
     admitted: new Set(),
@@ -240,7 +237,6 @@ function tickLabelFrame(
   camera.updateMatrixWorld()
   const viewportWidth = state.size?.width ?? 0
   const selectedKey = useFleetMonitoringStore.getState().selectedKey
-  const hoveredKey = useFleetMonitoringStore.getState().hoveredKey
   /**
    * 仅在影响标签的输入变化时重新布局，静止页面不扫描车辆或触发图集提交。
    * 相机矩阵包含朝向，投影矩阵包含缩放，窗口与资源换代也会强制更新。
@@ -249,7 +245,7 @@ function tickLabelFrame(
   if (controller.lastRuntime === runtime && controller.lastTable === table && controller.lastRevision === runtime.revision &&
     controller.lastRenderedCount === table.renderedCount && controller.lastWorldTransform === worldTransform &&
     controller.viewportWidth === viewportWidth && controller.viewportHeight === viewportHeight &&
-    controller.selectedKey === selectedKey && controller.hoveredKey === hoveredKey &&
+    controller.selectedKey === selectedKey &&
     controller.cameraWorld.equals(camera.matrixWorld) && controller.cameraProjection.equals(camera.projectionMatrix)) return
   controller.lastRuntime = runtime
   controller.lastTable = table
@@ -259,7 +255,6 @@ function tickLabelFrame(
   controller.viewportWidth = viewportWidth
   controller.viewportHeight = viewportHeight
   controller.selectedKey = selectedKey
-  controller.hoveredKey = hoveredKey
   controller.cameraWorld.copy(camera.matrixWorld)
   controller.cameraProjection.copy(camera.projectionMatrix)
   const entities = runtime.entities()
@@ -287,8 +282,8 @@ function tickLabelFrame(
   // —— PASS 1：内容差量写入 + 投影档位采集 ——
   let farCount = 0
   /**
-   * 所有可见标签统一执行数量限制和屏幕碰撞避让，优先保留选中与悬停。
-   * 异常提示使用现有告警优先级；普通车辆即使在近景也默认不展开。
+   * 只有单击选中的车辆可以进入标签候选，继续沿用屏幕布局与可见范围检查。
+   * 告警仍决定已展开标签的样式，但不会让未选中的车辆自动显示标签。
    */
   const { rectangles, ordered, admitted } = controller
   ordered.length = 0
@@ -344,17 +339,15 @@ function tickLabelFrame(
     }
 
     /**
-     * 普通未选中车辆没有标签候选资格，提前跳过坐标投影和屏幕尺寸计算。
-     * 选中、悬停和全部告警继续使用既有优先级，不减少业务提示预算。
+     * 未选中车辆统一隐藏标签，提前跳过坐标投影和屏幕尺寸计算。
+     * 悬停、故障、离线和低电量等状态均不能绕过单击选中的显示条件。
      */
-    const hovered = entity.key === hoveredKey
-    const alertRank = labelImportanceRank({ selected: cache.selectedNext, primary: entity.displayState.primary, alerts: entity.staticState.alerts })
-    cache.levelNext = cache.selectedNext ? 2 : hovered || alertRank !== null ? 1 : 0
-    const rank = cache.selectedNext ? 0 : hovered ? 1 : alertRank === null ? null : alertRank + 2
+    cache.levelNext = cache.selectedNext ? 2 : 0
+    const rank = cache.selectedNext ? 0 : null
     if (rank === null) continue
 
     // 只有需要显示的标签才计算车体投影大小。
-    // 位置与显示档位仍在同一帧更新，跟随与悬停不增加固定延迟。
+    // 位置与显示档位仍在同一帧更新，单击切换不增加固定延迟。
     const pose = computeVehicleWorldPose(entity.snapshot, worldTransform)
     cache.poseX = pose.cx
     cache.poseZ = pose.cz

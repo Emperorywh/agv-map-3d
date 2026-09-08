@@ -1,5 +1,5 @@
 /**
- * 精修资源按材质合并为九个实例部件，模型层级的世界矩阵在合并前烘焙到顶点。
+ * 精修资源按材质合并为十个实例部件，模型层级的世界矩阵在合并前烘焙到顶点。
  * 原始文件只缓存二进制，不缓存 GPU 对象；每次上下文恢复都重新解析并明确释放。
  */
 import * as THREE from 'three'
@@ -10,20 +10,21 @@ import { createStatusMaterial } from '@/shared/industrial/materials'
 import { INDUSTRIAL_AGV_MODEL } from './vehicleModelConfig'
 
 /**
- * AGV_FUTURE 资产的材质→实例部件映射（材质名必须与 GLB 完全一致）。
- * glbPaint 为主车体（可拾取），glbPlatform 承载黑色货舱面板（可拾取），
- * glbStatus 为青色灯带并替换为实例色状态材质，其余保持资产原始 PBR 参数。
+ * 设计一资产的材质→实例部件映射（材质名必须与 GLB 完全一致）。
+ * glbPaint 为银灰主车体（可拾取），glbPlatform 为深灰承载平台（可拾取），
+ * glbStatus 包含车身与立柱的五段灯，沿用实例状态色，其余保留原始 PBR 参数。
  */
 export const GLB_MATERIAL_PARTS = {
-  Body_Metal_Graphite: 'glbPaint',
-  Panel_Black: 'glbPlatform',
-  Body_Metal_Silver: 'glbArmor',
-  Marking_Satin_Silver: 'glbMetal',
+  Body_Silver_Satin: 'glbPaint',
+  Platform_DarkGray: 'glbPlatform',
+  Chassis_Powdercoat: 'glbChassis',
+  Structure_Charcoal: 'glbStructure',
+  Fascia_Graphite: 'glbArmor',
+  Hardware_Satin: 'glbMetal',
   Rubber_Black: 'glbRubber',
-  Sensor_Dark_Glass: 'glbSensor',
-  Red_Emissive: 'glbEmergency',
-  Cyan_Emissive: 'glbStatus',
-  LiDAR_Blue_Emissive: 'glbLidar',
+  Screen_Sensor_Glass: 'glbSensor',
+  Emergency_Stop_Red: 'glbEmergency',
+  LED_Cyan_Emission: 'glbStatus',
 } as const
 export type GlbPartKind = typeof GLB_MATERIAL_PARTS[keyof typeof GLB_MATERIAL_PARTS]
 export interface IndustrialModel {
@@ -38,12 +39,15 @@ const binaries = new Map<string, Promise<ArrayBuffer>>()
 
 /** 资产原朝向为车头 +Z，场景约定车头 +X：合并前绕 Y 旋转 90° 烘入顶点 */
 const FORWARD_BAKE_ROTATION_Y = Math.PI / 2
-/** 资产车长方向首尾不对称约 3mm，居中校验放宽到厘米级即可接受 */
-const CENTERING_TOLERANCE_M = 0.01
+/**
+ * 设计一屏幕等突出部件使前后边界绝对值相差约 16mm，允许两厘米的不对称。
+ * 保留资产的车身地面中心原点，不按整车包围盒重新平移模型。
+ */
+const CENTERING_TOLERANCE_M = 0.02
 
 export async function loadIndustrialVehicleModel(): Promise<IndustrialModel> {
   const primary = await loadModelLevel(INDUSTRIAL_AGV_MODEL.url, true)
-  const results = await Promise.allSettled([1, 2].map((level) => loadModelLevel(`./models/AGV_FUTURE_LOD${level}.glb`, false)))
+  const results = await Promise.allSettled(INDUSTRIAL_AGV_MODEL.lodUrls.map((url) => loadModelLevel(url, false)))
   /**
    * 派生几何共用精修材质，颜色与发光参数不会在距离切换时改变。
    * 只接受连续完整的两档，失败或材质缺失时统一回退到精修几何。

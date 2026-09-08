@@ -1,0 +1,153 @@
+{
+  "正视图": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1正视图.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      787,
+      102,
+      1209,
+      1222
+    ],
+    "readable": true
+  },
+  "后视图": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1后视图.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      743,
+      113,
+      1167,
+      1238
+    ],
+    "readable": true
+  },
+  "左视图": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1左视图.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      629,
+      109,
+      1336,
+      1229
+    ],
+    "readable": true
+  },
+  "右视图": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1右视图.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      635,
+      73,
+      1341,
+      1194
+    ],
+    "readable": true
+  },
+  "俯视图": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1俯视图.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      717,
+      201,
+      1327,
+      1221
+    ],
+    "readable": true
+  },
+  "仰视图": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1仰视图.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      712,
+      137,
+      1334,
+      1179
+    ],
+    "readable": true
+  },
+  "立体图1": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1立体图1.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      485,
+      102,
+      1197,
+      1172
+    ],
+    "readable": true
+  },
+  "立体图2": {
+    "path": "C:\\Users\\12899\\Desktop\\睿芯行3D场景\\高清单图\\设计1立体图2.PNG",
+    "image_size": [
+      1650,
+      1275
+    ],
+    "content_bbox": [
+      585,
+      39,
+      1229,
+      1234
+    ],
+    "readable": true
+  },
+  "calibration": {
+    "right_body_x": [
+      656,
+      1340
+    ],
+    "right_ground_y": 1193,
+    "right_mast_top_y": 74,
+    "right_shell_top_y": 1048,
+    "right_platform_y": [
+      997,
+      1011
+    ],
+    "right_mast_x": [
+      696,
+      763
+    ],
+    "front_body_x": [
+      788,
+      1208
+    ],
+    "front_mast_x": [
+      939,
+      1057
+    ],
+    "top_body_bbox": [
+      718,
+      239,
+      1327,
+      1221
+    ],
+    "ratios": {
+      "height_over_length": 1.6359649122807018,
+      "width_over_length_top": 0.620162932790224,
+      "mast_width_over_body_width": 0.28095238095238095,
+      "platform_height_over_length": 0.28654970760233917
+    },
+    "assumption": "车身长 1 米；宽 0.61 米；高 1.64 米。正交图之间存在约 1% 到 2% 的轮廓差异。",
+    "excluded": "立体图中的拉伸大面、裁切边缘及轮胎向下异常延伸均不建为实体。"
+  }
+}
