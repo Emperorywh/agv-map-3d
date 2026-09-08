@@ -372,8 +372,9 @@ export function App() {
          不按瞬时帧率反复调节尺寸，避免渲染目标持续重分配。 */
       dpr={[0, Math.min(quality.maxDpr, startup.phase === 'ready' ? startup.config.renderer.maxDpr : quality.maxDpr)]}
       /* 厂房远墙的面板与基层仅相隔约三厘米，普通透视深度在远处会丢失这段间距。
-         使用对数深度同时保留近景裁剪范围和远墙层次，避免镜头移动时表面争抢深度。 */
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, logarithmicDepthBuffer: true }}
+         使用对数深度同时保留近景裁剪范围和远墙层次，避免镜头移动时表面争抢深度。
+         抗锯齿由 SceneBloom 的最终 FXAA 通道负责，画布不再重复申请 MSAA 缓冲。 */
+      gl={{ antialias: false, toneMapping: THREE.ACESFilmicToneMapping, logarithmicDepthBuffer: true }}
       /* shadows（P0-8）：启用实时阴影贴图（R3F 默认 PCFSoftShadowMap）——
          此前 Canvas 未传该 prop，灯光的阴影相机与分辨率全部空转；
          阴影相机按灯光空间地图四角收紧，见 MapVisualizationFeature */

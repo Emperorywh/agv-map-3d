@@ -37,6 +37,7 @@ export interface GroundLayerProps {
 export function GroundLayer({ bounds }: GroundLayerProps) {
   const quality = useRenderQuality()
   const gl = useThree((state) => state.gl)
+  const scene = useThree((state) => state.scene)
   const group = useMemo(() => new Group(), [])
   /**
    * 动画帧号由图层统一推进，使水晶透射预通道和主通道共用同帧倒影。
@@ -53,13 +54,29 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
     const reflection = createGroundReflection(surface.mesh, quality.reflectionSize, quality.reflectionFps)
     reflectionRef.current = reflection
     group.add(surface.mesh)
+    /**
+     * 场景钩子在相机及世界矩阵更新后、透射和实体绘制前执行，先生成本帧倒影。
+     * 避免地坪在透射预通道中途切走 MSAA 目标，导致 Apple 后端丢弃深度内容。
+     * 地坪原钩子的重入保护与帧号去重仍生效，镜像和主画面不会重复采集。
+     */
+    const originalSceneRender = scene.onBeforeRender
+    const prepareReflection: typeof scene.onBeforeRender = (...args) => {
+      originalSceneRender.apply(scene, args)
+      surface.mesh.onBeforeRender(args[0], args[1], args[2], surface.mesh.geometry, surface.mesh.material, group)
+    }
+    scene.onBeforeRender = prepareReflection
     return () => {
+      /**
+       * 只撤销本层安装的场景钩子，严格模式与资源换代时恢复原所有者。
+       * 先解除采集入口，再释放倒影纹理，防止场景继续调用已释放的句柄。
+       */
+      if (scene.onBeforeRender === prepareReflection) scene.onBeforeRender = originalSceneRender
       if (reflectionRef.current === reflection) reflectionRef.current = null
       reflection.dispose()
       group.remove(surface.mesh)
       surface.dispose()
     }
-  }, [bounds, gl, group, quality])
+  }, [bounds, gl, scene, group, quality])
 
   return (
     <primitive

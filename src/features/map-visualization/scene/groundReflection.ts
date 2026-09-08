@@ -93,7 +93,8 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   const clearColor = new THREE.Color()
 
   /**
-   * 在主相机真正绘制地面时采集，确保车辆位置、墙体剖切已经更新。
+   * 地坪所有者在场景开始绘制前调用本钩子，确保车辆位置、墙体剖切已经更新。
+   * 随后的地面绘制复用本帧倒影，透射预通道不再被镜像采集中断。
    * 移动镜头立即刷新，静止镜头按预算采集；车辆运动不会导致倒影永久冻结。
    * 重入保护和外层帧号共同阻止透射与主体通道重复采集。
    */

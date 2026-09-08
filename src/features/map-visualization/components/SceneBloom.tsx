@@ -10,6 +10,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
 import { useRenderQuality } from '@/shared/rendering/renderQuality'
 import { createFrameDiagnostics } from '@/shared/rendering/frameDiagnostics'
 
@@ -19,6 +21,7 @@ export function SceneBloom({ generation }: { generation: number }) {
   const pipeline = useRef<{
     composer: EffectComposer
     bloom: UnrealBloomPass
+    antialias: ShaderPass | null
     width: number
     height: number
   } | null>(null)
@@ -37,12 +40,14 @@ export function SceneBloom({ generation }: { generation: number }) {
 
   useEffect(() => {
     /**
-     * 半浮点颜色保留大于一的发光能量，采样数受设备能力与画质预算共同限制。
+     * 半浮点颜色保留大于一的发光能量，后处理目标固定为单采样。
+     * 光晕会采样主画面后再回写叠加，不能依赖多重采样缓冲跨通道保留数据；
+     * Apple 图形后端的隐式解析与缓冲恢复路径可能造成区域闪黑。
      * 输出通道独占最终色调映射，避免先压平高光再提取光晕造成白色装甲泛光。
      */
     const target = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
-      samples: Math.min(quality.msaa, gl.capabilities.maxSamples),
+      samples: 0,
     })
     const composer = new EffectComposer(gl, target)
     composer.setPixelRatio(1)
@@ -60,9 +65,20 @@ export function SceneBloom({ generation }: { generation: number }) {
     composer.addPass(render)
     composer.addPass(bloom)
     composer.addPass(output)
+    /**
+     * 抗锯齿放在色调映射和颜色空间转换之后，按最终显示亮度识别边缘。
+     * 均衡与高画质使用 FXAA，避免重新引入多重采样目标；性能档不增加通道。
+     */
+    const antialias = quality.antialias ? new ShaderPass(FXAAShader) : null
+    if (antialias !== null) {
+      antialias.material.depthTest = false
+      antialias.material.depthWrite = false
+      antialias.material.toneMapped = false
+      composer.addPass(antialias)
+    }
     const previousTransmissionScale = gl.transmissionResolutionScale
     gl.transmissionResolutionScale = quality.transmissionScale
-    pipeline.current = { composer, bloom, width: 0, height: 0 }
+    pipeline.current = { composer, bloom, antialias, width: 0, height: 0 }
     return () => {
       pipeline.current = null
       gl.transmissionResolutionScale = previousTransmissionScale
@@ -74,12 +90,13 @@ export function SceneBloom({ generation }: { generation: number }) {
        */
       bloom.materialHighPassFilter.dispose()
       output.dispose()
+      antialias?.dispose()
       composer.dispose()
     }
   }, [gl, scene, camera, generation, quality])
 
   /**
-   * 接管主画面渲染，所有普通帧回调完成后才采集；反射仍由原地坪钩子逐帧生成。
+   * 接管主画面渲染，所有普通帧回调完成后才采集；反射在场景绘制前完成。
    * 使用实际绘制缓冲尺寸响应窗口和像素比变化，不进行帧率采样或动态画质降级。
    */
   useFrame((_, delta) => {
@@ -94,6 +111,11 @@ export function SceneBloom({ generation }: { generation: number }) {
     if (width === 0 || height === 0) return
     if (current.width !== width || current.height !== height) {
       current.composer.setSize(width, height)
+      /**
+       * FXAA 的纹素步长使用真实绘制尺寸，覆盖 Retina、浏览器缩放与窗口变化。
+       * 与合成器同帧更新，避免像素比变化后仍采样旧的邻域尺寸。
+       */
+      current.antialias?.uniforms.resolution.value.set(1 / width, 1 / height)
       /**
        * 均衡档恢复内置半分辨率首层，性能档进一步降低柔光卷积的像素数量。
        * 主体画面和最终输出保持画布分辨率，高画质档保留原完整首层。
