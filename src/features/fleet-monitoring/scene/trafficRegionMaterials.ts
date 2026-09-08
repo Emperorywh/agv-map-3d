@@ -56,8 +56,10 @@ void main() {
   float phase = mix(flowing, radial, uApplying);
   float footprint = max(fwidth(phase), 0.0001);
   float waveFade = 1.0 - smoothstep(0.12, 0.48, footprint);
-  float wave = pow(0.5 + 0.5 * cos(phase * tau), mix(9.0, 18.0, uApplying)) * waveFade;
-  float echo = pow(0.5 + 0.5 * cos((phase + 0.16) * tau), 5.0) * waveFade;
+  // 三角函数近似结果先收敛到物理范围，防止极值附近的舍入让幂底数变负。
+  // 时间在静止镜头下仍会推进，非法波峰也会造成与相机操作无关的闪烁。
+  float wave = pow(clamp(0.5 + 0.5 * cos(phase * tau), 0.0, 1.0), mix(9.0, 18.0, uApplying)) * waveFade;
+  float echo = pow(clamp(0.5 + 0.5 * cos((phase + 0.16) * tau), 0.0, 1.0), 5.0) * waveFade;
   float interference = 0.5 + 0.5 * sin(dot(vPlane, vec2(-1.3, 1.7)) + uTime * 0.9);
   float breath = 0.5 + 0.5 * sin(uTime * mix(1.5, 3.0, uApplying));
 
@@ -122,7 +124,9 @@ void main() {
   float tau = 6.28318530718;
   float phase = vEdgeUv.x * vFlowCycles - uTime * mix(0.48, 0.68, uApplying);
   float phaseFade = 1.0 - smoothstep(0.15, 0.55, fwidth(phase));
-  float packet = pow(0.5 + 0.5 * cos(phase * tau), 12.0) * phaseFade;
+  // 流光波峰同样限制幂底数，避免不同图形后端在余弦极值附近产生不同结果。
+  // 合法范围内的亮度和动画速度保持原值。
+  float packet = pow(clamp(0.5 + 0.5 * cos(phase * tau), 0.0, 1.0), 12.0) * phaseFade;
   float breath = mix(0.9, 0.72, uApplying)
     + mix(0.1, 0.28, uApplying) * (0.5 + 0.5 * sin(uTime * mix(1.5, 3.0, uApplying)));
   float alpha;
@@ -135,10 +139,12 @@ void main() {
     alpha = (core * 0.88 + halo * 0.16) * breath;
     color = uColor * 1.5 + uHighlight * core * (1.6 + 2.0 * packet);
   } else {
-    float height = vEdgeUv.y;
+    // 光幕高度来自插值，边界处先夹到零至一，再进行非整数幂渐隐。
+    // 顶边轻微超出一时也不会让负数进入 pow，透明混合的颜色与覆盖率保持有限。
+    float height = clamp(vEdgeUv.y, 0.0, 1.0);
     float fade = pow(1.0 - height, 2.2);
     float risingPhase = height * 1.6 - uTime * mix(0.65, 0.9, uApplying);
-    float rising = pow(0.5 + 0.5 * cos(risingPhase * tau), 10.0);
+    float rising = pow(clamp(0.5 + 0.5 * cos(risingPhase * tau), 0.0, 1.0), 10.0);
     alpha = fade * (0.16 + packet * 0.18 + rising * 0.08) * breath;
     color = mix(uColor * 1.1, uHighlight * 2.6, packet * 0.65 + rising * 0.2);
   }

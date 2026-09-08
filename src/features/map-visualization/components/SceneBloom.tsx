@@ -41,8 +41,7 @@ export function SceneBloom({ generation }: { generation: number }) {
   useEffect(() => {
     /**
      * 半浮点颜色保留大于一的发光能量，后处理目标固定为单采样。
-     * 光晕会采样主画面后再回写叠加，不能依赖多重采样缓冲跨通道保留数据；
-     * Apple 图形后端的隐式解析与缓冲恢复路径可能造成区域闪黑。
+     * 抗锯齿由最终 FXAA 通道负责，中间颜色保留 HDR 范围供光晕使用。
      * 输出通道独占最终色调映射，避免先压平高光再提取光晕造成白色装甲泛光。
      */
     const target = new THREE.WebGLRenderTarget(1, 1, {
@@ -59,7 +58,14 @@ export function SceneBloom({ generation }: { generation: number }) {
      */
     bloom.materialHighPassFilter.fragmentShader = bloom.materialHighPassFilter.fragmentShader.replace(
       'float v = luminance( texel.xyz );',
-      'float v = max( texel.r, max( texel.g, texel.b ) );',
+      `
+      // 先隔离无效源像素，再计算亮度和阈值，不能用乘零或 clamp 清理 NaN。
+      // 否则一次异常会沿五级横纵卷积传播，让局部错误扩大成矩形黑屏。
+      if (any(isnan(texel)) || any(isinf(texel))) {
+        gl_FragColor = vec4(0.0);
+        return;
+      }
+      float v = max( texel.r, max( texel.g, texel.b ) );`,
     )
     const output = new OutputPass()
     composer.addPass(render)

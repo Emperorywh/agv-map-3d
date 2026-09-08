@@ -176,11 +176,18 @@ outgoingLight = totalDiffuse + totalEmissiveRadiance;
 vec2 wallDistances = min(vGroundPosition.xz - groundBoundary.xz, groundBoundary.yw - vGroundPosition.xz);
 float wallDistance = max(0.0, min(wallDistances.x, wallDistances.y));
 float wallContact = exp(-wallDistance * 3.8) * 0.24 + exp(-wallDistance * 0.75) * 0.07;
-float wallWash = exp(-pow((wallDistance - 0.85) / 1.4, 2.0)) * 0.055;
+// 距墙不足零点八五米时偏移为负，GLSL 的 pow 对负底数未定义，即使指数是二。
+// 显式相乘保留原高斯曲线，避免无效颜色进入半浮点画面并被光晕扩大。
+float wallWashOffset = (wallDistance - 0.85) / 1.4;
+float wallWash = exp(-(wallWashOffset * wallWashOffset)) * 0.055;
 outgoingLight = outgoingLight * (1.0 - wallContact) + vec3(0.93, 0.97, 1.0) * wallWash;
 #include <opaque_fragment>`)
   }
-  material.customProgramCacheKey = () => 'industrial-floor-contact-v3'
+  /**
+   * 数值安全补丁使用独立程序键，地坪叠加反射后也不能命中旧的负底数幂程序。
+   * 材质和纹理的所有权保持不变，资源换代仍由地坪句柄统一回收。
+   */
+  material.customProgramCacheKey = () => 'industrial-floor-contact-v4'
 
   let disposed = false
   groundSurfaceSeq += 1

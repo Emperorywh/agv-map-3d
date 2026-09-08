@@ -63,12 +63,20 @@ vec2 reflectionUv = vGroundReflection.xy / max(vGroundReflection.w, 0.0001);
 float reflectionBlur = groundReflectionBlur + roughnessFactor * 0.8;
 vec4 reflected = textureLod(groundReflectionTexture, reflectionUv, reflectionBlur);
 float reflectionEdge = smoothstep(0.0, 0.025, min(min(reflectionUv.x, reflectionUv.y), min(1.0 - reflectionUv.x, 1.0 - reflectionUv.y)));
-float grazing = pow(1.0 - max(dot(normalize(normal), normalize(vViewPosition)), 0.0), 3.0);
+// 单位向量的点积也可能因浮点舍入略大于一，必须同时限制上下界。
+// 三次幂改为乘法，避免接近正俯视时负底数幂产生无效像素。
+float reflectionCosine = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+float reflectionGrazing = 1.0 - reflectionCosine;
+float grazing = reflectionGrazing * reflectionGrazing * reflectionGrazing;
 float reflectionWeight = groundReflectionReady * reflectionEdge * (0.42 + 0.12 * grazing);
 outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflected.rgb * reflectionWeight;
 #include <opaque_fragment>`)
   }
-  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v2`
+  /**
+   * 反射数值边界发生变化时更新组合程序键，保证所有复用地坪材质的入口重新编译。
+   * 原地坪补丁的程序键继续保留，避免不同基础表面共享错误程序。
+   */
+  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v3`
   /**
    * 同一材质切换回已用过的程序时，Three.js 不会再次执行编译回调。
    * 清理材质程序缓存以绑定本次反射纹理；地坪几何与三张源纹理继续复用。
