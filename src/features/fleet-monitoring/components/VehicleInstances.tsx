@@ -65,9 +65,9 @@ function createBatches(resources: VehicleResources, count: number, quality: Rend
       const resource = resources.parts[kind]
       /**
        * 中远景只切换批内几何编号，继续共享材质、业务槽位及车辆矩阵。
-       * 高画质档不分配低模拷贝，保持完整精修模型。
+       * 高画质也装配低模供阴影和倒影使用，主画面的零阈值仍选择完整精修模型。
        */
-      const mesh = new CulledVehicleBatch(resource.geometry, resource.material, SLOT_BATCH_CAPACITY, quality.lodPixels[0] > 0 ? resource.lodGeometries : undefined, quality.lodPixels)
+      const mesh = new CulledVehicleBatch(resource.geometry, resource.material, SLOT_BATCH_CAPACITY, resource.lodGeometries, quality.lodPixels)
       mesh.name = `fleet-${kind}-b${batchId}`
       mesh.matrixAutoUpdate = false
       mesh.castShadow = !INSTANCE_COLOR_PARTS.has(kind) && kind !== 'shadow'

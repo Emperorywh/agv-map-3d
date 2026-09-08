@@ -47,7 +47,11 @@ export function ShelvesLayer({ mapModel, worldTransform, layout }: { mapModel: M
             matrix.makeRotationY(placement.rotation).setPosition(placement.x, GROUND_SURFACE_Y, placement.z).toArray(matrices, index * 16)
           }
           for (const part of Object.values(model.parts)) {
-            const levels = [part.geometry, ...(quality.lodPixels[0] > 0 ? part.lodGeometries ?? [] : [])]
+            /**
+             * 所有画质都提供三档几何，地面货架与车载货架共用辅助通道的最低档预算。
+             * 高画质只在主画面保留原模型，阴影与倒影不再重复提交精修部件。
+             */
+            const levels = [part.geometry, ...(part.lodGeometries ?? [])]
             const mesh = new StaticLodBatch(levels, part.material, matrices, 1.8, quality.lodPixels)
             meshes.push(mesh)
             mesh.name = `map-shelves-${variant}-${part.material.name}-${key}`

@@ -1,0 +1,101 @@
+/**
+ * 独立料箱保留交付 GLB 的层级与贴图，在运行时校准尺寸、原点和哑光材质。
+ * 二进制请求共享缓存，几何与材质由每次加载单独持有，随地图资源代释放。
+ */
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import materialBinUrl from '../../../../assets/shelf_20260908_01/shelf.glb?url'
+import materialBinLod1Url from '../../../../assets/shelf_20260908_01/shelf_LOD1.glb?url'
+import materialBinLod2Url from '../../../../assets/shelf_20260908_01/shelf_LOD2.glb?url'
+
+const MATERIAL_BIN_WIDTH_M = 1.2
+const binaries = new Map<string, Promise<ArrayBuffer>>()
+
+export async function loadMaterialBinModel() {
+  const primary = await loadLevel(materialBinUrl)
+  const results = await Promise.allSettled([materialBinLod1Url, materialBinLod2Url].map(loadLevel))
+  const models = [primary]
+  /**
+   * 两档低模完整到达后才交接给实例层，失败时保持原模型可用。
+   * 已成功解析但不能组成完整档位的资源立即释放，避免上下文恢复累积资源。
+   */
+  if (results.every((result) => result.status === 'fulfilled')) {
+    for (const result of results) if (result.status === 'fulfilled') models.push(result.value)
+  } else {
+    for (const result of results) if (result.status === 'fulfilled') result.value.dispose()
+    console.warn('料箱低模不可用，保留精修模型')
+  }
+  const dispose = () => { for (const model of models) model.dispose() }
+  try {
+    /**
+     * 三档共用原模型的米制缩放与底面中心，不分别归一化减面后的包围盒。
+     * 这样切换档位不会出现平移、缩放或高度跳动，地图节点坐标保持一致。
+     */
+    const bounds = new THREE.Box3().setFromObject(primary.scene, true)
+    const size = bounds.getSize(new THREE.Vector3())
+    const width = Math.max(size.x, size.z)
+    if (bounds.isEmpty() || !Number.isFinite(width) || width <= 0) throw new Error('料箱模型尺寸无效')
+    const center = bounds.getCenter(new THREE.Vector3())
+    const origin = new THREE.Vector3(center.x, bounds.min.y, center.z)
+    const groups = models.map((model) => {
+      const group = new THREE.Group()
+      model.scene.position.sub(origin)
+      group.scale.setScalar(MATERIAL_BIN_WIDTH_M / width)
+      group.add(model.scene)
+      return group
+    })
+    return { group: groups[0], lodGroups: groups.slice(1), dispose }
+  } catch (error) {
+    dispose()
+    throw error
+  }
+}
+
+/**
+ * 文件字节按地址缓存，几何、材质和贴图由每次加载独立持有。
+ * 主模型与低模使用相同材质校准，最终合批统一复用主模型材质。
+ */
+async function loadLevel(url: string) {
+  let binary = binaries.get(url)
+  binary ??= fetch(url).then((response) => {
+    if (!response.ok) throw new Error(`料箱模型加载失败：HTTP ${response.status}`)
+    return response.arrayBuffer()
+  }).catch((error: unknown) => { binaries.delete(url); throw error })
+  binaries.set(url, binary)
+  const gltf = await new GLTFLoader().parseAsync(await binary, '')
+  const geometries = new Set<THREE.BufferGeometry>()
+  const materials = new Set<THREE.Material>()
+  const textures = new Set<THREE.Texture>()
+  let disposed = false
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    for (const geometry of geometries) geometry.dispose()
+    for (const material of materials) material.dispose()
+    for (const texture of textures) texture.dispose()
+  }
+  gltf.scene.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return
+    object.castShadow = true
+    object.receiveShadow = true
+    geometries.add(object.geometry)
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      materials.add(material)
+      for (const value of Object.values(material)) if (value instanceof THREE.Texture) textures.add(value)
+    }
+  })
+  /**
+   * 原始纸箱反射率偏高，在厂房顶光和 ACES 输出下会接近白色并进入泛光亮区。
+   * 按参考图校准为牛皮纸棕色，降低环境补光、提高粗糙度，保留受光面与背光面的层次。
+   * 按集合逐材质处理，多个箱体共用的材质只校准一次；托盘继续使用原始颜色贴图。
+   */
+  for (const material of materials) {
+    if (!(material instanceof THREE.MeshStandardMaterial)) continue
+    material.roughness = 0.95
+    material.envMapIntensity = 0.12
+    if (material.name === '3d66-CoronaLegacyMtl-18517304-087') material.color.set('#937b59')
+    else if (material.name === '3d66-CoronaLegacyMtl-18517304-085') material.color.set('#806c49')
+    else if (material.name === '3d66-CoronaLegacyMtl-18517304-092') material.color.multiplyScalar(0.35)
+  }
+  return { scene: gltf.scene, dispose }
+}

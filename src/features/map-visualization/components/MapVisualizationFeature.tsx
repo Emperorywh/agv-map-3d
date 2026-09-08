@@ -64,6 +64,7 @@ import { LandmarksLayer } from './LandmarksLayer'
 import { GroundLayer } from './GroundLayer'
 import { FactoryLayer } from './FactoryLayer'
 import { ShelvesLayer } from './ShelvesLayer'
+import { MaterialBinLayer } from './MaterialBinLayer'
 import { SceneBloom } from './SceneBloom'
 
 export interface MapVisualizationFeatureProps {
@@ -169,6 +170,9 @@ export function MapVisualizationFeature({
           {/* 货架沿边缘节点外围整齐摆放，复用厂房边界保留通行与检修净空。
               与地图资源代共同重建，原始 GLB 只作为只读资产加载。 */}
           <ShelvesLayer key={`shelves-${view.version}`} mapModel={view.mapModel} worldTransform={view.worldTransform} layout={factoryLayout} />
+          {/* 每个库区站点放置一个料箱，模型底面与地坪对齐。
+              实例共享模型资源，并与地图资源代共同重建。 */}
+          <MaterialBinLayer key={`material-bin-${view.version}`} mapModel={view.mapModel} worldTransform={view.worldTransform} />
           <PhysicalPathsLayer
             key={`paths-${view.version}`}
             geometry={view.geometry}

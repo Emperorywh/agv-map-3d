@@ -38,7 +38,7 @@ export interface ChargingTowerFrameUniforms {
  * 资产加载器负责字节缓存与三档几何，场景句柄只装配静态实例和灯位。
  * 水晶材质在收集渲染列表之前选择，倒影采集期间临时使用简化版本。
  */
-export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8, lodPixels: readonly [number, number] = [120, 36], crystalPixels = 120) {
+export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8, lodPixels: readonly [number, number] = [180, 60], crystalPixels = 160, crystalLimit = 1) {
   const asset = await loadChargingTowerAsset()
   const geometries = new Set<THREE.BufferGeometry>()
   const materials = new Set<THREE.Material>()
@@ -50,6 +50,11 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
    * 每座塔保存静态灯位，镜头变化时再选择有画面贡献的近处灯位。
    */
   const lightPositions: THREE.Vector3[] = []
+  /**
+   * 记录每座塔水晶自身的世界包围球，透射资格按真实水晶投影和主视锥计算。
+   * 灯光影响范围仍单独维护，屏幕外补光不会误触发全场景透射预渲染。
+   */
+  const crystalBounds: THREE.Sphere[] = []
   const crystalMeshes: { mesh: THREE.Mesh; original: THREE.Material; simplified: THREE.Material; tower: number }[] = []
   const simplifiedMaterials = new Map<THREE.Material, THREE.MeshStandardMaterial>()
   const detailedCrystals = new Uint8Array(matrices.length / 16)
@@ -75,16 +80,26 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
     const towerCount = matrices.length / 16
     /**
      * 同材质小部件已合成整塔几何，批内按塔剔除，避免每个螺钉都做排序和视锥判断。
-     * 高画质使用原几何，其余档位按当前主画面、透射、镜像和阴影视口选择 LOD。
+     * 全档位保留低模供辅助通道使用，主画面继续按自己的画质阈值选择几何。
      */
     for (const part of asset.opaque.values()) {
-      const levels = [part.geometry, ...(lodPixels[0] > 0 ? part.lodGeometries ?? [] : [])]
+      const levels = [part.geometry, ...(part.lodGeometries ?? [])]
       const batch = new StaticLodBatch(levels, part.material, matrices, 3.6, lodPixels)
       batches.push(batch)
       batch.name = `charge-tower-opaque-${part.material.name}`
       group.add(batch)
     }
 
+    /**
+     * 水晶几何已经烘焙到整塔坐标，合并包围盒后只需应用各塔的放置矩阵。
+     * 这里只在加载阶段计算，镜头变化时复用包围球，不扫描水晶顶点。
+     */
+    const crystalBox = new THREE.Box3()
+    for (const part of asset.crystals) {
+      part.geometry.computeBoundingBox()
+      crystalBox.union(part.geometry.boundingBox!)
+    }
+    const crystalSphere = crystalBox.getBoundingSphere(new THREE.Sphere())
     for (let offset = 0; offset < matrices.length; offset += 16) {
       /**
        * 每座塔保留独立水晶网格以维持对象排序，烘焙几何和原材质继续共享。
@@ -94,6 +109,7 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
       placement.name = `charge-tower-${offset / 16}`
       placement.matrix.fromArray(matrices, offset)
       placement.matrixAutoUpdate = false
+      crystalBounds.push(crystalSphere.clone().applyMatrix4(placement.matrix))
       for (const part of asset.crystals) {
         let simplified = simplifiedMaterials.get(part.material)
         if (simplified === undefined) {
@@ -107,7 +123,7 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
           simplifiedMaterials.set(part.material, simplified)
           materials.add(simplified)
         }
-        const mesh = new THREE.Mesh(part.geometry, crystalPixels === 0 ? part.material : simplified)
+        const mesh = new THREE.Mesh(part.geometry, simplified)
         mesh.name = `charge-tower-crystal-${offset / 16}`
         mesh.receiveShadow = true
         mesh.matrixAutoUpdate = false
@@ -209,6 +225,12 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
     const cameraPosition = new THREE.Vector3()
     const candidates: number[] = []
     const scores = new Float64Array(lightPositions.length)
+    /**
+     * 透射候选独立于点光源候选，优先保留画面中最大的水晶并为既有入选者留滞回。
+     * 数组和分值缓冲跨帧复用，镜头静止时沿用原有整体提前返回。
+     */
+    const crystalCandidates: number[] = []
+    const crystalScores = new Float64Array(lightPositions.length)
     let initialized = false
     let cameraHeight = 0
     /**
@@ -226,17 +248,22 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       frustum.setFromProjectionMatrix(projection, camera.coordinateSystem, camera.reversedDepth)
       candidates.length = 0
+      crystalCandidates.length = 0
       const view = camera.matrixWorldInverse.elements
-      const factor = viewportHeight * Math.abs(camera.projectionMatrix.elements[5]) * 3.6 / 2
+      const factor = viewportHeight * Math.abs(camera.projectionMatrix.elements[5])
       for (let index = 0; index < lightPositions.length; index += 1) {
         /**
-         * 以整塔包络估算水晶投影，临界距离保留百分之十五滞回，避免材质频繁跳变。
-         * 相机背后的塔保持简化材质，镜像中需要它们时仍由反射专用材质正确呈现。
+         * 用水晶自身的包围球估算屏幕直径，避免较大的整塔轮廓过早启用真实透射。
+         * 仅主视锥内且达到尺寸门槛的水晶进入候选，性能档零限额直接跳过。
          */
-        const position = lightPositions[index]
+        const sphere = crystalBounds[index]
+        const position = sphere.center
         const depth = -(view[2] * position.x + view[6] * position.y + view[10] * position.z + view[14])
-        const pixels = camera instanceof THREE.PerspectiveCamera ? depth > 0 ? factor / depth : 0 : factor
-        detailedCrystals[index] = crystalPixels === 0 || pixels >= crystalPixels * (detailedCrystals[index] ? 0.85 : 1.15) ? 1 : 0
+        const pixels = camera instanceof THREE.PerspectiveCamera ? depth > 0 ? factor * sphere.radius / depth : 0 : factor * sphere.radius
+        if (crystalLimit > 0 && frustum.intersectsSphere(sphere) && pixels >= crystalPixels * (detailedCrystals[index] ? 0.85 : 1.15)) {
+          crystalScores[index] = pixels * (detailedCrystals[index] ? 1.15 : 1)
+          crystalCandidates.push(index)
+        }
         influence.center.copy(lightPositions[index])
         influence.radius = 4.5
         reflectedInfluence.copy(influence)
@@ -246,6 +273,13 @@ export async function loadChargingTowers(matrices: Float32Array, lightBudget = 8
           candidates.push(index)
         }
       }
+      /**
+       * 均衡档最多保留一座近景塔的真实水晶，其余保持发光、透明轮廓和独立排序。
+       * 在渲染列表收集前完成材质选择，无合格候选时不会创建透射预通道。
+       */
+      crystalCandidates.sort((a, b) => crystalScores[b] - crystalScores[a] || a - b)
+      detailedCrystals.fill(0)
+      for (let slot = 0; slot < Math.min(crystalCandidates.length, crystalLimit); slot += 1) detailedCrystals[crystalCandidates[slot]] = 1
       for (const entry of crystalMeshes) entry.mesh.material = detailedCrystals[entry.tower] ? entry.original : entry.simplified
       /**
        * 最近的有效灯位优先，已分配灯位给予滞回权重，避免相邻塔来回抢占灯槽。

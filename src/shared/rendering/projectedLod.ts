@@ -48,10 +48,10 @@ export class ProjectedLod {
     this.factor = height * Math.abs(camera.projectionMatrix.elements[5]) * this.diameter / 2
     this.perspective = camera instanceof THREE.PerspectiveCamera
     /**
-     * 阴影和柔化倒影最多使用中景模型，细小倒角不再进入这些辅助通道。
-     * 高画质不传派生几何，调用方仍会把结果限制到原模型，保留显式档位语义。
+     * 阴影和柔化倒影固定使用最低可用几何，减少同一批模型在辅助通道的重复面数。
+     * 低分辨率透射至少使用中景几何；主画面仍遵守自身档位，缺少低模时由调用方回退。
      */
-    this.minimumLevel = reflectionCameras.has(camera) || material instanceof THREE.MeshDepthMaterial || material instanceof THREE.MeshDistanceMaterial ? 1 : 0
+    this.minimumLevel = reflectionCameras.has(camera) || material instanceof THREE.MeshDepthMaterial || material instanceof THREE.MeshDistanceMaterial ? 2 : height < this.size.y * 0.75 ? 1 : 0
   }
 
   select(slot: number, x: number, y: number, z: number): number {

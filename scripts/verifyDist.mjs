@@ -163,7 +163,11 @@ for (const name of ['AGV_FUTURE.glb', 'AGV_FUTURE_LOD1.glb', 'AGV_FUTURE_LOD2.gl
  * 构建环境只解析纹理元数据，图像字节范围另行检查，不把占位纹理当成像素解码验证。
  */
 const assetFiles = await readdir(path.join(DIST, 'assets'))
-for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded']) {
+/**
+ * 库区料箱的三档也属于发布必需资源，与车辆和其他设施一起阻止低模缺失交付。
+ * 料箱原始导出单位不是米，包围盒容差按运行时一点二米宽度换算。
+ */
+for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded', 'shelf']) {
   let original = null
   for (const suffix of ['', '_LOD1', '_LOD2']) {
     const name = `${stem}${suffix}`
@@ -209,8 +213,15 @@ for (const stem of ['agv_charge_tower', 'shelf_empty', 'shelf_loaded']) {
       check(finite && triangles > 0, `${name} 顶点属性有效，共 ${triangles} 三角形`)
       check(materialNames === original.materialNames, `${name} 保留完整材质分区`)
       check([...original.layouts].every((layout) => layouts.has(layout)), `${name} 顶点布局兼容运行时合批`)
-      check(bounds.min.distanceTo(original.bounds.min) < 0.03 && bounds.max.distanceTo(original.bounds.max) < 0.03, `${name} 包围盒与原模型一致（容差 3cm）`)
+      const size = original.bounds.getSize(new THREE.Vector3())
+      const scale = stem === 'shelf' ? 1.2 / Math.max(size.x, size.z) : 1
+      check(bounds.min.distanceTo(original.bounds.min) * scale < 0.03 && bounds.max.distanceTo(original.bounds.max) * scale < 0.03, `${name} 包围盒与原模型一致（世界空间容差 3cm）`)
       if (suffix !== '') check(triangles < original.triangles * 0.35, `${name} 三角形少于原资产的 35%`)
+      /**
+       * 限制料箱低模的实际几何预算，防止托盘重新混入精修网格而静默回退性能。
+       * 这里校验发布资产，不增加单元测试或浏览器视觉验收流程。
+       */
+      if (stem === 'shelf' && suffix !== '') check(triangles <= (suffix === '_LOD1' ? 450 : 250), `${name} 满足库区料箱中远景面数预算`)
     } catch (error) {
       check(false, `${name} 可用（${error.message}）`)
     } finally {

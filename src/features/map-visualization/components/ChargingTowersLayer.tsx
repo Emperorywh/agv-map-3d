@@ -20,10 +20,10 @@ export function ChargingTowersLayer({ matrices }: { matrices: Float32Array }) {
     let active = true
     let resource: Awaited<ReturnType<typeof loadChargingTowers>> | null = null
     /**
-     * 设施几何与水晶透射使用同一档位预算，近景保留原资产和真实材质。
+     * 设施几何与水晶透射使用同一档位预算，真实透射同时受屏幕尺寸和数量限制。
      * 预算随资源代固定，镜头移动只切换已创建的几何编号与材质引用。
      */
-    void loadChargingTowers(matrices, quality.pointLights, quality.lodPixels, quality.crystalPixels).then((loaded) => {
+    void loadChargingTowers(matrices, quality.pointLights, quality.lodPixels, quality.crystalPixels, quality.crystalLimit).then((loaded) => {
       if (!active) { loaded.dispose(); return }
       resource = loaded
       resourceRef.current = loaded
