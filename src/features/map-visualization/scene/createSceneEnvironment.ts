@@ -21,6 +21,7 @@ import {
   ENVIRONMENT_HORIZON_COLOR,
   ENVIRONMENT_ZENITH_COLOR,
   GROUND_ENV_COLOR,
+  GROUND_ENVIRONMENT_STYLE,
 } from './mapAppearance'
 
 /** 环境贴图句柄：texture 挂到 scene.environment，dispose 释放全部 GPU 资源 */
@@ -68,7 +69,7 @@ function disposeSceneGraph(root: THREE.Object3D): void {
 export const createGradientEnvironment: SceneEnvironmentFactory = (gl) => createEnvironment(gl, false)
 
 /**
- * 地面使用中性室内渐变与宽灯箱，让微表面在真实观察方向下产生柔和高光。
+ * 地面使用冷蓝室内渐变与宽灯箱，让微表面在真实观察方向下产生柔和高光。
  * 只绑定地面材质，设备和墙板继续使用原有室内环境。
  */
 export const createGroundEnvironment: SceneEnvironmentFactory = (gl) => createEnvironment(gl, true)
@@ -118,7 +119,7 @@ function createGradientScene(floor: boolean): THREE.Scene {
   const scene = new THREE.Scene()
   /**
    * 宽灯箱只参与一次环境采样，实际场景不增加几何或逐帧灯光。
-   * 地板采用中性柔光底，避免天空蓝色污染石墨灰金属。
+   * 地板采用低饱和冷蓝柔光底，与参考图的深蓝金属和灯槽统一。
    */
   const geometry = new THREE.SphereGeometry(GRADIENT_SPHERE_RADIUS_M, 32, 24)
   const position = geometry.getAttribute('position')
@@ -127,9 +128,9 @@ function createGradientScene(floor: boolean): THREE.Scene {
    * 地面保留有亮度下限的室内渐变，俯视和掠射角都能看清钢板。
    * 设备环境继续使用原有顶部柔光与冷灰渐变。
    */
-  const zenith = new THREE.Color(floor ? '#93999f' : ENVIRONMENT_ZENITH_COLOR)
+  const zenith = new THREE.Color(floor ? GROUND_ENVIRONMENT_STYLE.zenith : ENVIRONMENT_ZENITH_COLOR)
   const horizon = new THREE.Color(floor ? GROUND_ENV_COLOR : ENVIRONMENT_HORIZON_COLOR)
-  const ground = new THREE.Color(floor ? '#34383d' : ENVIRONMENT_GROUND_COLOR)
+  const ground = new THREE.Color(floor ? GROUND_ENVIRONMENT_STYLE.ground : ENVIRONMENT_GROUND_COLOR)
   const scratch = new THREE.Color()
   for (let i = 0; i < position.count; i += 1) {
     const t = position.getY(i) / GRADIENT_SPHERE_RADIUS_M
@@ -149,17 +150,16 @@ function createGradientScene(floor: boolean): THREE.Scene {
   })
   scene.add(new THREE.Mesh(geometry, material))
   /**
-   * 大面积中性顶光与两侧冷暖柔光形成宽反射带，抛磨纹理能在高光中过渡。
+   * 大面积冷白顶光与两侧蓝色柔光形成宽反射带，抛磨纹理能在高光中过渡。
    * 亮度使用线性值保留高动态范围，预过滤前不经过屏幕色调映射。
    */
   if (floor) {
-    const boxes = [
-      { x: -18, y: 30, z: -12, width: 18, depth: 54, color: new THREE.Color(1.20, 1.27, 1.35) },
-      { x: 21, y: 24, z: 8, width: 12, depth: 42, color: new THREE.Color(0.90, 0.96, 1.04) },
-      { x: 0, y: 18, z: -32, width: 44, depth: 9, color: new THREE.Color(1.10, 0.98, 0.84) },
-    ]
-    for (const box of boxes) {
-      const softbox = new THREE.Mesh(new THREE.PlaneGeometry(box.width, box.depth), new THREE.MeshBasicMaterial({ color: box.color, side: THREE.DoubleSide, toneMapped: false }))
+    /**
+     * 宽柔光改为低饱和冷白，避免地坪靠强蓝环境或过曝白斑制造质感。
+     * 颜色和灯箱尺寸都从集中配置读取，车辆及框架的全局环境不变。
+     */
+    for (const box of GROUND_ENVIRONMENT_STYLE.softboxes) {
+      const softbox = new THREE.Mesh(new THREE.PlaneGeometry(box.width, box.depth), new THREE.MeshBasicMaterial({ color: new THREE.Color(box.color[0], box.color[1], box.color[2]), side: THREE.DoubleSide, toneMapped: false }))
       softbox.rotation.x = Math.PI / 2
       softbox.position.set(box.x, box.y, box.z)
       scene.add(softbox)

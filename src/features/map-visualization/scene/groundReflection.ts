@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
 import { registerReflectionCamera } from '@/shared/rendering/projectedLod'
 import { getReflectionMaterial } from '@/shared/rendering/reflectionMaterials'
+import { GROUND_REFLECTION_STYLE } from './mapAppearance'
 
 /**
  * 默认均衡预算保留柔和倒影，高画质档可以显式提高尺寸与刷新频率。
@@ -38,7 +39,13 @@ export function createGroundReflection(mesh: THREE.Mesh<THREE.BufferGeometry, TH
    * 缎面金属使用较软、较弱的实体倒影，保留墙脚轮廓而不呈镜面。
    * 继续共用已有反射目标与刷新预算，不增加反射流程。
    */
-  const blur = { value: 1.35 }
+  const blur = { value: GROUND_REFLECTION_STYLE.blur }
+  /**
+   * 倒影权重与滤波半径独立于灯光和 Bloom，按集中配置收敛镜面感。
+   * 继续使用现有低分辨率目标和刷新预算，不新增反射渲染通道。
+   */
+  const weights = { value: new THREE.Vector2(GROUND_REFLECTION_STYLE.minWeight, GROUND_REFLECTION_STYLE.maxWeight) }
+  const filterRadius = { value: GROUND_REFLECTION_STYLE.filterRadius }
   const ready = { value: 0 }
   const material = mesh.material
   const originalCompile = material.onBeforeCompile
@@ -51,7 +58,7 @@ export function createGroundReflection(mesh: THREE.Mesh<THREE.BufferGeometry, TH
    */
   material.onBeforeCompile = (shader, renderer) => {
     originalCompile.call(material, shader, renderer)
-    Object.assign(shader.uniforms, { groundReflectionProjection: projection, groundReflectionTexture: texture, groundReflectionReady: ready, groundReflectionBlur: blur })
+    Object.assign(shader.uniforms, { groundReflectionProjection: projection, groundReflectionTexture: texture, groundReflectionReady: ready, groundReflectionBlur: blur, groundReflectionWeights: weights, groundReflectionRadius: filterRadius })
     shader.vertexShader = `uniform mat4 groundReflectionProjection;
 varying vec4 vGroundReflection;
 ${shader.vertexShader}`.replace('#include <project_vertex>', `#include <project_vertex>
@@ -59,6 +66,8 @@ vGroundReflection = groundReflectionProjection * modelMatrix * vec4(transformed,
     shader.fragmentShader = `uniform sampler2D groundReflectionTexture;
 uniform float groundReflectionReady;
 uniform float groundReflectionBlur;
+uniform vec2 groundReflectionWeights;
+uniform float groundReflectionRadius;
 varying vec4 vGroundReflection;
 ${shader.fragmentShader}`.replace('#include <opaque_fragment>', `
 // 透明背景随颜色一起预过滤，只让实体倒影覆盖受光地坪。
@@ -67,7 +76,7 @@ vec2 reflectionUv = vGroundReflection.xy / max(vGroundReflection.w, 0.0001);
 float reflectionBlur = groundReflectionBlur + roughnessFactor * 0.8;
 // 低分辨率反射采用交错九点滤波，避免细灯条在粗 mip 上变成方块。
 // 采集目标和刷新预算保持不变，模糊只发生在地坪材质采样阶段。
-vec2 reflectionStep = vec2(2.2 / float(textureSize(groundReflectionTexture, 0).x));
+vec2 reflectionStep = vec2(groundReflectionRadius / float(textureSize(groundReflectionTexture, 0).x));
 vec4 reflected = textureLod(groundReflectionTexture, reflectionUv, reflectionBlur) * 0.2;
 for (int rx = -1; rx <= 1; rx++) for (int ry = -1; ry <= 1; ry++) {
   if (rx != 0 || ry != 0) reflected += textureLod(groundReflectionTexture, reflectionUv + vec2(float(rx), float(ry)) * reflectionStep, reflectionBlur) * 0.1;
@@ -77,7 +86,7 @@ float reflectionEdge = smoothstep(0.0, 0.025, min(min(reflectionUv.x, reflection
 // 这只是局部平面反射近似；空白区域仍由标准环境金属受光负责。
 float reflectionFacing = clamp(dot(normal, geometryViewDir), 0.0, 1.0);
 float reflectionFresnel = pow(1.0 - reflectionFacing, 5.0);
-float reflectionWeight = groundReflectionReady * reflectionEdge * mix(0.22, 0.42, reflectionFresnel) * (1.0 - roughnessFactor * 0.65);
+float reflectionWeight = groundReflectionReady * reflectionEdge * mix(groundReflectionWeights.x, groundReflectionWeights.y, reflectionFresnel) * (1.0 - roughnessFactor * 0.65);
 outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflected.rgb * reflectionWeight;
 #include <opaque_fragment>`)
   }
@@ -85,7 +94,7 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
    * 反射数值边界发生变化时更新组合程序键，保证所有复用地坪材质的入口重新编译。
    * 原地坪补丁的程序键继续保留，避免不同基础表面共享错误程序。
    */
-  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v8`
+  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v9`
   /**
    * 同一材质切换回已用过的程序时，Three.js 不会再次执行编译回调。
    * 清理材质程序缓存以绑定本次反射纹理；地坪几何与三张源纹理继续复用。
@@ -118,6 +127,11 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
   mesh.onBeforeRender = (renderer, scene, camera, renderGeometry, renderMaterial, group) => {
     if (capturing) return
     originalRender.call(mesh, renderer, scene, camera, renderGeometry, renderMaterial, group)
+    /**
+     * 显式关闭倒影时跳过场景采集，便于独立比较环境受光及反射成本。
+     * 不透明地坪仍正常绘制，既有灯光和 Bloom 不受该开关影响。
+     */
+    if (!GROUND_REFLECTION_STYLE.enabled) { ready.value = 0; return }
     /**
      * 透射预通道与主体通道会在同一帧重复绘制地坪，共用同一相机的倒影即可。
      * 按外层动画帧而非渲染器计数去重，嵌套镜像渲染不会误判为新的一帧。

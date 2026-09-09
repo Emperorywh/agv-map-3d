@@ -3,7 +3,7 @@
  *
  * 职责：把 createGroundSurface 产出的地面平面挂载到场景——包围盒随视图，
  *       平面接收车辆/充电桩的实时阴影，为整场提供「落地感」。图层每视图
- *       基础地坪使用一个 Draw Call，按画质预算采集镜像场景；
+ *       内部地坪与外侧网格各使用一个 Draw Call，按画质预算采集镜像场景；
  *       独立环境按资源代预过滤，纹理按世界尺寸平铺，总览与近景共用。
  * 边界：网格/材质/纹理全部由本组件 effect 创建并在卸载或视图更换时释放
  *       （创建者释放）；本组件不感知地图业务语义，不释放任何外部资源。
@@ -19,6 +19,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Group } from 'three'
 import type { SceneBounds } from '../model/types'
 import { createGroundSurface } from '../scene/groundSurface'
+import { createExteriorGround } from '../scene/createExteriorGround'
 import { createGroundReflection } from '../scene/groundReflection'
 import { createGroundEnvironment } from '../scene/createSceneEnvironment'
 import { useRenderQuality } from '@/shared/rendering/renderQuality'
@@ -53,6 +54,11 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
   useEffect(() => {
     const surface = createGroundSurface(bounds, gl.capabilities.getMaxAnisotropy())
     /**
+     * 外侧网格复用本代地坪颜色纹理，并按建筑边界衰减底座附近的亮度。
+     * 背景以两个三角形覆盖视口，下沉以露出底座，不扩张包围盒或增加反射采集。
+     */
+    const exterior = createExteriorGround(surface.mesh.material.map, bounds)
+    /**
      * 地板使用独立的室内宽柔光环境，设备继续读取原有场景环境。
      * 预过滤只在资源创建时执行；失败时回退到已存在的场景环境。
      */
@@ -65,7 +71,7 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
     }
     const reflection = createGroundReflection(surface.mesh, quality.reflectionSize, quality.reflectionFps)
     reflectionRef.current = reflection
-    group.add(surface.mesh)
+    group.add(exterior.mesh, surface.mesh)
     /**
      * 场景钩子在相机及世界矩阵更新后、透射和实体绘制前执行，先生成本帧倒影。
      * 避免地坪在透射预通道中途切走 MSAA 目标，导致 Apple 后端丢弃深度内容。
@@ -91,7 +97,12 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
        */
       surface.mesh.material.envMap = null
       environment?.dispose()
-      group.remove(surface.mesh)
+      /**
+       * 外侧材质先解除挂载并释放，最后才回收内部地坪拥有的共享纹理。
+       * 严格模式、地图切换和上下文重建均遵守相同的资源释放顺序。
+       */
+      group.remove(exterior.mesh, surface.mesh)
+      exterior.dispose()
       surface.dispose()
     }
   }, [bounds, gl, scene, group, quality])

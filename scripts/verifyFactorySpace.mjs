@@ -17,6 +17,8 @@ try {
   const { validateMap } = await server.ssrLoadModule('/src/features/map-visualization/model/validateMap.ts')
   const { createMapModel } = await server.ssrLoadModule('/src/features/map-visualization/model/createMapModel.ts')
   const { createGroundReflection, GROUND_REFLECTION_RESOLUTION } = await server.ssrLoadModule('/src/features/map-visualization/scene/groundReflection.ts')
+  const { createFactoryShell } = await server.ssrLoadModule('/src/features/map-visualization/scene/factoryShell.ts')
+  const { createGroundSurface } = await server.ssrLoadModule('/src/features/map-visualization/scene/groundSurface.ts')
   const validated = validateMap(JSON.parse(fs.readFileSync('json/map.json', 'utf8')))
   const model = createMapModel(validated)
   const realBounds = model.mapModel.sceneBounds
@@ -176,6 +178,98 @@ try {
     assert.equal(ground.onBeforeRender, beforeRender)
     assert.equal(material.onBeforeCompile, compile)
     for (const object of [ground, body, label]) { object.geometry.dispose(); object.material.dispose() }
+  })
+  /**
+   * 用正式墙体检查透明分层和背板遮挡，防止只调整透明度却仍被实体墙封住。
+   * 射线穿过面板中心时不能命中任何不透明结构，框架本身仍须正常写入深度。
+   */
+  check('玻璃独立透明，面板后无实体背板，框架保持不透明', () => {
+    const shell = createFactoryShell(getFactoryLayout(realBounds))
+    try {
+      shell.group.updateMatrixWorld(true)
+      const glass = shell.group.getObjectByName('factory-glass-panels')
+      assert.ok(glass instanceof THREE.BatchedMesh)
+      assert.equal(glass.material.type, 'MeshStandardMaterial')
+      assert.equal(glass.material.transparent, true)
+      assert.equal(glass.material.depthWrite, false)
+      assert.equal(glass.material.depthTest, true)
+      assert.equal(glass.material.emissive.getHex(), 0)
+      assert.ok(glass.material.opacity > 0 && glass.material.opacity < 0.5)
+      shell.group.traverse((mesh) => {
+        if (!(mesh instanceof THREE.Mesh) || mesh === glass) return
+        assert.equal(mesh.material.transparent, false)
+        assert.equal(mesh.material.depthWrite, true)
+        assert.equal(mesh.material.depthTest, true)
+      })
+      const transform = glass.getMatrixAt(0, new THREE.Matrix4())
+      const center = new THREE.Vector3().setFromMatrixPosition(transform)
+      const box = glass.getBoundingBoxAt(glass.getGeometryIdAt(0), new THREE.Box3())
+      assert.ok(box.max.z - box.min.z >= 0.09, '玻璃保留真实厚度')
+      const ray = new THREE.Raycaster(center.clone().add(new THREE.Vector3(0, 0, 2)), new THREE.Vector3(0, 0, -1), 0, 4)
+      assert.equal(ray.intersectObject(shell.group, true).length, 0, '玻璃中心不应被框架或背板封住')
+    } finally { shell.dispose() }
+  })
+  /**
+   * 直接运行已安装 Three.js 的合批排序，检查四面墙和镜像相机之间的切换。
+   * 读取引擎实际生成的间接绘制顺序，不用替代排序器掩盖跨墙面或反射排序错误。
+   */
+  check('四面透明墙与镜像视角按当前相机从远到近排序', () => {
+    const shell = createFactoryShell(getFactoryLayout(realBounds))
+    try {
+      shell.group.updateMatrixWorld(true)
+      const glass = shell.group.getObjectByName('factory-glass-panels')
+      let previousOrder = ''
+      for (const [x, y, z] of [[140, 5, -85], [-140, 5, 85], [140, -5, -85], [140, 5, -85]]) {
+        const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.05, 1000)
+        camera.position.set(x, y, z)
+        camera.lookAt(0, 1, 0)
+        camera.updateMatrixWorld()
+        glass.onBeforeRender(null, null, camera, glass.geometry, glass.material)
+        const order = Array.from(glass._indirectTexture.image.data.slice(0, glass._multiDrawCount))
+        assert.ok(order.length > 1)
+        const forward = camera.getWorldDirection(new THREE.Vector3())
+        const matrix = new THREE.Matrix4()
+        const sphere = new THREE.Sphere()
+        let previousDepth = Infinity
+        for (const instance of order) {
+          glass.getMatrixAt(instance, matrix)
+          glass.getBoundingSphereAt(glass.getGeometryIdAt(instance), sphere).applyMatrix4(matrix)
+          const depth = sphere.center.clone().sub(camera.position).dot(forward)
+          assert.ok(depth <= previousDepth + 0.0001, '透明面板绘制顺序必须从远到近')
+          previousDepth = depth
+        }
+        const signature = order.join(',')
+        assert.notEqual(signature, previousOrder, '切换相机后不能沿用上一次透明排序')
+        previousOrder = signature
+      }
+    } finally { shell.dispose() }
+  })
+  /**
+   * 无画布时触发正式地坪的贴图降级路径，验证实体深度不依赖程序纹理成功生成。
+   * 玻璃资源反复释放也只能释放一次，保证严格模式和上下文重建安全。
+   */
+  check('地坪降级后仍不透明，玻璃合批资源幂等释放', () => {
+    const originalDocument = globalThis.document
+    let floor
+    const shell = createFactoryShell(getFactoryLayout(realBounds))
+    try {
+      globalThis.document = { createElement: () => ({ getContext: () => null }) }
+      floor = createGroundSurface(getFactoryLayout(realBounds).bounds)
+      assert.equal(floor.mesh.material.transparent, false)
+      assert.equal(floor.mesh.material.opacity, 1)
+      assert.equal(floor.mesh.material.depthWrite, true)
+      assert.equal(floor.mesh.material.depthTest, true)
+      const glass = shell.group.getObjectByName('factory-glass-panels')
+      let releases = 0
+      glass.geometry.addEventListener('dispose', () => { releases += 1 })
+      shell.dispose()
+      shell.dispose()
+      assert.equal(releases, 1)
+    } finally {
+      globalThis.document = originalDocument
+      floor?.dispose()
+      shell.dispose()
+    }
   })
   console.log(`厂房空间回归完成：${checks} 项通过`)
 } finally {

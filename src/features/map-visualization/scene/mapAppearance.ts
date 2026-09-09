@@ -1,5 +1,5 @@
 /**
- * 暗色工业涂层采用非金属 PBR，低对比细节配合柔和反射。
+ * 深蓝工业涂层与金属地坪采用 PBR，低对比细节配合冷色柔和反射。
  * 以下参数服务于正式地图与材质小样，保持唯一调色来源。
  * 地图场景视觉常量（SPEC §5.1、§5.4；TASK-004 核心地图 + TASK-005 语义图层）。
  *
@@ -20,10 +20,10 @@
 
 /**
  * 场景清屏底色（地图未就绪或失败重试期间页面保持的唯一颜色，SPEC §7.4）。
- * 与厂房灰色墙板共用色系，只用于加载间隙和场景外背景。
+ * 与深蓝厂房墙板共用色系，只用于加载间隙和场景外背景。
  */
-export const FACTORY_WALL_COLOR = '#303a42'
-export const MAP_CLEAR_COLOR = '#141c24'
+export const FACTORY_WALL_COLOR = '#174368'
+export const MAP_CLEAR_COLOR = '#050b16'
 
 /** 图层高度阶梯（世界 y，单位米；见关键不变量 1） */
 export const GRID_Y = 0.02
@@ -105,13 +105,13 @@ export const ENVIRONMENT_HORIZON_COLOR = '#566675'
 export const ENVIRONMENT_GROUND_COLOR = '#252e38'
 
 /**
- * 背景使用接近厂房墙板的冷灰渐变，四角叠加轻暗角（P2-6）。
+ * 背景使用参考图的墨蓝渐变，四角叠加轻暗角（P2-6）。
  * 常规机位由实体地坪和内墙填满画面，高位总览用背景衬托厂房外轮廓；
- * 暗角只提供轻微的聚焦感，避免浅灰背景下四角发灰蒙。
+ * 暗角只提供轻微的聚焦感，与外围墨蓝网格自然衔接。
  */
 export const BACKGROUND_TEXTURE_PX = 512
-export const BACKGROUND_TOP_COLOR = '#101922'
-export const BACKGROUND_BOTTOM_COLOR = '#202b35'
+export const BACKGROUND_TOP_COLOR = '#040914'
+export const BACKGROUND_BOTTOM_COLOR = '#0b172b'
 /** 四角暗角强度：角点颜色向黑压暗的比例（0 = 无暗角） */
 export const BACKGROUND_VIGNETTE_STRENGTH = 0.12
 
@@ -199,37 +199,71 @@ export const GROUND_DETAIL_TILE_M = 2
 export const GROUND_SEAM_SPACING_M = 3
 
 /**
- * 石墨灰钢板使用低饱和反射颜色，冷暖色调由实际环境光提供。
+ * 深蓝黑钢板衬托青蓝导航光，较暗底色让墙柱的冷色倒影更清楚。
  * 颜色图只做小幅反射率变化；无贴图时使用同一底色。
  */
-export const GROUND_BASE_COLOR = '#727980'
+export const GROUND_BASE_COLOR = '#243044'
 export const GROUND_FALLBACK_COLOR = GROUND_BASE_COLOR
+
+/**
+ * 沙盘外侧使用接近黑色的墨蓝背景，细蓝网格与稀疏青色光点提供尺度参照。
+ * 外部平面低于内部地坪，露出沙盘底座厚度；颜色和高度不参与业务坐标计算。
+ */
+export const EXTERIOR_GROUND_COLOR = '#070f1e'
+export const EXTERIOR_GROUND_GRID_COLOR = '#234267'
+export const EXTERIOR_GROUND_POINT_COLOR = '#159dff'
+export const EXTERIOR_GROUND_GRID_OPACITY = 0.48
+export const EXTERIOR_GROUND_Y = GROUND_SURFACE_Y - 0.95
 
 /**
  * 粗糙度图直接保存线性数值，材质乘子固定一，抛磨差异改变高光宽度。
  * 法线仅描述毫米级拉丝和浅划痕，不能把平整钢板变成凹凸石材。
  */
-export const GROUND_ROUGHNESS_BASE = 0.42
-export const GROUND_ROUGHNESS_VARIATION = 0.055
-export const GROUND_NORMAL_SCALE = 0.16
-export const GROUND_SCUFF_COUNT = 46
+export const GROUND_ROUGHNESS_BASE = 0.36
+export const GROUND_ROUGHNESS_VARIATION = 0.012
+export const GROUND_NORMAL_SCALE = 0.035
+export const GROUND_SCUFF_COUNT = 6
 
 /**
- * 三米板缝宽八毫米，通过世界空间覆盖率抗锯齿保留远景细线。
+ * 三米加工接缝压到三毫米，极低对比度避免正常俯视时呈现瓷砖网格。
  * 缝隙同时降低反射率并提高粗糙度，不在颜色图里伪造受光亮边。
  */
-export const GROUND_SEAM_WIDTH_M = 0.008
-export const GROUND_SEAM_DARK_ALPHA = 0.72
+export const GROUND_SEAM_WIDTH_M = 0.003
+export const GROUND_SEAM_DARK_ALPHA = 0.12
 
 /**
- * 金属度保持一，独立室内环境提供宽柔光和适度暗部。
+ * 中间金属度用于风格化缎面匹配，不代表真实材料测量值。
  * 预过滤环境只生成一次，使用标准菲涅耳响应而非固定观察方向。
  */
-export const GROUND_METALNESS = 1
-export const GROUND_ENV_INTENSITY = 0.78
-export const GROUND_ENV_COLOR = '#525960'
+export const GROUND_METALNESS = 0.7
+export const GROUND_ENV_INTENSITY = 0.85
+export const GROUND_ENV_COLOR = '#445261'
 export const GROUND_TEXTURE_MAX_ANISOTROPY = 8
 export const GROUND_TEXTURE_SEED = 20260904
+
+/**
+ * 环境高光、实体倒影和灯槽照明各自独立，调整其中一项不改变 Bloom。
+ * 环境只绑定地坪；原场景照明和车辆模型继续保持原有颜色。
+ */
+export const GROUND_ENVIRONMENT_STYLE = Object.freeze({
+  zenith: '#8999a8', ground: '#202831',
+  softboxes: [
+    { x: -18, y: 30, z: -12, width: 22, depth: 54, color: [0.92, 1.04, 1.18] },
+    { x: 21, y: 24, z: 8, width: 16, depth: 42, color: [0.62, 0.74, 0.92] },
+    { x: 0, y: 18, z: -32, width: 44, depth: 12, color: [0.52, 0.68, 0.90] },
+  ],
+})
+export const GROUND_REFLECTION_STYLE = Object.freeze({ enabled: true, blur: 1.9, minWeight: 0.12, maxWeight: 0.24, filterRadius: 2.2 })
+export const GROUND_WALL_WASH_STYLE = Object.freeze({ color: '#298bcc', strength: 0.018, offset: 0.5, width: 0.9 })
+
+/**
+ * 极低对比微纹只打散表面高光，不形成明显的重复面板或粗划痕。
+ * 颜色、粗糙度和微法线分开调节，全部沿用既有固定随机种子。
+ */
+export const GROUND_MICRODETAIL_STYLE = Object.freeze({
+  albedoPanel: 0.004, albedoBroad: 0.008, albedoBrushed: 0.002,
+  roughnessPanel: 0.003, heightVariation: 0.018, scuffHeight: 0.492,
+})
 
 /**
  * 地面图层的最高世界高度：标线、停车贴花和名称贴花都属于地面包络。

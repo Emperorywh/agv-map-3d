@@ -1,5 +1,5 @@
 /**
- * 石墨灰金属地板：米制板缝、方向性抛磨和近景浅划痕。
+ * 深蓝黑金属地板：米制板缝、方向性抛磨和近景浅划痕。
  * 颜色、粗糙度、法线分别描述反射率和微表面，不烘焙高光或倒影。
  * 标准金属受光保持真实视向，保留地面高度和创建者释放约定。
  */
@@ -23,6 +23,8 @@ import {
   GROUND_TEXTURE_SEED,
   GROUND_TEXTURE_TILE_M,
   GROUND_DETAIL_TILE_M,
+  GROUND_MICRODETAIL_STYLE,
+  GROUND_WALL_WASH_STYLE,
 } from './mapAppearance'
 
 /**
@@ -96,6 +98,14 @@ export function createGroundSurface(
            * 粗糙度图保存最终线性数值，乘子保持一；不绑定金属度贴图。
            */
           color: GROUND_BASE_COLOR,
+          /**
+           * 地坪始终为不透明实体，并正常读写深度，外围网格不能透过地板。
+           * 柔和实体倒影由独立反射钩子混合，不使用地板透明度模拟反射。
+           */
+          transparent: false,
+          opacity: 1,
+          depthWrite: true,
+          depthTest: true,
           map: textures.map,
           roughnessMap: textures.roughnessMap,
           normalMap: textures.normalMap,
@@ -106,6 +116,10 @@ export function createGroundSurface(
         })
       : new THREE.MeshStandardMaterial({
           color: GROUND_FALLBACK_COLOR,
+          transparent: false,
+          opacity: 1,
+          depthWrite: true,
+          depthTest: true,
           roughness: GROUND_ROUGHNESS_BASE,
           metalness: GROUND_METALNESS,
           envMapIntensity: GROUND_ENV_INTENSITY,
@@ -134,11 +148,15 @@ export function createGroundSurface(
     shader.uniforms.groundPanelSize = { value: GROUND_SEAM_SPACING_M }
     shader.uniforms.groundSeamWidth = { value: GROUND_SEAM_WIDTH_M }
     shader.uniforms.groundSeamDarkness = { value: GROUND_SEAM_DARK_ALPHA }
+    shader.uniforms.groundWallWashColor = { value: new THREE.Color(GROUND_WALL_WASH_STYLE.color).multiplyScalar(GROUND_WALL_WASH_STYLE.strength) }
+    shader.uniforms.groundWallWashShape = { value: new THREE.Vector2(GROUND_WALL_WASH_STYLE.offset, GROUND_WALL_WASH_STYLE.width) }
     shader.vertexShader = `varying vec3 vGroundPosition;\n${shader.vertexShader}`.replace('#include <project_vertex>', `#include <project_vertex>\nvGroundPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`)
     shader.fragmentShader = `uniform vec4 groundBoundary;
 uniform float groundPanelSize;
 uniform float groundSeamWidth;
 uniform float groundSeamDarkness;
+uniform vec3 groundWallWashColor;
+uniform vec2 groundWallWashShape;
 varying vec3 vGroundPosition;
 ${shader.fragmentShader}`.replace('#include <map_fragment>', `#include <map_fragment>
 // 对窄缝在像素足迹内积分，低角度不把亚像素线条放大成粗黑网格。
@@ -161,18 +179,20 @@ roughnessFactor = mix(roughnessFactor, 0.86, groundSeam);
 vec2 wallDistances = min(vGroundPosition.xz - groundBoundary.xz, groundBoundary.yw - vGroundPosition.xz);
 float wallDistance = max(0.0, min(wallDistances.x, wallDistances.y));
 float wallContact = exp(-wallDistance * 3.8) * 0.24 + exp(-wallDistance * 0.75) * 0.07;
-// 距墙不足零点八五米时偏移为负，GLSL 的 pow 对负底数未定义，即使指数是二。
+// 距墙不足配置偏移量时结果为负，GLSL 的 pow 对负底数未定义，即使指数是二。
 // 显式相乘保留原高斯曲线，避免无效颜色进入半浮点画面并被光晕扩大。
-float wallWashOffset = (wallDistance - 0.85) / 1.4;
-float wallWash = exp(-(wallWashOffset * wallWashOffset)) * 0.055;
-outgoingLight = outgoingLight * (1.0 - wallContact) + vec3(1.0, 0.72, 0.40) * wallWash * 0.24;
+float wallWashOffset = (wallDistance - groundWallWashShape.x) / groundWallWashShape.y;
+// 冷蓝灯槽在墙根留下窄而柔和的反光，与竖向灯柱的实体倒影相互衔接。
+// 直接使用线性光强，保留深色地坪，不把整片作业区染成发光平面。
+float wallWash = exp(-(wallWashOffset * wallWashOffset));
+outgoingLight = outgoingLight * (1.0 - wallContact) + groundWallWashColor * wallWash;
 #include <opaque_fragment>`)
   }
   /**
    * 米制板缝补丁使用独立程序键，地坪叠加反射后也不能命中旧的受光程序。
    * 材质和纹理的所有权保持不变，资源换代仍由地坪句柄统一回收。
    */
-  material.customProgramCacheKey = () => 'industrial-floor-steel-v8'
+  material.customProgramCacheKey = () => 'industrial-floor-satin-v10'
 
   let disposed = false
   groundSurfaceSeq += 1
@@ -278,8 +298,12 @@ function paintSurfaceMaps(albedo: CanvasRenderingContext2D, roughness: CanvasRen
     const broad = surfaceNoise(u, v, 32, 32)
     const brushed = surfaceNoise(u, v, 128, 512)
     const fine = surfaceNoise(u, v, 256, 256)
-    const color = Math.round((0.955 + panel * 0.026 + broad * 0.024 + brushed * 0.012) * 255)
-    const rough = Math.round((GROUND_ROUGHNESS_BASE + panel * 0.025 + (broad * 0.55 + brushed * 0.4 + fine * 0.3) * GROUND_ROUGHNESS_VARIATION) * 255)
+    /**
+     * 面板间加工差异压到百分之一以下，避免高位总览出现重复贴图块。
+     * 微小粗糙度变化只打散宽高光，正常俯视距离下不显示颗粒或明显拉丝。
+     */
+    const color = Math.round((0.955 + panel * GROUND_MICRODETAIL_STYLE.albedoPanel + broad * GROUND_MICRODETAIL_STYLE.albedoBroad + brushed * GROUND_MICRODETAIL_STYLE.albedoBrushed) * 255)
+    const rough = Math.round((GROUND_ROUGHNESS_BASE + panel * GROUND_MICRODETAIL_STYLE.roughnessPanel + (broad * 0.55 + brushed * 0.4 + fine * 0.3) * GROUND_ROUGHNESS_VARIATION) * 255)
     const index = (y * size + x) * 4
     colorPixels.data[index] = colorPixels.data[index + 1] = colorPixels.data[index + 2] = color
     roughPixels.data[index] = roughPixels.data[index + 1] = roughPixels.data[index + 2] = rough
@@ -298,7 +322,7 @@ function paintBrushedHeight(ctx: CanvasRenderingContext2D): void {
   const rnd = mulberry32(GROUND_TEXTURE_SEED)
   const pixels = ctx.createImageData(size, size)
   const base = 0.5
-  const variation = 0.035
+  const variation = GROUND_MICRODETAIL_STYLE.heightVariation
   for (let y = 0; y < size; y += 1) {
     const strand = (rnd() - 0.5) * variation
     for (let x = 0; x < size; x += 1) {
@@ -314,7 +338,7 @@ function paintBrushedHeight(ctx: CanvasRenderingContext2D): void {
     const y = rnd() * size
     const length = (0.06 + rnd() * 0.22) / GROUND_DETAIL_TILE_M * size
     const slope = (rnd() - 0.5) * 0.12
-    const value = Math.round(0.47 * 255)
+    const value = Math.round(GROUND_MICRODETAIL_STYLE.scuffHeight * 255)
     ctx.strokeStyle = 'rgb(' + value + ',' + value + ',' + value + ')'
     ctx.lineWidth = 0.45 + rnd() * 0.35
     for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
