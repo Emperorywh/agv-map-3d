@@ -3,8 +3,8 @@
  *
  * 职责：把 createGroundSurface 产出的地面平面挂载到场景——包围盒随视图，
  *       平面接收车辆/充电桩的实时阴影，为整场提供「落地感」。图层每视图
- *       基础地坪使用一个 Draw Call，每帧另采集一次镜像场景；
- *       纹理在工厂内按世界尺寸平铺，总览与近景共用。
+ *       基础地坪使用一个 Draw Call，按画质预算采集镜像场景；
+ *       独立环境按资源代预过滤，纹理按世界尺寸平铺，总览与近景共用。
  * 边界：网格/材质/纹理全部由本组件 effect 创建并在卸载或视图更换时释放
  *       （创建者释放）；本组件不感知地图业务语义，不释放任何外部资源。
  *       各向异性过滤取渲染器能力与外观上限的较小值。
@@ -20,6 +20,7 @@ import { Group } from 'three'
 import type { SceneBounds } from '../model/types'
 import { createGroundSurface } from '../scene/groundSurface'
 import { createGroundReflection } from '../scene/groundReflection'
+import { createGroundEnvironment } from '../scene/createSceneEnvironment'
 import { useRenderQuality } from '@/shared/rendering/renderQuality'
 
 export interface GroundLayerProps {
@@ -51,6 +52,17 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
    */
   useEffect(() => {
     const surface = createGroundSurface(bounds, gl.capabilities.getMaxAnisotropy())
+    /**
+     * 地板使用独立的室内宽柔光环境，设备继续读取原有场景环境。
+     * 预过滤只在资源创建时执行；失败时回退到已存在的场景环境。
+     */
+    let environment: ReturnType<typeof createGroundEnvironment> | null = null
+    try {
+      environment = createGroundEnvironment(gl)
+      surface.mesh.material.envMap = environment.texture
+    } catch (error) {
+      console.warn('地面反射环境创建失败，继续使用场景环境。', error)
+    }
     const reflection = createGroundReflection(surface.mesh, quality.reflectionSize, quality.reflectionFps)
     reflectionRef.current = reflection
     group.add(surface.mesh)
@@ -73,6 +85,12 @@ export function GroundLayer({ bounds }: GroundLayerProps) {
       if (scene.onBeforeRender === prepareReflection) scene.onBeforeRender = originalSceneRender
       if (reflectionRef.current === reflection) reflectionRef.current = null
       reflection.dispose()
+      /**
+       * 先解除环境引用再释放目标纹理，资源所有权与地板保持一致。
+       * 不释放由场景照明持有的共享环境。
+       */
+      surface.mesh.material.envMap = null
+      environment?.dispose()
       group.remove(surface.mesh)
       surface.dispose()
     }

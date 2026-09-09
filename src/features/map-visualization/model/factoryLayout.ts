@@ -3,6 +3,7 @@
  * 先为整张地图留出通行、设备和检修空间，再对齐柱网；不随视口或镜头移动。
  */
 import type { SceneBounds } from './types'
+import { NAVIGATION_STYLE } from '../scene/navigationAppearance'
 
 export const FACTORY_LAYOUT_CONFIG = Object.freeze({
   circulationWidthM: 6,
@@ -15,7 +16,11 @@ export const FACTORY_LAYOUT_CONFIG = Object.freeze({
   expansionRatio: 0.035,
   maxMarginM: 16,
   columnSpacingM: 8,
-  wallHeightM: 12,
+  /**
+   * 墙高与实体生成共用参数，确保灯光和相机边界一致。
+   * 低墙保留主要观察角度下的路网可见性。
+   */
+  wallHeightM: NAVIGATION_STYLE.wallHeight,
   wallThicknessM: 0.3,
   plinthHeightM: 0.9,
   cameraEdgeInsetM: 0.5,

@@ -1,47 +1,54 @@
 /**
- * 道路图层由低对比路面、连续白边、蓝色真实轨迹与精选路口光点组成。
- * 组件只拥有材质，静态几何由 MapGeometry 在地图替换时统一释放；不再渲染箭头。
+ * 路线复用已去重的物理索引，并从业务模型读取真实方向与控制点。
+ * 路面与边界复用地图已有的并集合批，导航状态直接更新缓冲，无逐帧分配。
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { MapGeometry } from '../scene/buildMapGeometry'
+import type { MapModel } from '../model/types'
+import type { WorldTransform } from '@/shared/spatial'
+import { createNavigationGeometry, createNavigationMaterial } from '../scene/navigationGeometry'
+import { NAVIGATION_STYLE as S } from '../scene/navigationAppearance'
 import { ROAD_SURFACE_COLOR, ROAD_SURFACE_OPACITY, ROAD_BOUNDARY_COLOR } from '../scene/mapAppearance'
+import { useNavigationState } from '../model/navigationState'
 
-export function PhysicalPathsLayer({ geometry }: { geometry: MapGeometry }) {
-  const objects = useMemo(() => createPathObjects(geometry), [geometry])
-  useEffect(() => () => {
-    for (const object of objects) object.material.dispose()
-  }, [objects])
-  return <>{objects.map((object) => <primitive key={object.name} object={object} dispose={null} />)}</>
-}
-
-/**
- * 白边使用不受灯光影响的实色贴花；路面和蓝线保持透明且不写深度。
- * 蓝线统一保持清晰，接入线不再降透明度；逐帧不重建道路或遍历路径。
- */
-function createPathObjects(geometry: MapGeometry): THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] {
-  const definitions = [
-    { name: 'map-road-surface', geometry: geometry.roadSurface, color: ROAD_SURFACE_COLOR, opacity: ROAD_SURFACE_OPACITY, vertexColors: false },
-    { name: 'map-road-boundaries', geometry: geometry.roadBoundaries, color: ROAD_BOUNDARY_COLOR, opacity: 1, vertexColors: false },
-    { name: 'map-road-guides', geometry: geometry.roadGuides, color: '#ffffff', opacity: 1, vertexColors: true },
-    { name: 'map-road-junction-lights', geometry: geometry.roadJunctionLights, color: '#ffffff', opacity: 1, vertexColors: true },
-  ]
-  return definitions.map((definition, index) => {
-    const material = new THREE.MeshBasicMaterial({
-      color: definition.color,
-      opacity: definition.opacity,
-      vertexColors: definition.vertexColors,
-      transparent: definition.opacity < 1 || definition.vertexColors,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      toneMapped: false,
+export function PhysicalPathsLayer({ geometry, mapModel, worldTransform }: { geometry: MapGeometry; mapModel: MapModel; worldTransform: WorldTransform }) {
+  const group = useMemo(() => new THREE.Group(), [])
+  useEffect(() => {
+    const data = createNavigationGeometry(mapModel, geometry, worldTransform)
+    /**
+     * 实际路面采用半透明深色铺装，保留底层金属地坪的纹理与反射。
+     * 外边界来自整个路面的并集，交叉口内部不会出现横穿道路的封口线。
+     */
+    const surface = new THREE.Mesh(geometry.roadSurface, new THREE.MeshBasicMaterial({ color: ROAD_SURFACE_COLOR, opacity: ROAD_SURFACE_OPACITY, transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }))
+    const boundaries = new THREE.Mesh(geometry.roadBoundaries, new THREE.MeshBasicMaterial({ color: new THREE.Color(ROAD_BOUNDARY_COLOR).multiplyScalar(S.emission), transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }))
+    const ribbon = new THREE.Mesh(data.ribbon, createNavigationMaterial(true))
+    const arrows = new THREE.Mesh(data.arrows, createNavigationMaterial(false))
+    surface.name = 'map-road-surface'
+    boundaries.name = 'map-road-boundaries'
+    ribbon.name = 'map-navigation-ribbons'
+    arrows.name = 'map-navigation-arrows'
+    ribbon.position.y = S.routeY
+    arrows.position.y = S.arrowY
+    surface.renderOrder = 1
+    boundaries.renderOrder = 2
+    ribbon.renderOrder = 3
+    arrows.renderOrder = 4
+    /**
+     * 路面与边界的高度已烘入共享几何，只有导航网格需要额外设置高度。
+     * 路线不参与节点拾取，避免新增大面积路面增加每次鼠标移动的相交计算。
+     */
+    for (const mesh of [surface, boundaries, ribbon, arrows]) mesh.raycast = () => {}
+    group.add(surface, boundaries, ribbon, arrows)
+    data.update(useNavigationState.getState().pathStates)
+    const unsubscribe = useNavigationState.subscribe((state, previous) => {
+      if (state.pathStates !== previous.pathStates) data.update(state.pathStates)
     })
-    const mesh = new THREE.Mesh(definition.geometry, material)
-    mesh.name = definition.name
-    mesh.matrixAutoUpdate = false
-    mesh.renderOrder = index + 2
-    mesh.castShadow = false
-    mesh.receiveShadow = false
-    return mesh
-  })
+    /**
+     * 路面及边界几何仍由地图运行时释放，本层只清理新增材质与自有导航资源。
+     * 严格模式重挂和上下文恢复不会提前释放其他图层共享的地图几何。
+     */
+    return () => { unsubscribe(); group.clear(); data.dispose(); surface.material.dispose(); boundaries.material.dispose(); ribbon.material.dispose(); arrows.material.dispose() }
+  }, [group, geometry, mapModel, worldTransform])
+  return <primitive object={group} dispose={null} />
 }

@@ -1,0 +1,62 @@
+{
+  "camera": {
+    "position": [
+      39.10885720604047,
+      13.899195788028265,
+      72.27020326520264
+    ],
+    "quaternion": [
+      -0.30135771123037586,
+      0.3617526316534232,
+      0.12482645111733634,
+      0.8733481095618535
+    ],
+    "projection": [
+      1.188245737730508,
+      0,
+      0,
+      0,
+      0,
+      2.4142135623730954,
+      0,
+      0,
+      0,
+      0,
+      -1.0001094280143006,
+      -1,
+      0,
+      0,
+      -0.10000547140071503,
+      0
+    ]
+  },
+  "canvas": [
+    1920,
+    945
+  ],
+  "material": {
+    "color": "697582",
+    "metalness": 1,
+    "metalnessMap": false,
+    "roughness": 1,
+    "map": true,
+    "roughnessMap": true,
+    "normalMap": true,
+    "normalScale": [
+      0.08,
+      0.08
+    ],
+    "envMapIntensity": 0.8,
+    "envMap": true,
+    "environment": true,
+    "exposure": 1,
+    "toneMapping": 4,
+    "rotation": [
+      0,
+      -0.4,
+      0,
+      "XYZ"
+    ],
+    "program": "industrial-floor-satin-v6-ground-reflection-v6"
+  }
+}

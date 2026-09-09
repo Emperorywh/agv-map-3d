@@ -16,7 +16,7 @@ try {
   const { computeOverviewPose } = await server.ssrLoadModule('/src/features/camera-navigation/model/overviewFraming.ts')
   const { validateMap } = await server.ssrLoadModule('/src/features/map-visualization/model/validateMap.ts')
   const { createMapModel } = await server.ssrLoadModule('/src/features/map-visualization/model/createMapModel.ts')
-  const { createGroundReflection } = await server.ssrLoadModule('/src/features/map-visualization/scene/groundReflection.ts')
+  const { createGroundReflection, GROUND_REFLECTION_RESOLUTION } = await server.ssrLoadModule('/src/features/map-visualization/scene/groundReflection.ts')
   const validated = validateMap(JSON.parse(fs.readFileSync('json/map.json', 'utf8')))
   const model = createMapModel(validated)
   const realBounds = model.mapModel.sceneBounds
@@ -66,7 +66,9 @@ try {
     for (const bounds of [smallBounds, realBounds]) for (const aspect of [0.55, 16 / 9, 3]) for (const pitch of [25, 38, 60, 85]) for (const yaw of [0, Math.PI / 4, Math.PI / 2, Math.PI * 1.25]) for (const distance of [1, 65, 10000]) for (const keepTarget of [false, true]) {
       const layout = getFactoryLayout(bounds)
       const frame = computeFactoryFrame({ layout, fovDeg: 45, aspect, pitch: pitch * Math.PI / 180, yaw, distance, targetX: keepTarget ? layout.bounds.minWorldX + 0.7 : bounds.centerWorldX, targetZ: bounds.centerWorldZ, keepTarget })
-      assert.ok(Number.isFinite(frame.position.y) && frame.position.y >= 0.5, `镜头贴地：${JSON.stringify({ aspect, pitch, yaw, distance, keepTarget, frame })}`)
+      // 最近观察距离放宽到 1m 后，最小俯角下相机几何高度为 sin(25°)×1 ≈ 0.42m；
+      // 运行时净空由地面约束保护，取景函数只需保证有限且不低于该几何下限。
+      assert.ok(Number.isFinite(frame.position.y) && frame.position.y >= 0.4, `镜头贴地：${JSON.stringify({ aspect, pitch, yaw, distance, keepTarget, frame })}`)
       const camera = new THREE.PerspectiveCamera(45, aspect, 0.05, 2000)
       camera.position.set(frame.position.x, frame.position.y, frame.position.z)
       camera.lookAt(frame.target.x, 0, frame.target.z)
@@ -136,8 +138,8 @@ try {
       setClearColor: (color, alpha) => { clearColor.set(color); clearAlpha = alpha },
       render: () => {
         captures += 1
-        assert.equal(currentTarget.width, 1024)
-        assert.equal(currentTarget.height, 1024)
+        assert.equal(currentTarget.width, GROUND_REFLECTION_RESOLUTION)
+        assert.equal(currentTarget.height, GROUND_REFLECTION_RESOLUTION)
         assert.equal(scene.background, null)
         assert.equal(clearAlpha, 0)
         assert.equal(clearColor.getHex(), 0)
@@ -159,6 +161,11 @@ try {
     assert.equal(alreadyHidden.visible, false)
     fail = false
     ground.onBeforeRender(renderer, scene, camera, ground.geometry, material, null)
+    // 同一外层动画帧的重复绘制（透射预通道 + 主体通道）按帧号去重，不重复采集。
+    ground.onBeforeRender(renderer, scene, camera, ground.geometry, material, null)
+    assert.equal(captures, 2)
+    // 推进外层帧号并越过刷新预算后，静止相机必须重新采集，验证倒影不会永久冻结。
+    reflection.beginFrame(1 / 30)
     ground.onBeforeRender(renderer, scene, camera, ground.geometry, material, null)
     assert.equal(captures, 3)
     assert.equal(scene.background, background)

@@ -130,11 +130,11 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   // 跟随状态机（ref，逐帧更新不进 React state；不变量 2）
   const followRef = useRef<FollowState | null>(null)
   /**
-   * 按下位置用于跟随退出阈值，上一位置用于逐次地面平移。
-   * 记录指针编号和按键，避免其他指针或取消事件串入当前拖拽。
+   * 按下位置用于跟随退出阈值与旋转落点，上一位置用于逐次平移和角度增量。
+   * 记录指针编号和手势，修饰键加左键仍支持平移，其他指针不会串入当前拖拽。
    */
   const pointerDownRef = useRef<{
-    x: number; y: number; lastX: number; lastY: number; pointerId: number; button: number
+    x: number; y: number; lastX: number; lastY: number; pointerId: number; button: number; pan: boolean
   } | null>(null)
   // 用户已交互旗标（P0-5.2）：按下/滚轮/空格后不再接受默认聚焦请求
   const userInteractedRef = useRef(false)
@@ -254,9 +254,10 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     const controlsInstance = new OrbitControls(camera, gl.domElement)
     /**
      * 拖动当次完整应用输入，松手即停，避免默认 0.05 阻尼带来的追赶和滑行。
-     * 左键沿用轨道旋转；右键交给地面射线平移，避免两套位移同时叠加。
+     * 左键交给鼠标定点旋转，右键交给地面射线平移，避免两套位移同时叠加。
      */
     controlsInstance.enableDamping = false
+    controlsInstance.mouseButtons.LEFT = null
     controlsInstance.mouseButtons.RIGHT = null
     /**
      * 围绕光标命中的屏幕位置推进镜头，密集地图中可直接对准某个节点或路径
@@ -362,8 +363,8 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
   }, [frameOverview])
 
   /**
-   * 指针拖拽退出跟随，右键通过地面求交平移，滚轮共用直接缩放路径。
-   * 捕获阶段先处理相机输入，跟随阈值内不让原生旋转提前改变机位。
+   * 指针拖拽退出跟随，左键定点旋转，右键地面平移，滚轮共用直接缩放路径。
+   * 捕获阶段处理相机输入，跟随阈值内不改变机位，按下与单击不重新设置观察中心。
    */
   useEffect(() => {
     const domElement = gl.domElement
@@ -382,13 +383,14 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
     }
 
     const onPointerDown = (event: PointerEvent): void => {
-      if (!isMainMouse(event) || !internalControlsRef.current?.enabled) {
+      if (!isMainMouse(event) || !internalControlsRef.current?.enabled || pointerDownRef.current !== null) {
         return
       }
       userInteractedRef.current = true
       pointerDownRef.current = {
         x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY,
         pointerId: event.pointerId, button: event.button,
+        pan: event.button === 2 || (event.button === 0 && (event.ctrlKey || event.metaKey || event.shiftKey)),
       }
     }
     const onPointerMove = (event: PointerEvent): void => {
@@ -408,7 +410,14 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
         }
         exitFollow()
       }
-      if (down.button === 2 && controlsNow.enablePan) {
+      /**
+       * 左键始终围绕本次按下的屏幕落点调整角度，原生左键已关闭以防重复旋转。
+       * 地面与厂房保护参与试算，只接受不会推走该落点的机位。
+       */
+      if (down.button === 0 && !down.pan && controlsNow.enableRotate) {
+        groundNavigation.rotate(controlsNow, down.x, down.y, event.clientX - down.lastX, event.clientY - down.lastY, () => applyGroundConstraint(controlsNow))
+        controlsNow.update()
+      } else if (down.pan && controlsNow.enablePan) {
         groundNavigation.pan(controlsNow.target, down.lastX, down.lastY, event.clientX, event.clientY)
         controlsNow.update()
       }
@@ -477,7 +486,7 @@ export function useCameraNavigation(options: UseCameraNavigationOptions): void {
       domElement.removeEventListener('wheel', onWheel, true)
       pointerDownRef.current = null
     }
-  }, [camera, gl, exitFollow, options.dragExitThresholdPx])
+  }, [camera, gl, exitFollow, applyGroundConstraint, options.dragExitThresholdPx])
 
   /**
    * 帧循环先更新跟随位置，再同步轨道状态及边界，目标删除时立即退出跟随。

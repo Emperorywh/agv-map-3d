@@ -12,7 +12,14 @@ import App from '@/app/App'
  * 空间样板复用正式墙体、地坪与光照，以浏览器效果作为材质验收依据。
  */
 const previewKind = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('assets') : null
-const Preview = previewKind === 'industrial'
+/**
+ * 四元素场景可在生产与开发访问，仍只挂载一个画布和一套渲染流程。
+ * 原监控入口保留；小样参数明确区分演示数据与真实地图。
+ */
+const navigationKind = new URLSearchParams(window.location.search).get('scene')
+const Preview = navigationKind === 'sample' || navigationKind === 'navigation'
+  ? lazy(() => import('@/app/preview/NavigationPreview'))
+  : previewKind === 'industrial'
   ? lazy(() => import('@/app/preview/IndustrialPreview'))
   : previewKind === 'factory' ? lazy(() => import('@/app/preview/FactoryPreview')) : null
 

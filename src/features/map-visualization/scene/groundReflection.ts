@@ -1,6 +1,6 @@
 /**
  * 地坪反射复用 Three.js 的镜像相机和裁剪平面，叠加在标准受光材质上。
- * 反射只采集实体，模糊采样与菲涅耳权重控制涂层质感；所有资源由句柄释放。
+ * 反射只采集实体，模糊采样与低权重补充缎面金属倒影；所有资源由句柄释放。
  */
 import * as THREE from 'three'
 import { Reflector } from 'three/addons/objects/Reflector.js'
@@ -34,7 +34,11 @@ export function createGroundReflection(mesh: THREE.Mesh<THREE.BufferGeometry, TH
    * 模糊层级在完整采集尺寸下固定，近地车辆仍保留可辨认的倒置轮廓。
    * 使用显式层级，避免屏幕导数再次叠加模糊、把小型车辆倒影抹掉。
    */
-  const blur = { value: 1.2 }
+  /**
+   * 缎面金属使用较软、较弱的实体倒影，保留墙脚轮廓而不呈镜面。
+   * 继续共用已有反射目标与刷新预算，不增加反射流程。
+   */
+  const blur = { value: 1.35 }
   const ready = { value: 0 }
   const material = mesh.material
   const originalCompile = material.onBeforeCompile
@@ -58,17 +62,22 @@ uniform float groundReflectionBlur;
 varying vec4 vGroundReflection;
 ${shader.fragmentShader}`.replace('#include <opaque_fragment>', `
 // 透明背景随颜色一起预过滤，只让实体倒影覆盖受光地坪。
-// 空白区域保留原本的明亮底色，不再混入清屏灰色形成整片灰蒙遮罩。
+// 空白区域保留标准环境受光，不混入清屏灰色形成整片灰蒙遮罩。
 vec2 reflectionUv = vGroundReflection.xy / max(vGroundReflection.w, 0.0001);
 float reflectionBlur = groundReflectionBlur + roughnessFactor * 0.8;
-vec4 reflected = textureLod(groundReflectionTexture, reflectionUv, reflectionBlur);
+// 低分辨率反射采用交错九点滤波，避免细灯条在粗 mip 上变成方块。
+// 采集目标和刷新预算保持不变，模糊只发生在地坪材质采样阶段。
+vec2 reflectionStep = vec2(2.2 / float(textureSize(groundReflectionTexture, 0).x));
+vec4 reflected = textureLod(groundReflectionTexture, reflectionUv, reflectionBlur) * 0.2;
+for (int rx = -1; rx <= 1; rx++) for (int ry = -1; ry <= 1; ry++) {
+  if (rx != 0 || ry != 0) reflected += textureLod(groundReflectionTexture, reflectionUv + vec2(float(rx), float(ry)) * reflectionStep, reflectionBlur) * 0.1;
+}
 float reflectionEdge = smoothstep(0.0, 0.025, min(min(reflectionUv.x, reflectionUv.y), min(1.0 - reflectionUv.x, 1.0 - reflectionUv.y)));
-// 单位向量的点积也可能因浮点舍入略大于一，必须同时限制上下界。
-// 三次幂改为乘法，避免接近正俯视时负底数幂产生无效像素。
-float reflectionCosine = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
-float reflectionGrazing = 1.0 - reflectionCosine;
-float grazing = reflectionGrazing * reflectionGrazing * reflectionGrazing;
-float reflectionWeight = groundReflectionReady * reflectionEdge * (0.42 + 0.12 * grazing);
+// 实体反射沿用实际观察方向的菲涅耳变化，粗糙区域和板缝降低混合权重。
+// 这只是局部平面反射近似；空白区域仍由标准环境金属受光负责。
+float reflectionFacing = clamp(dot(normal, geometryViewDir), 0.0, 1.0);
+float reflectionFresnel = pow(1.0 - reflectionFacing, 5.0);
+float reflectionWeight = groundReflectionReady * reflectionEdge * mix(0.22, 0.42, reflectionFresnel) * (1.0 - roughnessFactor * 0.65);
 outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflected.rgb * reflectionWeight;
 #include <opaque_fragment>`)
   }
@@ -76,7 +85,7 @@ outgoingLight = outgoingLight * (1.0 - reflected.a * reflectionWeight) + reflect
    * 反射数值边界发生变化时更新组合程序键，保证所有复用地坪材质的入口重新编译。
    * 原地坪补丁的程序键继续保留，避免不同基础表面共享错误程序。
    */
-  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v3`
+  material.customProgramCacheKey = () => `${originalKey.call(material)}-ground-reflection-v8`
   /**
    * 同一材质切换回已用过的程序时，Three.js 不会再次执行编译回调。
    * 清理材质程序缓存以绑定本次反射纹理；地坪几何与三张源纹理继续复用。

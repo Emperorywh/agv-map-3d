@@ -20,6 +20,7 @@ import {
   ENVIRONMENT_GROUND_COLOR,
   ENVIRONMENT_HORIZON_COLOR,
   ENVIRONMENT_ZENITH_COLOR,
+  GROUND_ENV_COLOR,
 } from './mapAppearance'
 
 /** 环境贴图句柄：texture 挂到 scene.environment，dispose 释放全部 GPU 资源 */
@@ -64,9 +65,21 @@ function disposeSceneGraph(root: THREE.Object3D): void {
  * 默认环境工厂：中性渐变球与条形柔光经 PMREM 预滤波。
  * 仅采样阶段需要真实 WebGL 上下文；失败由调用方按诊断降级处理。
  */
-export const createGradientEnvironment: SceneEnvironmentFactory = (gl) => {
+export const createGradientEnvironment: SceneEnvironmentFactory = (gl) => createEnvironment(gl, false)
+
+/**
+ * 地面使用中性室内渐变与宽灯箱，让微表面在真实观察方向下产生柔和高光。
+ * 只绑定地面材质，设备和墙板继续使用原有室内环境。
+ */
+export const createGroundEnvironment: SceneEnvironmentFactory = (gl) => createEnvironment(gl, true)
+
+/**
+ * 两类环境共用创建和释放逻辑，均只在资源建立时采样。
+ * 地面与设备分别配置反射光源，避免调地面时联动改变整场设备亮度。
+ */
+function createEnvironment(gl: THREE.WebGLRenderer, floor: boolean): SceneEnvironmentHandle {
   const pmrem = new THREE.PMREMGenerator(gl)
-  const scene = createGradientScene()
+  const scene = createGradientScene(floor)
   let renderTarget: THREE.WebGLRenderTarget
   try {
     // 0.04 的模糊半径：给镜面反射一点柔和度，静态场景不需要锐利反射
@@ -101,14 +114,22 @@ export const createGradientEnvironment: SceneEnvironmentFactory = (gl) => {
  * 渐变环境场景：大球面（内表面）按顶点 y 方向插值三段色——天顶冷白、地平
  * 灰蓝、天底深灰蓝；幂曲线（^0.6）让上半球大部分保持偏亮，模拟天光。
  */
-function createGradientScene(): THREE.Scene {
+function createGradientScene(floor: boolean): THREE.Scene {
   const scene = new THREE.Scene()
+  /**
+   * 宽灯箱只参与一次环境采样，实际场景不增加几何或逐帧灯光。
+   * 地板采用中性柔光底，避免天空蓝色污染石墨灰金属。
+   */
   const geometry = new THREE.SphereGeometry(GRADIENT_SPHERE_RADIUS_M, 32, 24)
   const position = geometry.getAttribute('position')
   const colors = new Float32Array(position.count * 3)
-  const zenith = new THREE.Color(ENVIRONMENT_ZENITH_COLOR)
-  const horizon = new THREE.Color(ENVIRONMENT_HORIZON_COLOR)
-  const ground = new THREE.Color(ENVIRONMENT_GROUND_COLOR)
+  /**
+   * 地面保留有亮度下限的室内渐变，俯视和掠射角都能看清钢板。
+   * 设备环境继续使用原有顶部柔光与冷灰渐变。
+   */
+  const zenith = new THREE.Color(floor ? '#93999f' : ENVIRONMENT_ZENITH_COLOR)
+  const horizon = new THREE.Color(floor ? GROUND_ENV_COLOR : ENVIRONMENT_HORIZON_COLOR)
+  const ground = new THREE.Color(floor ? '#34383d' : ENVIRONMENT_GROUND_COLOR)
   const scratch = new THREE.Color()
   for (let i = 0; i < position.count; i += 1) {
     const t = position.getY(i) / GRADIENT_SPHERE_RADIUS_M
@@ -128,10 +149,28 @@ function createGradientScene(): THREE.Scene {
   })
   scene.add(new THREE.Mesh(geometry, material))
   /**
-   * 环境采样场景中的条形灯箱只生成一次，不给主场景增加实时灯光或绘制。
-   * 宽光源产生室内柔和高光，避免纯渐变环境缺少任何反射形状。
+   * 大面积中性顶光与两侧冷暖柔光形成宽反射带，抛磨纹理能在高光中过渡。
+   * 亮度使用线性值保留高动态范围，预过滤前不经过屏幕色调映射。
    */
-  const lightMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.8, 2.9, 3.0), side: THREE.DoubleSide })
+  if (floor) {
+    const boxes = [
+      { x: -18, y: 30, z: -12, width: 18, depth: 54, color: new THREE.Color(1.20, 1.27, 1.35) },
+      { x: 21, y: 24, z: 8, width: 12, depth: 42, color: new THREE.Color(0.90, 0.96, 1.04) },
+      { x: 0, y: 18, z: -32, width: 44, depth: 9, color: new THREE.Color(1.10, 0.98, 0.84) },
+    ]
+    for (const box of boxes) {
+      const softbox = new THREE.Mesh(new THREE.PlaneGeometry(box.width, box.depth), new THREE.MeshBasicMaterial({ color: box.color, side: THREE.DoubleSide, toneMapped: false }))
+      softbox.rotation.x = Math.PI / 2
+      softbox.position.set(box.x, box.y, box.z)
+      scene.add(softbox)
+    }
+    return scene
+  }
+  /**
+   * 普通场景继续使用原有三盏顶部柔光箱，不调整设备的环境照明。
+   * 灯箱只在预过滤时采样，不增加任何实时灯光或逐帧绘制。
+   */
+  const lightMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.15, 1.22, 1.3), side: THREE.DoubleSide })
   for (const x of [-22, 0, 22]) {
     const softbox = new THREE.Mesh(new THREE.PlaneGeometry(9, 65), lightMaterial)
     softbox.rotation.x = Math.PI / 2

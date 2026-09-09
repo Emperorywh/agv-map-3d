@@ -1,4 +1,5 @@
 /**
+ * 低强度屏幕光晕同时服务导航带与既有自发光，避免覆盖地坪与墙板细节。
  * 为 GLB 自发光补充屏幕空间光晕，在线性高动态范围画面上合成后统一色调映射。
  * 主画面保持画布尺寸，透射、抗锯齿及光晕遵守显式画质预算。
  * 资源随上下文代重新创建，不根据瞬时帧率重建渲染目标。
@@ -12,6 +13,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
+import { NAVIGATION_STYLE } from '../scene/navigationAppearance'
 import { useRenderQuality } from '@/shared/rendering/renderQuality'
 import { createFrameDiagnostics } from '@/shared/rendering/frameDiagnostics'
 
@@ -51,7 +53,7 @@ export function SceneBloom({ generation }: { generation: number }) {
     const composer = new EffectComposer(gl, target)
     composer.setPixelRatio(1)
     const render = new RenderPass(scene, camera)
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.3, 0.35, 1.2)
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), NAVIGATION_STYLE.bloomStrength, NAVIGATION_STYLE.bloomRadius, NAVIGATION_STYLE.bloomThreshold)
     /**
      * 蓝色发光在亮度加权后数值偏低，按最强颜色通道提取超出显示范围的能量。
      * 无需提高模型原始发光强度，也能保留蓝色内芯和细灯带的光晕。

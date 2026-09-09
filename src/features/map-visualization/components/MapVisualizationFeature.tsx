@@ -1,4 +1,6 @@
 /**
+ * 地面、模块墙、路线与贴地节点共用原有环境和唯一后期流程。
+ * 节点不再依赖设施模型，导航色与真实业务数据分离。
  * 地图可视化 Feature 公开根组件（SPEC §5.1、§5.4、§12.3；TASK-004/005/016）。
  *
  * 职责：协调地图场景的全部静态表达——室内冷灰背景（Canvas 不可用
@@ -57,9 +59,9 @@ import {
   DIRECTIONAL_LIGHT_INTENSITY,
   LIGHT_SHADOW_MARGIN_M,
   MAP_CLEAR_COLOR,
-  SCENE_FOG_DENSITY_PER_DIAGONAL,
 } from '../scene/mapAppearance'
 import { PhysicalPathsLayer } from './PhysicalPathsLayer'
+import { NavigationNodesLayer } from './NavigationNodesLayer'
 import { LandmarksLayer } from './LandmarksLayer'
 import { GroundLayer } from './GroundLayer'
 import { FactoryLayer } from './FactoryLayer'
@@ -176,12 +178,16 @@ export function MapVisualizationFeature({
           <PhysicalPathsLayer
             key={`paths-${view.version}`}
             geometry={view.geometry}
+            mapModel={view.mapModel}
+            worldTransform={view.worldTransform}
           />
-          <LandmarksLayer
+          {/* 原监控入口继续保留已有设施层和资产发布引用。
+              四元素专用入口只装配导航节点，不加载这些业务设施。 */}
+          <LandmarksLayer mapModel={view.mapModel} worldTransform={view.worldTransform} nameAtlas={nameAtlas} />
+          <NavigationNodesLayer
             key={`landmarks-${view.version}`}
             mapModel={view.mapModel}
             worldTransform={view.worldTransform}
-            nameAtlas={nameAtlas}
           />
         </Fragment>
       ) : null}
@@ -286,21 +292,16 @@ export function SceneLighting({
   })
 
   /**
-   * 低密度冷灰雾按厂房范围归一化，保留远侧墙和立柱的轮廓。
-   * 雾是场景属性，不参与上下文恢复时的资源重建。
+   * 室内监控不叠加距离雾，远近物体使用同一套亮度与颜色。
+   * 卸载时恢复原有场景属性，保持严格模式和资源重建的生命周期对称。
    */
   useEffect(() => {
-    if (bounds === null) {
-      return
-    }
-    scene.fog = new THREE.FogExp2(
-      MAP_CLEAR_COLOR,
-      SCENE_FOG_DENSITY_PER_DIAGONAL / Math.max(bounds.diagonal, 1),
-    )
+    const previousFog = scene.fog
+    scene.fog = null
     return () => {
-      scene.fog = null
+      scene.fog = previousFog
     }
-  }, [scene, bounds])
+  }, [scene])
 
   if (lighting === null) {
     return null
@@ -442,7 +443,7 @@ function createStaticDirectionalLight(
    * 中性顶部柔光配合浅灰地面回光，避免冷蓝环境把整个空间染成蓝灰。
    * 墙边的局部光感由建筑灯槽和地坪过渡承担，不用全局加亮代替。
    */
-  const hemisphere = new THREE.HemisphereLight(0xe4e7e8, 0x959c9f, 0.65)
+  const hemisphere = new THREE.HemisphereLight(0xb8cbd9, 0x25303b, 0.55)
   hemisphere.name = 'map-hemisphere-light'
   sceneLightingSeq += 1
   const viewDirection = new THREE.Vector3()
