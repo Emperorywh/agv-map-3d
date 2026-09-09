@@ -32,8 +32,7 @@
 // 议、不发起网络请求、不读取运行时配置，也不持有任何逐帧数据（跟随位姿由
 // 相机 Feature 的 ref 状态机逐帧读取，SPEC §4）。
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { CameraNavigationCommands } from '@/features/camera-navigation'
+import type { CameraNavigationCommands, CameraNavigationControls } from '@/features/camera-navigation'
 import { CameraNavigationFeature } from '@/features/camera-navigation'
 import {
   createFollowTargetReader,
@@ -127,10 +126,11 @@ export function AgvMonitorScene({
   // Feature 间 Store 或事件总线）；引用在相机 Feature 卸载时被置 null。
   const cameraCommandsRef = useRef<CameraNavigationCommands | null>(null)
 
-  // OrbitControls 只读观察引用（开发宪法 §8 调试取证）：相机 Feature 原生
-  // 支持的诊断注入口，调试面板经它读取轨道目标点；生产环境不挂载面板，
-  // 引用空闲不产生任何行为。
-  const debugControlsRef = useRef<OrbitControls | null>(null)
+  /**
+   * 调试引用只观察导航 Feature 的目标点，不再持有第三方控制器的输入状态。
+   * 生产环境不挂载调试面板，引用空闲时不会产生额外行为。
+   */
+  const debugControlsRef = useRef<CameraNavigationControls | null>(null)
 
   // 只读运行时引用：Provider 就绪时经回调拿到一次（低频，仅此一次更新），
   // 用于构建跟随目标读取器；高频事件流不经过本组件。
@@ -218,7 +218,7 @@ export function AgvMonitorScene({
 
   // 启动阶段合成（TASK-017，SPEC §10.3 阶段 6）：appInteractive = 地图视图
   // 就绪（geometry 之后）+ 首批车辆实例就绪（拾取对象已存在）+ 相机命令就
-  // 绪（OrbitControls 与监听已装配）三者齐备。三个信号都是会话级一次性低
+  // 绪（相机控制器与监听已装配）三者齐备。三个信号都是会话级一次性低
   // 频事件，进入 React state 合法（SPEC §4 只禁高频）；上报一次性完成。
   const [readySignals, setReadySignals] = useState({
     map: false,

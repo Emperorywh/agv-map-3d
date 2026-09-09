@@ -4,10 +4,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import type { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import * as THREE from 'three'
 import { FleetMonitoringFeature, FleetRuntimeProvider, createFollowTargetReader, type ReadonlyFleetRuntime, type FollowTargetReader } from '@/features/fleet-monitoring'
-import { CameraNavigationFeature, type CameraNavigationCommands } from '@/features/camera-navigation'
+import { CameraNavigationFeature, type CameraNavigationCommands, type CameraNavigationControls } from '@/features/camera-navigation'
 import { useFleetMonitoringStore } from '@/features/fleet-monitoring/model/fleetMonitoringStore'
 import { GroundLayer } from '@/features/map-visualization/components/GroundLayer'
 import { ChargingTowersLayer } from '@/features/map-visualization/components/ChargingTowersLayer'
@@ -110,7 +109,11 @@ function PreviewStage({ view, count, onMetrics, generation, commands, followRead
   commands: { current: CameraNavigationCommands | null }; followReader: FollowTargetReader | null; onFollowedChange(key: string | null): void
 }) {
   const { camera, gl, scene } = useThree()
-  const controls = useRef<OrbitControls | null>(null)
+  /**
+   * 样板只持有正式导航控制合同，材质近景和车辆跟随共用同一输入系统。
+   * 预览切换机位后由 update 立即同步空间约束和相机矩阵。
+   */
+  const controls = useRef<CameraNavigationControls | null>(null)
   const stats = useRef({ time: 0, frames: 0 })
   useEffect(() => {
     commands.current?.exitFollow()

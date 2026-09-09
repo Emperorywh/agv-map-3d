@@ -5,8 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { CameraNavigationFeature, type CameraNavigationCommands } from '@/features/camera-navigation'
+import { CameraNavigationFeature, type CameraNavigationCommands, type CameraNavigationControls } from '@/features/camera-navigation'
 import { GroundLayer } from '@/features/map-visualization/components/GroundLayer'
 import { FactoryLayer } from '@/features/map-visualization/components/FactoryLayer'
 import { PhysicalPathsLayer } from '@/features/map-visualization/components/PhysicalPathsLayer'
@@ -101,7 +100,11 @@ export default function NavigationPreview() {
 function NavigationContents({ data, small, view }: { data: Data; small: boolean; view: string }) {
   const { mapModel, worldTransform } = data
   const [geometry, setGeometry] = useState<MapGeometry | null>(null)
-  const controls = useRef<OrbitControls | null>(null)
+  /**
+   * 样板与正式场景复用导航合同，固定机位也通过统一提交入口应用约束。
+   * 不在预览层创建额外的鼠标控制器。
+   */
+  const controls = useRef<CameraNavigationControls | null>(null)
   const commands = useRef<CameraNavigationCommands | null>(null)
   const camera = useThree((state) => state.camera)
   const bounds = mapModel.sceneBounds

@@ -1,10 +1,10 @@
 /**
- * 相机地面约束：在轨道控制完成位移后，直接约束最终世界坐标与观察方向。
+ * 无厂房场景的地面约束：在几何变换完成位移后，直接约束最终世界坐标与观察方向。
  * 极角和到目标的距离都不能代表离地高度；这里同时保护相机与近裁剪面，
- * 并保留轨道距离上限。函数不调用 controls.update，避免 change 事件递归。
+ * 并保留观察距离上限。函数不调用 controls.update，最终机位由控制器统一提交。
  */
 import type { PerspectiveCamera } from 'three'
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import type { NavigationLimits } from '../model/navigationControls'
 import { MAP_GROUND_TOP_Y } from '@/features/map-visualization'
 
 /**
@@ -15,21 +15,29 @@ const GROUND_CLEARANCE_M = 0.25
 const BOUNDARY_MARGIN_M = 0.001
 
 /**
+ * 地面和厂房求解共用同一净空高度，避免两个约束来回推拉机位。
+ * 近裁剪面角点的包络球覆盖宽屏、近景和动态视场变化。
+ */
+export function getCameraMinimumHeight(camera: PerspectiveCamera): number {
+  const halfHeightRatio = Math.tan(camera.fov * Math.PI / 360) / camera.zoom
+  const nearRadius = camera.near * Math.hypot(1, halfHeightRatio, halfHeightRatio * camera.aspect)
+  return MAP_GROUND_TOP_Y + Math.max(GROUND_CLEARANCE_M, nearRadius + BOUNDARY_MARGIN_M)
+}
+
+/**
  * 将相机收敛到地面上方；返回是否修正，供调用方同步车辆跟随偏移。
  * 近景优先收紧俯角，只有距离不足以容纳离地高度时才增大最小观察距离；
  * 这使连续缩放最终停在安全范围内，不会从路面或节点的下方观察地图。
  */
 export function constrainCameraToGround(
   camera: PerspectiveCamera,
-  controls: OrbitControls,
+  controls: NavigationLimits,
 ): boolean {
   /**
    * 用近裁剪面角点到相机的距离作为包络球半径，覆盖任意俯角和视口宽高比。
    * 即使调整了视场角、缩放或近裁剪距离，整个近裁剪面也不能切入地面图层。
    */
-  const halfHeightRatio = Math.tan(camera.fov * Math.PI / 360) / camera.zoom
-  const nearRadius = camera.near * Math.hypot(1, halfHeightRatio, halfHeightRatio * camera.aspect)
-  const minHeight = MAP_GROUND_TOP_Y + Math.max(GROUND_CLEARANCE_M, nearRadius + BOUNDARY_MARGIN_M)
+  const minHeight = getCameraMinimumHeight(camera)
   const minDistance = Math.max(controls.minDistance, minHeight + BOUNDARY_MARGIN_M)
   const maxDistance = Math.max(controls.maxDistance, minDistance)
   const target = controls.target

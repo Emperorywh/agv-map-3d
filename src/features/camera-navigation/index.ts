@@ -13,6 +13,11 @@
 export { CameraNavigationFeature } from './components/CameraNavigationFeature'
 export type { CameraNavigationFeatureProps } from './components/CameraNavigationFeature'
 export type { CameraNavigationCommands } from './hooks/useCameraNavigation'
+/**
+ * 调试和预览使用本 Feature 的控制合同，不再绑定第三方控制器实现。
+ * 相机和指针会话的生命周期仍由导航 Feature 独占。
+ */
+export type { CameraNavigationControls } from './model/navigationControls'
 export {
   CAMERA_MIN_DISTANCE_M,
   computeOverviewPose,

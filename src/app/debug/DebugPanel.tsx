@@ -9,10 +9,10 @@
  *          artifact 的归属对象；
  *       2. Grid / Axes / BoundingBox / DirectionalLightHelper：声明式挂载
  *          的标准辅助对象（尺寸锚定地图包围盒与 5m 网格口径）；
- *       3. 相机位姿复制：把当前相机位置/FOV 与 OrbitControls 目标点输出
+ *       3. 相机位姿复制：把当前相机位置/FOV 与导航控制器目标点输出
  *          为 JSON（剪贴板 + 控制台），作为截图取证与 FROZEN 机位记录。
  * 边界：只经 useThree 读取场景/相机、经组合层注入的 controlsRef 只读观察
- *       OrbitControls、经对象名匹配图层——不导入任何 Feature 内部模块，
+ *       导航控制器、经对象名匹配图层——不导入任何 Feature 内部模块，
  *       不改写业务对象属性（visible 除外），不持有逐帧业务数据；Leva 面板
  *       属 DOM，经自建宿主挂在 document.body（不得进入 Canvas 渲染树）。
  * 关键不变量：
@@ -35,16 +35,19 @@ import {
 } from './sceneLayerRegistry'
 import { persistDebugPanelEnabled } from './debugGate'
 
-/** OrbitControls 的最小观察接口（组合层注入只读引用，不导入实现） */
-interface OrbitControlsLike {
+/**
+ * 组合层只注入观察中心，面板不依赖相机控制器的具体实现。
+ * 重构输入系统后仍可复制相机位姿，不增加额外的鼠标状态。
+ */
+interface NavigationTargetReader {
   readonly target: THREE.Vector3
 }
 
 export interface DebugPanelProps {
   /** 地图包围盒（App bootstrap 种子）；null 时 Grid/BB 锚定不可用 */
   readonly sceneBounds: SceneBounds | null
-  /** 相机导航 OrbitControls 只读引用（位姿取样的目标点来源） */
-  readonly controlsRef?: { readonly current: OrbitControlsLike | null }
+  /** 相机导航只读引用（位姿取样的目标点来源） */
+  readonly controlsRef?: { readonly current: NavigationTargetReader | null }
 }
 
 /* ==================== 调试视觉常量（集中在文件头，禁止散落） ==================== */
