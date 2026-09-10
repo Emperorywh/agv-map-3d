@@ -3,7 +3,7 @@
  *
  * 职责：集中定义程序化通用 AGV 的全部外观常量——各部件的固定尺寸与颜色、
  *       主状态 → 车体色的映射表、警示灯旋转/闪烁参数、车底假阴影参数、车辆
- *       标签的尺寸、LOD 投影阈值、重点标签上限与边框配色——供几何构建、图
+ *       标签的尺寸、LOD 投影阈值、重点标签上限与文字配色——供几何构建、图
  *       集与材质共同引用，保证车辆视觉语言只有一份事实源。
  * 边界：只包含数值与颜色常量及纯映射表，不创建任何 Three.js 对象；地图侧
  *       静态外观属 map-visualization 的 mapAppearance。
@@ -12,15 +12,15 @@
  *    一致：STALE 冻结灰、DISCONNECTED 深灰、FRESH 业务色（SPEC §2.6）；
  *    状态不得只靠颜色表达——方向由 +x 方向楔表达、故障由旋转警示灯表达、
  *    文字由图集化标签表达（TASK-011）；
- * 2. 车辆灯带、地面投光与标签共用业务指定的状态配色，
- *    未指定的在线、连接中断与数据未知状态沿用现有颜色；
+ * 2. 车辆灯带与地面投光共用业务指定的状态配色，标签使用单独的高对比文字色，
+ *    两者共用主状态键并保留真实状态文字；
  * 3. 部件固定高度为厘米级经验值（与当前车宽 0.7m 量级协调），不随车辆
  *    长宽缩放——每车尺寸只进入矩阵的 x/z 分量；
  * 4. 警示灯只在 FAULT（FRESH + ONLINE）时旋转闪烁；OFFLINE/STALE 熄灭
  *    （SPEC §5.2），熄灭用零缩放矩阵表达（不存在 instanceColor.a）；
  * 5. 标签保留原有投影阈值与重点上限，可见面板统一显示两行摘要，
  *    远景最多二十个重点标签（优先级截断属 labelLod）；
- * 6. 标签边框配色（选中蓝 / L1 黄 / L2 红）为告警语义在标签内的表达口径；
+ * 6. 标签告警通过暖色文字与警示符号表达，选中态通过短下划线表达；
  *    透明贴花按 renderOrder 分层：假阴影(0.012) → 标签(10/11)，互不 z-fight。
  */
 
@@ -160,11 +160,11 @@ export const VEHICLE_STATE_LABELS: Record<VehiclePrimaryDisplayState, string> = 
 /* ==================== 车辆标签外观（SPEC §5.1、§6.4、§7.2；TASK-011） ==================== */
 
 /**
- * 参考图采用两行悬浮面板，宽高比为二比一，宽度保持接近默认车长。
- * 增加的高度容纳车辆编号、电量条和速度，图集单元同步使用相同比例。
+ * 标签采用参考图的透明底双行文字，编号为主、状态为辅，取消实体面板。
+ * 三点二比一的宽高比与文字图集一致，缩小遮挡面积并保持字体比例。
  */
-export const LABEL_HEIGHT_M = 0.96
-export const LABEL_ASPECT = 2
+export const LABEL_HEIGHT_M = 0.5
+export const LABEL_ASPECT = 3.2
 /** 标签世界宽度：由名称单元宽高比推出（帧同步与测试共用同一事实源） */
 export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
 /**
@@ -174,17 +174,24 @@ export const LABEL_WIDTH_M = LABEL_HEIGHT_M * LABEL_ASPECT
 export const LABEL_ANCHOR_Y_M = 2.15
 
 /**
- * 浅白半透明底板搭配蓝色信息，贴近参考图的轻量悬浮效果。
- * 状态圆点仍取真实业务颜色，正常电量条与文字共用蓝色。
+ * 文字图集使用白色字形遮罩，由实例状态色在着色器中统一着色。
+ * 淡黑色字缘只增强明亮地坪上的可读性，不形成矩形背景。
  */
-export const LABEL_BACKGROUND_COLOR = '#f3f6ff'
-export const LABEL_TEXT_COLOR = '#395cc7'
-/** 状态圆点几何（P0-6，标签背景 shader 内 SDF 绘制，颜色取 aStateColor）：
- *  圆心/半径以标签 UV 表达——u 为宽度分量（0..1，全宽 = 高度的 ASPECT 倍），
- *  v 为高度分量（0..1）；半径按高度计，绘制时 u 距离乘 ASPECT 还原等比圆。 */
-export const LABEL_STATE_DOT_CENTER_U = 0.89
-export const LABEL_STATE_DOT_CENTER_V = 0.76
-export const LABEL_STATE_DOT_RADIUS_V = 0.062
+export const LABEL_TEXT_COLOR = '#ffffff'
+export const LABEL_TEXT_OUTLINE_COLOR = 'rgba(3, 12, 23, 0.88)'
+export const LABEL_SCREEN_MIN_WIDTH_PX = 144
+export const LABEL_SCREEN_MAX_WIDTH_PX = 184
+
+/**
+ * 标签按参考图独立使用高可读状态色，不改动车体灯光的业务配色。
+ * 正常为青蓝，等待为琥珀，故障为红色，断连和过期保留明确文字提示。
+ */
+export const LABEL_STATE_COLORS: Record<VehiclePrimaryDisplayState, string> = {
+  ONLINE: '#72dcff', IDLE: '#b8dfff', EXECUTING: '#54e6ff', CHARGING: '#70f1d0',
+  TRAFFIC_WAIT: '#ffca87', AVOIDING: '#ffca87', PAUSED: '#ffca87', BRAKED: '#ff997c',
+  FAULT: '#ff6e75', STALE: '#c7d2e0', DISCONNECTED: '#b2c1d4',
+  CONNECTION_BROKEN: '#ffb18d', UNKNOWN: '#c7d2e0',
+}
 
 /**
  * 保留原有八像素、二十像素投影分档，供可见性优先级使用。
@@ -196,20 +203,12 @@ export const LABEL_FULL_MIN_PX = 20
 export const LABEL_IMPORTANT_MAX = 20
 
 /**
- * 浅色面板选中时显示蓝色边框，告警继续使用黄色和红色。
- * 电量条颜色按电量档位在 shader 内取值（同阈值常量）。
+ * 选中态只显示一小段青色下划线，告警通过文字色和右侧警示符号表达。
+ * 两种提示可同时显示，避免重新引入厚重边框或大面积色块。
  */
-export const LABEL_BORDER_SELECTED_COLOR = '#5275ec'
-export const LABEL_BORDER_L1_COLOR = '#ffd21e'
-export const LABEL_BORDER_L2_COLOR = '#ff2d2d'
-
-/**
- * 正常电量使用参考图的蓝色，低电量仍按原有阈值使用黄、红提示。
- * 保留电量语义，避免视觉调整掩盖需要关注的车辆。
- */
-export const LABEL_BATTERY_OK_COLOR = '#4169e8'
-export const LABEL_BATTERY_LOW_COLOR = '#f5a524'
-export const LABEL_BATTERY_CRITICAL_COLOR = '#ff2d2d'
+export const LABEL_SELECTED_COLOR = '#8aeaff'
+export const LABEL_ALERT_L1_COLOR = '#ffca87'
+export const LABEL_ALERT_L2_COLOR = '#ff6e75'
 
 /**
  * 标签字体栈：与地图名称同一族（中文可用）。字体常量在 fleet-monitoring 内
@@ -217,4 +216,4 @@ export const LABEL_BATTERY_CRITICAL_COLOR = '#ff2d2d'
  * 跨 Feature 只允许公开入口导入（SPEC §12.2），此处不做深层引用。
  */
 export const LABEL_FONT_FAMILY =
-  '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif'
+  '"Bahnschrift", "DIN Alternate", "Microsoft YaHei", "PingFang SC", sans-serif'

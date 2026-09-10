@@ -1,8 +1,8 @@
 /**
  * 车辆标签批次图层（SPEC §5.1、§6.4、§7.2、§12.5；TASK-011）。
  *
- * 职责：把图集化 billboard 标签以「批次 × (背景 + 名称) 两层 InstancedMesh」
- *       挂载到场景——每个批次独享一份 2048×4096 双行图集（256 个 256×128
+ * 职责：把图集化 billboard 标签以「批次 × (状态 + 名称) 两层 InstancedMesh」
+ *       挂载到场景——每个批次独享一份 2048×2560 图集（256 个 256×80
  *       名称槽，槽位与实例槽位一一对应）与一组实例属性几何；共享状态芯片
  *       图集由本组件单一持有；逐帧提交交给 useFleetLabelFrameSync。批次扩
  *       容只发生在车队超过当前容量时（≤1 次重建），属结构性低频变化，批次
@@ -14,10 +14,10 @@
  *       文环境（如单元测试）降级为不渲染标签层并记录结构化诊断，绝不阻断
  *       车体渲染。
  * 关键不变量：
- * 1. 每批次恒为 2 个 InstancedMesh（背景 + 名称）= 2 个标签 Draw Call：
+ * 1. 每批次恒为 2 个 InstancedMesh（状态 + 名称）= 2 个标签 Draw Call：
  *    200 台（单批次）标签 Draw Call = 2，257 台（两批次）= 4（SPEC §6.4）；
  * 2. 渲染顺序：背景 renderOrder=10、名称 renderOrder=11（同位置透明层按序
- *    合成，文字始终叠于底板之上），两层 depthWrite=false 防止透明排序瑕疵；
+ *    合成，编号与状态行各自占用透明区域），两层 depthWrite=false 防止透明排序瑕疵；
  * 3. 全部实例矩阵初始零缩放：空槽位与超硬上限车辆绝不以单位阵出现在原点
  *    （与车体同口径）；两层网格矩阵恒同步写（可见性一体）；
  * 4. key 携带批次数：批次数变化时全部批次走卸载/挂载路径（R3F 对已挂载
@@ -173,6 +173,13 @@ function createLabelBatch(
   const atlas = createAtlas()
   const backgroundGeometry = createLabelBackgroundGeometry(SLOT_BATCH_CAPACITY)
   const textGeometry = createLabelTextGeometry(SLOT_BATCH_CAPACITY)
+  /**
+   * 编号和状态行复用同一份颜色、选中及告警缓冲，状态变化只提交一次。
+   * 不增加每车材质，也不在车辆移动或电量变化时重绘名称图集。
+   */
+  for (const name of ['aStateColor', 'aOverlay']) {
+    textGeometry.setAttribute(name, backgroundGeometry.getAttribute(name))
+  }
   const backgroundMaterial = createLabelBackgroundMaterial(badgeTexture)
   const textMaterial = createLabelTextMaterial(atlas.texture)
 

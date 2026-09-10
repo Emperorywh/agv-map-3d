@@ -5,8 +5,20 @@
 import type { WorldTransform } from '@/shared/spatial'
 import type { MapEdge, MapModel } from '../model/types'
 
+/**
+ * 以指定路径的连通区域切换库位模型，其他库位继续使用托盘货物。
+ * 类型仅描述静态外观，不改变业务节点、车辆载荷或调度拓扑。
+ */
+export type MaterialBinVariant = 'pallet' | 'rack'
+/**
+ * 地图校验后的逻辑边不保留显示名称，因此使用原始地图中核对过的稳定路径标识。
+ * 两个标识依次对应路径 9014、9015，区域范围仍由实时地图的连通关系决定。
+ */
+const RACK_ACCESS_PATH_IDS: ReadonlySet<string> = new Set(['PesO7xdZS4TjPHOxpMKXTMQH39kLNyQV', 'ExjrKBZW9Pksi67Jyw1wKvw87LiatiwF'])
+
 export interface MaterialBinPlacement {
   readonly nodeId: string
+  readonly variant: MaterialBinVariant
   readonly x: number
   readonly z: number
   readonly rotation: number
@@ -16,10 +28,21 @@ export function buildMaterialBinLayout(mapModel: MapModel, worldTransform: World
   const nodes = mapModel.nodeList.filter((node) => node.category === 'warehouse')
   const incidents = new Map(nodes.map((node) => [node.id, [] as MapEdge[]]))
   /**
+   * 复用地图已有的弱连通分量索引，不按截图坐标或不稳定的分量编号硬编码区域。
+   * 只从指定路径的实际端点收集分量；路径不存在时不替换任何库位。
+   */
+  const rackComponents = new Set<number>()
+  /**
    * 同时收集入边和出边，单向接入也能定位货架，避免仅依赖为空的站点角度。
    * 全图只扫描一次逻辑边，正反向边在同一端点得到相同的朝外切向。
    */
   for (const edge of mapModel.edgeList) {
+    if (RACK_ACCESS_PATH_IDS.has(edge.id)) {
+      for (const nodeId of [edge.snodeId, edge.enodeId]) {
+        const component = mapModel.componentIndexOfNode.get(nodeId)
+        if (component !== undefined) rackComponents.add(component)
+      }
+    }
     incidents.get(edge.snodeId)?.push(edge)
     if (edge.enodeId !== edge.snodeId) incidents.get(edge.enodeId)?.push(edge)
   }
@@ -41,7 +64,13 @@ export function buildMaterialBinLayout(mapModel: MapModel, worldTransform: World
       rotation = Math.atan2(direction.x, direction.z)
       break
     }
-    return { nodeId: node.id, ...worldTransform.toWorldXZ(node.x, node.y), rotation }
+    /**
+     * 模型分类随库位布局一次性派生，原有坐标和接入路径朝向保持一致。
+     * 未归入目标连通分量的站点始终保留原来的托盘模型。
+     */
+    const component = mapModel.componentIndexOfNode.get(node.id)
+    const variant: MaterialBinVariant = component !== undefined && rackComponents.has(component) ? 'rack' : 'pallet'
+    return { nodeId: node.id, variant, ...worldTransform.toWorldXZ(node.x, node.y), rotation }
   })
 }
 

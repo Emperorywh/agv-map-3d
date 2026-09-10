@@ -5,47 +5,47 @@
  * 1. createLabelCellBook：纯图集单元账本——「槽位 → 已绘文字」缓存、按需
  *    重绘回调与脏计数；同名重绘、对空单元清除均为 no-op，供测试以注入
  *    回调完整复现真实画布行为；
- * 2. createVehicleLabelAtlas：真实 2048×4096 Canvas 工厂——256 个 256×128
- *    双行槽（8 列 × 32 行），编号或速度变化只重绘目标单元，flush 每帧至多
+ * 2. createVehicleLabelAtlas：真实 2048×2560 Canvas 工厂——256 个 256×80
+ *    槽位（8 列 × 32 行），编号变化只重绘目标单元，flush 每帧至多
  *    触发一次纹理上载；中文名称可用（与地图名称同一字体栈）；
  * 3. createVehicleBadgeAtlas：完整业务状态芯片的固定小图集——启动时一次性
  *    栅格化、全批次共享、永不重绘；chipUvOf 提供状态 → 图集 UV 的纯查表。
  * 边界：本模块是车辆标签的唯一栅格化入口；不使用 DOM/drei Html/每车独立
  *       Sprite 或材质；地图名称图集属 map-visualization（两者互不共享）。
- *       状态色、电量条、选中态与告警态不进入名称纹理——它们由标签材质的
- *       实例属性与 shader 绘制（SPEC §6.4），电量变化绝不触碰本模块。
+ *       状态色、选中态与告警态不进入名称纹理——它们由标签材质的
+ *       实例属性与着色器绘制，速度与电量变化绝不触碰本模块。
  * 关键不变量：
  * 1. 单元即槽位：名称槽序号与实例槽位序号一一对应（cell = slot），本模块
  *    不做二次分配——槽位的分配/回收由实例槽位表驱动 ensureCell/clearCell；
  * 2. 只重绘变化单元：内容相同的 ensureCell 与已为空的 clearCell 都是 no-op，
  *    绘制以单元裁剪（clip），文字绝不溢出到相邻槽位；
  * 3. 上载合并：一帧内多次绘制只累计脏计数，flush 后由调用方置一次
- *    texture.needsUpdate（带 mipmap 的整纹理上载，速度按显示精度去重）；
+ *    texture.needsUpdate（带 mipmap 的整纹理上载，内容按名称去重）；
  * 4. 环境无 Canvas 2D 上下文时抛稳定错误码 VEHICLE_LABEL_ATLAS_UNAVAILABLE，
  *    调用方降级为不显示标签并记录诊断，不阻断车辆主体渲染。
  */
 import * as THREE from 'three'
 import { StructuredError } from '@/shared/diagnostics'
-import type { VehicleOperation } from '../model/types'
-import { LABEL_FONT_FAMILY, LABEL_TEXT_COLOR, VEHICLE_STATE_LABELS } from './fleetAppearance'
+import type { VehiclePrimaryDisplayState } from '../model/types'
+import { LABEL_FONT_FAMILY, LABEL_TEXT_COLOR, LABEL_TEXT_OUTLINE_COLOR, VEHICLE_STATE_LABELS } from './fleetAppearance'
 
 /**
- * 两行面板使用二比一单元，画布纵向扩展以保留每批次二百五十六个槽位。
+ * 透明文字使用三点二比一单元，保留每批次二百五十六个槽位。
  * 横向尺寸与实例分配保持一致，纵向尺寸单独用于画布与纹理坐标换算。
  */
 export const LABEL_ATLAS_SIZE = 2048
-export const LABEL_ATLAS_HEIGHT = 4096
+export const LABEL_ATLAS_HEIGHT = 2560
 export const LABEL_CELL_W_PX = 256
-export const LABEL_CELL_H_PX = 128
+export const LABEL_CELL_H_PX = 80
 export const LABEL_ATLAS_CELLS = 256
 const LABEL_CELLS_PER_ROW = LABEL_ATLAS_SIZE / LABEL_CELL_W_PX
 
 /**
- * 首行右侧留给状态灯，文字过长时省略而不挤压灯的位置。
- * 第二行字号略小，与中间电量条共同组成紧凑的信息层次。
+ * 首行突出车辆名称，右侧仅预留小型告警符号的位置。
+ * 状态次行由共享图集绘制，长名称截断而不压缩字体。
  */
-export const LABEL_NAME_AREA_MAX_FRAC = 0.75
-export const LABEL_FONT_PX = 23
+export const LABEL_NAME_AREA_MAX_FRAC = 0.84
+export const LABEL_FONT_PX = 27
 
 /** 图集单元的归一化 UV 矩形（纹理 v 向上，画布 y 向下已翻转） */
 export interface LabelCellUv {
@@ -150,7 +150,7 @@ export interface VehicleLabelAtlas {
 }
 
 /**
- * 真实名称图集工厂：2048×4096 Canvas + 256 个 256×128 双行槽。
+ * 真实名称图集工厂：2048×2560 Canvas + 256 个 256×80 槽位。
  * 无 2D 上下文（如 jsdom 测试环境）时抛 VEHICLE_LABEL_ATLAS_UNAVAILABLE，
  * 由调用方降级为不渲染标签层并记录诊断。
  */
@@ -168,8 +168,8 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
   canvas.height = LABEL_ATLAS_HEIGHT
 
   /**
-   * 首行绘制蓝色编号，次行绘制实际速度；状态与电量继续交给背景着色器。
-   * 去掉旧版深色描边，保留单元裁剪并逐字省略长名称，防止覆盖状态灯。
+   * 只绘制白色编号遮罩，状态色由实例属性传递，速度变化无需重绘文字。
+   * 细暗字缘增强透明文字的对比，单元裁剪确保长名称不覆盖邻车内容。
    */
   const paint = (slot: number, text: string | null): void => {
     const col = slot % LABEL_CELLS_PER_ROW
@@ -188,8 +188,8 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
     context.font = font
     context.textAlign = 'left'
     context.textBaseline = 'middle'
-    const [name, speed] = text.split('\n')
-    const textX = x0 + 18
+    const name = text
+    const textX = x0 + 10
     const maxWidth = LABEL_CELL_W_PX * LABEL_NAME_AREA_MAX_FRAC
     const characters = Array.from(name)
     const originalLength = characters.length
@@ -197,12 +197,15 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
       characters.pop()
     }
     const title = characters.join('') + (characters.length < originalLength ? '…' : '')
+    context.lineJoin = 'round'
+    context.lineWidth = 3
+    context.strokeStyle = LABEL_TEXT_OUTLINE_COLOR
+    context.shadowColor = LABEL_TEXT_OUTLINE_COLOR
+    context.shadowBlur = 4
+    context.strokeText(title, textX, y0 + 25)
+    context.shadowBlur = 0
     context.fillStyle = LABEL_TEXT_COLOR
-    context.fillText(title, textX, y0 + LABEL_CELL_H_PX * 0.24)
-    if (speed !== undefined) {
-      context.font = `500 19px ${LABEL_FONT_FAMILY}`
-      context.fillText(speed, textX, y0 + LABEL_CELL_H_PX * 0.76, LABEL_CELL_W_PX * 0.46)
-    }
+    context.fillText(title, textX, y0 + 25)
     context.restore()
   }
 
@@ -238,19 +241,19 @@ export function createVehicleLabelAtlas(): VehicleLabelAtlas {
 /* ==================== 状态芯片副徽标图集（固定内容，全批次共享） ==================== */
 
 /**
- * 扩展为十六个状态单元，新增在线、避障、抱闸后仍保留空位。
- * 单元大小保持不变，现有标签着色器继续按查表得到的矩形采样。
+ * 十六个状态单元覆盖业务状态、离线、连接中断和数据过期。
+ * 单元宽度与名称一致，状态文字无需横向拉伸就能保持相同左边距。
  */
-export const BADGE_ATLAS_W_PX = 2048
+export const BADGE_ATLAS_W_PX = 4096
 export const BADGE_ATLAS_H_PX = 32
-export const BADGE_CELL_W_PX = 128
+export const BADGE_CELL_W_PX = 256
 const BADGE_CELL_COUNT = BADGE_ATLAS_W_PX / BADGE_CELL_W_PX
 
 /**
  * 固定次序保留原有七个状态槽，新增业务状态放在尾部。
  * 中英文显示均从共享状态字典获得，避免颜色与文字各自维护。
  */
-const BADGE_OPERATIONS: readonly VehicleOperation[] = [
+const BADGE_OPERATIONS: readonly VehiclePrimaryDisplayState[] = [
   'FAULT',
   'PAUSED',
   'CHARGING',
@@ -261,12 +264,18 @@ const BADGE_OPERATIONS: readonly VehicleOperation[] = [
   'ONLINE',
   'AVOIDING',
   'BRAKED',
+  'STALE',
+  'DISCONNECTED',
+  'CONNECTION_BROKEN',
 ]
 
 const BADGE_ZERO_UV: readonly [number, number, number, number] = [0, 0, 0, 0]
 
-/** 状态 → 芯片图集 UV（纯查表）；null/UNKNOWN 返回零矩形（shader 端隐藏） */
-export function badgeChipUv(operation: VehicleOperation | null): readonly [number, number, number, number] {
+/**
+ * 当前主状态映射到共享文字图集，未知状态也保留明确的中文提示。
+ * 只有缺失或未配置的状态返回零矩形，由着色器隐藏。
+ */
+export function badgeChipUv(operation: VehiclePrimaryDisplayState | null): readonly [number, number, number, number] {
   if (operation === null) {
     return BADGE_ZERO_UV
   }
@@ -287,8 +296,8 @@ export interface VehicleBadgeAtlas {
 }
 
 /**
- * 状态文字固定绘制成透明底蓝字，放在面板右下角，与参考图次行对齐。
- * 状态颜色由右上圆点表达，避免彩色芯片打断浅色面板的整体布局。
+ * 状态文字绘制为透明白色遮罩，在编号下方左对齐并由实例状态色着色。
+ * 过期与断连直接展示当前主状态，不把最后一次业务状态当作当前状态。
  * 无二维上下文时沿用原有降级路径，不影响车体渲染。
  */
 export function createVehicleBadgeAtlas(): VehicleBadgeAtlas {
@@ -304,7 +313,7 @@ export function createVehicleBadgeAtlas(): VehicleBadgeAtlas {
   canvas.width = BADGE_ATLAS_W_PX
   canvas.height = BADGE_ATLAS_H_PX
 
-  const font = `500 19px ${LABEL_FONT_FAMILY}`
+  const font = `500 22px ${LABEL_FONT_FAMILY}`
   for (let index = 0; index < BADGE_OPERATIONS.length; index += 1) {
     const operation = BADGE_OPERATIONS[index]
     const x0 = index * BADGE_CELL_W_PX
@@ -313,14 +322,18 @@ export function createVehicleBadgeAtlas(): VehicleBadgeAtlas {
     context.rect(x0, 0, BADGE_CELL_W_PX, BADGE_ATLAS_H_PX)
     context.clip()
     context.font = font
-    context.textAlign = 'right'
+    context.textAlign = 'left'
     context.textBaseline = 'middle'
+    context.lineJoin = 'round'
+    context.lineWidth = 2.5
+    context.strokeStyle = LABEL_TEXT_OUTLINE_COLOR
+    context.strokeText(VEHICLE_STATE_LABELS[operation], x0 + 10, BADGE_ATLAS_H_PX / 2, BADGE_CELL_W_PX - 20)
     context.fillStyle = LABEL_TEXT_COLOR
     /**
-     * 使用中文状态名称辅助区分相近色系，保留既有副徽标布局。
-     * 灯光颜色与文字来自同一状态键，避免展示内部英文派生名。
+     * 使用中文状态名称辅助区分相近色系，保留真实业务含义。
+     * 文字与标签色来自同一主状态键，避免展示内部英文派生名。
      */
-    context.fillText(VEHICLE_STATE_LABELS[operation], x0 + BADGE_CELL_W_PX - 4, BADGE_ATLAS_H_PX / 2, BADGE_CELL_W_PX - 8)
+    context.fillText(VEHICLE_STATE_LABELS[operation], x0 + 10, BADGE_ATLAS_H_PX / 2, BADGE_CELL_W_PX - 20)
     context.restore()
   }
 

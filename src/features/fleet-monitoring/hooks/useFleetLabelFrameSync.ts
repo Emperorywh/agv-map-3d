@@ -19,8 +19,10 @@ import {
   LABEL_ASPECT,
   LABEL_HEIGHT_M,
   LABEL_IMPORTANT_MAX,
+  LABEL_SCREEN_MIN_WIDTH_PX,
+  LABEL_SCREEN_MAX_WIDTH_PX,
+  LABEL_STATE_COLORS,
   LABEL_WIDTH_M,
-  shellColorOf,
 } from '../scene/fleetAppearance'
 import {
   badgeChipUv,
@@ -30,7 +32,6 @@ import {
 import { LABEL_BG_ATTR, LABEL_BG_ATTRIBUTE_NAMES } from '../scene/labelMaterials'
 import {
   labelAlertLevel,
-  labelChipOf,
 } from '../scene/labelLod'
 import { computeVehicleWorldPose } from '../scene/createVehicleGeometry'
 
@@ -375,7 +376,7 @@ function tickLabelFrame(
          * 远景重点保留最低可读宽度，并使用实际宽度参与碰撞避让。
          */
         const projectedWidth = projectedBodyLengthPx(camera, pose.cx, LABEL_ANCHOR_Y_M, pose.cz, LABEL_WIDTH_M, viewportWidth)
-        const width = Math.min(cache.selectedNext ? 240 : 176, Math.max(112, projectedWidth))
+        const width = Math.min(LABEL_SCREEN_MAX_WIDTH_PX, Math.max(LABEL_SCREEN_MIN_WIDTH_PX, projectedWidth))
         cache.scaleNext = projectedWidth > 0 ? width / projectedWidth : 1
         /**
          * 两行面板的碰撞高度由共享宽高比计算，避免仍按旧标签高度相互覆盖。
@@ -431,7 +432,8 @@ function tickLabelFrame(
     let level = cache.levelNext
     if (!admitted.has(slot.batch * SLOT_BATCH_CAPACITY + slot.slot)) level = 0
 
-    // 内容档位写入（电量条与芯片由 shader 按 aLevel 裁剪）
+    // 内容档位写入，状态行与编号使用同一显示决策。
+    // 隐藏时两层矩阵仍统一归零，不产生残留文字。
     if (level !== cache.level) {
       scratch1[0] = level
       writeBgAttr(controller, batches, slot.batch, slot.slot, LABEL_BG_ATTR.level, scratch1)
@@ -497,8 +499,8 @@ function ensureCapacity(controller: LabelFrameController, batchCount: number): v
 }
 
 /**
- * 内容差量写入：底色（主状态色）、电量条填充、告警级、芯片 UV、名称图集
- * 单元与名称 UV。只在快照/显示状态引用变化时被调用。
+ * 内容差量写入：主状态文字色、告警级、状态 UV、名称图集单元与名称 UV。
+ * 只在快照或显示状态引用变化时调用，同名快照不触发文字纹理重绘。
  */
 function writeContentAttrs(
   controller: LabelFrameController,
@@ -512,17 +514,15 @@ function writeContentAttrs(
   }
   const primary = entity.displayState.primary
 
-  // 底色 = 主状态车体色（与车体外壳同表，STALE 冻结灰 / 断连深灰）
-  scratchColor.set(shellColorOf(primary))
+  /**
+   * 标签使用独立的高对比文字配色，编号和状态行共享实例颜色。
+   * 车体灯光仍沿用原有业务配色，不受这次标签改版影响。
+   */
+  scratchColor.set(LABEL_STATE_COLORS[primary])
   scratch3[0] = scratchColor.r
   scratch3[1] = scratchColor.g
   scratch3[2] = scratchColor.b
   writeBgAttr(controller, batches, batch, slot, LABEL_BG_ATTR.stateColor, scratch3)
-
-  // 电量条填充：电量未知为 -1（shader 端不绘制），已知归一到 0..1
-  const charge = entity.snapshot.battery.batteryCharge
-  scratch1[0] = charge === null ? -1 : Math.min(1, Math.max(0, charge / 100))
-  writeBgAttr(controller, batches, batch, slot, LABEL_BG_ATTR.charge, scratch1)
 
   // 告警级 + 选中态（overlay 两分量一并写入，选中值以后续帧差异维护）
   cache.alertLevel = labelAlertLevel(primary, entity.staticState.alerts)
@@ -531,9 +531,11 @@ function writeContentAttrs(
   cache.selected = cache.selectedNext
   writeBgAttr(controller, batches, batch, slot, LABEL_BG_ATTR.overlay, scratch2)
 
-  // 状态芯片 UV：FRESH 为业务主状态，STALE/断连为最后已知业务状态副徽标
-  const chip = labelChipOf(primary, entity.displayState.secondary)
-  const chipUv = badgeChipUv(chip)
+  /**
+   * 次行直接显示当前主状态，过期或断连不再显示上一次业务状态。
+   * 状态图集在所有车辆间共享，状态变化仅切换采样区域。
+   */
+  const chipUv = badgeChipUv(primary)
   scratch4[0] = chipUv[0]
   scratch4[1] = chipUv[1]
   scratch4[2] = chipUv[2]
@@ -541,15 +543,11 @@ function writeContentAttrs(
   writeBgAttr(controller, batches, batch, slot, LABEL_BG_ATTR.chipUv, scratch4)
 
   /**
-   * 编号与速度共用原有文字图集，速度保留一位小数后再去重，减少纹理重绘。
-   * 数据过期、连接不可用或速度分量缺失时显示占位，避免将旧值误认为当前速度。
+   * 名称独占首行并移除多余的编号前缀，只在名称实际变化时重绘单元。
+   * 速度与电量不进入悬浮标签，原始数据及告警派生继续完整保留。
    */
-  const { vx, vy } = entity.snapshot.velocity
-  const speedKnown = vx !== null && vy !== null && primary !== 'STALE'
-    && entity.staticState.connectivity === 'ONLINE'
-  const speed = speedKnown ? `${Math.hypot(vx, vy).toFixed(1)} m/s` : '— m/s'
   const name = entity.snapshot.agvName.replace(/[\r\n]+/g, ' ')
-  batches[batch].atlas.book.ensureCell(slot, `ID: ${name}\n${speed}`)
+  batches[batch].atlas.book.ensureCell(slot, name)
   if (!cache.uvWritten) {
     const uv: LabelCellUv = batches[batch].atlas.cellUv(slot)
     scratch4[0] = uv.u0

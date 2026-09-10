@@ -1,23 +1,30 @@
 /**
- * 库区站点使用八箱托盘货物，保留交付 GLB 的层级、贴图及 PBR 材质，运行时校准尺寸与原点。
+ * 库区站点按区域使用托盘货物或三层货架，保留交付 GLB 的层级、贴图及 PBR 材质。
  * 二进制请求共享缓存，几何与材质由每次加载单独持有，随地图资源代释放。
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 /**
- * 近景与两档远景统一使用托盘货物资产，避免视距切换时退回旧货架外观。
- * 沿用库区站点的尺寸校准与底面定位，三档共用同一缩放和原点。
+ * 托盘保留现有远景资产；新货架只有常规版本，所有视距均使用同一货架。
+ * 两种资产都沿用库位占地尺寸和底面定位，避免替换后挤占相邻站点。
  */
 import materialBinUrl from '../../../../assets/agv_shelf_20260907_01/shelf_loaded.glb?url'
 import materialBinLod1Url from '../../../../assets/agv_shelf_20260907_01/shelf_loaded_LOD1.glb?url'
 import materialBinLod2Url from '../../../../assets/agv_shelf_20260907_01/shelf_loaded_LOD2.glb?url'
+import rackLoadedUrl from '../../../../assets/rack_20260910/rack_loaded.glb?url'
+import type { MaterialBinVariant } from './materialBinLayout'
 
 const MATERIAL_BIN_WIDTH_M = 1.2
 const binaries = new Map<string, Promise<ArrayBuffer>>()
 
-export async function loadMaterialBinModel() {
-  const primary = await loadLevel(materialBinUrl)
-  const results = await Promise.allSettled([materialBinLod1Url, materialBinLod2Url].map(loadLevel))
+export async function loadMaterialBinModel(variant: MaterialBinVariant = 'pallet') {
+  /**
+   * 目标区域独立加载满载货架，禁止在远景时混用托盘的低模几何。
+   * 其余区域仍走原来的三档加载流程和资源释放边界。
+   */
+  const primary = await loadLevel(variant === 'rack' ? rackLoadedUrl : materialBinUrl)
+  const lodUrls = variant === 'rack' ? [] : [materialBinLod1Url, materialBinLod2Url]
+  const results = await Promise.allSettled(lodUrls.map(loadLevel))
   const models = [primary]
   /**
    * 两档低模完整到达后才交接给实例层，失败时保持原模型可用。
@@ -97,10 +104,10 @@ async function loadLevel(url: string) {
   for (const material of materials) {
     if (!(material instanceof THREE.MeshStandardMaterial)) continue
     /**
-     * 新托盘货物已包含正确的基础色、粗糙度、织纹及印刷透明裁切。
-     * 跳过旧货架的统一哑光校准，保留主体 #9AB5F6 与半哑光工业涂层。
+     * 托盘和新货架均已设置正确的基础色与工业涂层，不使用旧资产的哑光覆盖。
+     * 新货架同时保留主体 #8BB5F9、框架金属度和独立灯条的发光参数。
      */
-    if (material.name.startsWith('Cargo_')) continue
+    if (material.name.startsWith('Cargo_') || material.name.startsWith('Rack_')) continue
     material.emissive.set(0x000000)
     material.emissiveIntensity = 0
     material.metalness = 0

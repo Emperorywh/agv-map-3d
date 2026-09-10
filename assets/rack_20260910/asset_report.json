@@ -1,0 +1,65 @@
+{
+  "dimensions_m": [
+    2.2,
+    1.35,
+    3.0
+  ],
+  "cargo_dimensions_m": [
+    0.933,
+    1.137,
+    0.75
+  ],
+  "blue_srgb": "#8BB5F9",
+  "blue_linear": [
+    0.2581828529215958,
+    0.4620769996544071,
+    0.9473065367331999
+  ],
+  "files": {
+    "rack_loaded.glb": {
+      "triangles": 5888,
+      "mesh_nodes": 14,
+      "unique_meshes": 4,
+      "materials": 4,
+      "bytes": 161572,
+      "slot_names": [
+        "Slot_01",
+        "Slot_02",
+        "Slot_03",
+        "Slot_04",
+        "Slot_05",
+        "Slot_06"
+      ]
+    },
+    "rack_empty.glb": {
+      "triangles": 2120,
+      "mesh_nodes": 2,
+      "unique_meshes": 2,
+      "materials": 2,
+      "bytes": 124320,
+      "slot_names": [
+        "Slot_01",
+        "Slot_02",
+        "Slot_03",
+        "Slot_04",
+        "Slot_05",
+        "Slot_06"
+      ]
+    },
+    "cargo_box.glb": {
+      "triangles": 628,
+      "mesh_nodes": 2,
+      "unique_meshes": 2,
+      "materials": 2,
+      "bytes": 36604,
+      "slot_names": []
+    }
+  },
+  "triangle_target_met": true,
+  "measured_dimensions_m": [
+    2.200000047683716,
+    1.350000023841858,
+    3.0
+  ],
+  "cargo_bottom_gltf_y": 0
+}
