@@ -1,5 +1,5 @@
 /**
- * 空架与满载架直接读取交付的米制 GLB，文件及原始比例保持不变，架体统一适配室内哑光涂层。
+ * 空架与托盘货物直接读取交付的米制 GLB，保留原始比例，旧空架单独适配室内哑光涂层。
  * 地图和车队共用加载入口，仅缓存字节；各资源代独立拥有几何、材质和贴图。
  */
 import * as THREE from 'three'
@@ -17,6 +17,16 @@ export const SHELF_MATERIAL_PARTS = {
   Foot_Rubber: 'shelfFeet',
   Bin_MatteGraphite: 'shelfBins',
   Label_Ivory: 'shelfLabels',
+  /**
+   * 托盘货物的六种材质分别合批，保留蓝色主体、木板、织带与透明印刷。
+   * 同一映射供车载与地面实例使用，避免把新材质合并成旧货架的单一涂层。
+   */
+  Cargo_Body_9AB5F6: 'cargoPalletBody',
+  Cargo_Blue_Hardware: 'cargoPalletHardware',
+  Cargo_Dark_Base: 'cargoPalletBase',
+  Cargo_Light_Wood: 'cargoPalletWood',
+  Cargo_Black_Webbing: 'cargoPalletWebbing',
+  Cargo_Shared_Print_Atlas: 'cargoPalletPrint',
 } as const
 export type ShelfPartKind = typeof SHELF_MATERIAL_PARTS[keyof typeof SHELF_MATERIAL_PARTS]
 export type ShelfVariant = 'empty' | 'loaded'
@@ -122,7 +132,13 @@ async function loadShelfLevel(variant: ShelfVariant, level: number): Promise<She
       parts[kind]!.geometry = joinGeometry(group)
       groups.delete(kind)
     }
-    const required: ShelfPartKind[] = variant === 'loaded' ? Object.values(SHELF_MATERIAL_PARTS) : ['shelfFrame', 'shelfFeet']
+    /**
+     * 满载资源已替换为八箱托盘，完整性检查使用对应的六个部件。
+     * 空架仍沿用原文件及原材质合同，不要求存在托盘货物的部件。
+     */
+    const required: ShelfPartKind[] = variant === 'loaded'
+      ? ['cargoPalletBody', 'cargoPalletHardware', 'cargoPalletBase', 'cargoPalletWood', 'cargoPalletWebbing', 'cargoPalletPrint']
+      : ['shelfFrame', 'shelfFeet']
     if (required.some((kind) => parts[kind] === undefined)) throw new Error('货架模型缺少必要部件')
     return { parts, dispose }
   } catch (error) {

@@ -1,11 +1,11 @@
 /**
- * 库区站点使用满载货架，保留交付 GLB 的层级与贴图，在运行时校准尺寸、原点和哑光材质。
+ * 库区站点使用八箱托盘货物，保留交付 GLB 的层级、贴图及 PBR 材质，运行时校准尺寸与原点。
  * 二进制请求共享缓存，几何与材质由每次加载单独持有，随地图资源代释放。
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 /**
- * 近景与两档远景统一使用满载货架资产，避免视距切换时退回旧料箱外观。
+ * 近景与两档远景统一使用托盘货物资产，避免视距切换时退回旧货架外观。
  * 沿用库区站点的尺寸校准与底面定位，三档共用同一缩放和原点。
  */
 import materialBinUrl from '../../../../assets/agv_shelf_20260907_01/shelf_loaded.glb?url'
@@ -96,6 +96,11 @@ async function loadLevel(url: string) {
    */
   for (const material of materials) {
     if (!(material instanceof THREE.MeshStandardMaterial)) continue
+    /**
+     * 新托盘货物已包含正确的基础色、粗糙度、织纹及印刷透明裁切。
+     * 跳过旧货架的统一哑光校准，保留主体 #9AB5F6 与半哑光工业涂层。
+     */
+    if (material.name.startsWith('Cargo_')) continue
     material.emissive.set(0x000000)
     material.emissiveIntensity = 0
     material.metalness = 0

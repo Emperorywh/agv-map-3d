@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>托盘货物 GLB 实际加载检查</title>
+<style>
+/* 独立验收页只复用项目的 Three.js 依赖。
+   页面样式不会修改现有 AGV 产品界面。 */
+body{margin:0;background:#eceef0;font:14px system-ui;color:#263749}canvas{display:block}aside{position:absolute;left:20px;top:20px;background:#ffffffdf;padding:16px;border-radius:8px;max-width:340px}pre{white-space:pre-wrap;font-size:12px}button{padding:7px 12px;margin-right:6px}h1{font-size:18px;margin:0 0 10px}
+</style>
+<aside><h1>托盘货物单元 · GLB 验收</h1><div>拖动旋转，滚轮缩放</div><p><button id="single">单个资产</button><button id="batch">100 个实例</button></p><pre id="status">正在读取实际 GLB…</pre></aside>
+<script type="module">
+/**
+ * 使用项目已有 GLTFLoader 直接加载交付文件，并显示实际尺寸与资源统计。
+ * 批量模式共享已加载的几何和材质，方便观察常规克隆的绘制开销。
+ */
+import * as THREE from '/node_modules/three/build/three.module.js'
+import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js'
+import { OrbitControls } from '/node_modules/three/examples/jsm/controls/OrbitControls.js'
+const scene=new THREE.Scene()
+scene.background=new THREE.Color('#eceef0')
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true})
+renderer.setPixelRatio(Math.min(devicePixelRatio,2))
+renderer.setSize(innerWidth,innerHeight)
+renderer.outputColorSpace=THREE.SRGBColorSpace
+renderer.toneMapping=THREE.NoToneMapping
+document.body.append(renderer.domElement)
+const camera=new THREE.PerspectiveCamera(36,innerWidth/innerHeight,.01,100)
+camera.position.set(2.5,2.25,3.5)
+const controls=new OrbitControls(camera,renderer.domElement)
+controls.target.set(0,.59,0);controls.update()
+scene.add(new THREE.HemisphereLight(0xffffff,0xc3c9d4,2.2))
+for(const [position,power] of [[[ -3,5,4],2.0],[[4,3,-2],1.1]]){
+  const light=new THREE.DirectionalLight(0xffffff,power)
+  light.position.set(...position);scene.add(light)
+}
+const group=new THREE.Group();scene.add(group)
+const status=document.getElementById('status')
+let asset,report,count=1,frames=0
+new GLTFLoader().load('./cargo_pallet.glb',gltf=>{
+  asset=gltf.scene;group.add(asset)
+  const bounds=new THREE.Box3().setFromObject(asset)
+  const size=bounds.getSize(new THREE.Vector3())
+  const geometries=new Set(),materials=new Set(),textures=new Set()
+  let triangles=0,meshCount=0,boxCount=0
+  asset.traverse(object=>{
+    if(object.userData.is_cargo_box)boxCount++
+    if(!object.isMesh)return
+    meshCount++;geometries.add(object.geometry)
+    triangles+=(object.geometry.index?.count??object.geometry.attributes.position.count)/3
+    for(const material of Array.isArray(object.material)?object.material:[object.material]){
+      materials.add(material)
+      for(const property of ['map','normalMap','roughnessMap','metalnessMap'])if(material[property])textures.add(material[property])
+    }
+  })
+  const body=[...materials].find(material=>material.name==='Cargo_Body_9AB5F6')
+  report={loaded:true,boxes:boxCount,triangles,materialCount:materials.size,textureCount:textures.size,
+    meshCount,geometryCount:geometries.size,dimensions:[size.x,size.y,size.z].map(v=>+v.toFixed(5)),
+    groundY:bounds.min.y,bodySRGB:'#'+body.color.getHexString(THREE.SRGBColorSpace)}
+},undefined,error=>{status.textContent='加载失败：'+error.message})
+/**
+ * 批量切换仅作用于这个验收页，绝不改动 GLB 中的根变换或资源。
+ * 统计来自实际 WebGL 渲染器，用于说明普通克隆与真正实例化的性能区别。
+ */
+function setCount(value){
+  if(!asset)return
+  group.clear();count=value
+  if(value===1){group.add(asset);camera.position.set(2.5,2.25,3.5);controls.target.set(0,.59,0)}
+  else{
+    for(let i=0;i<100;i++){const clone=asset.clone(true);clone.position.set((i%10-4.5)*1.5,0,(Math.floor(i/10)-4.5)*1.3);group.add(clone)}
+    camera.position.set(17,19,23);controls.target.set(0,0,0)
+  }
+  controls.update()
+}
+document.getElementById('single').onclick=()=>setCount(1)
+document.getElementById('batch').onclick=()=>setCount(100)
+renderer.setAnimationLoop(()=>{
+  renderer.render(scene,camera)
+  if(report&&frames++%30===0){status.textContent=JSON.stringify({...report,instances:count,drawCalls:renderer.info.render.calls,renderedTriangles:renderer.info.render.triangles},null,2)}
+})
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)})
+</script>
+</html>

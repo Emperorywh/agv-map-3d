@@ -14,6 +14,12 @@ export interface ShelfPlacement {
   readonly variant: ShelfVariant
 }
 
+/**
+ * 新托盘外包宽约一点二零三米，轴向摆放时采用零点六一米的半宽避让。
+ * 空架共用这一保守范围，确保资源替换后仍保留墙边通道和道路净空。
+ */
+const SHELF_HALF_EXTENT_M = 0.61
+
 export function buildShelfLayout(map: MapModel, transform: WorldTransform, factory: FactoryLayout): ShelfPlacement[] {
   if (map.nodeList.length === 0) return []
   const bounds = map.sceneBounds
@@ -53,12 +59,12 @@ export function buildShelfLayout(map: MapModel, transform: WorldTransform, facto
         const x = side.alongX ? along : outward
         const z = side.alongX ? outward : along
         /**
-         * 半米包络覆盖任意朝向的架体，墙边另留两米检修通道。
+         * 保守包络覆盖当前四个轴向的空架与托盘货物，墙边另留两米检修通道。
          * 被占用的格位直接留空，其余货架保持原有行列对齐，不随机挪动。
          */
-        if (x - 0.5 < factory.bounds.minWorldX + 2 || x + 0.5 > factory.bounds.maxWorldX - 2 ||
-          z - 0.5 < factory.bounds.minWorldZ + 2 || z + 0.5 > factory.bounds.maxWorldZ - 2) continue
-        if (roads.some((road) => x + 0.5 > road.minX && x - 0.5 < road.maxX && z + 0.5 > road.minZ && z - 0.5 < road.maxZ)) continue
+        if (x - SHELF_HALF_EXTENT_M < factory.bounds.minWorldX + 2 || x + SHELF_HALF_EXTENT_M > factory.bounds.maxWorldX - 2 ||
+          z - SHELF_HALF_EXTENT_M < factory.bounds.minWorldZ + 2 || z + SHELF_HALF_EXTENT_M > factory.bounds.maxWorldZ - 2) continue
+        if (roads.some((road) => x + SHELF_HALF_EXTENT_M > road.minX && x - SHELF_HALF_EXTENT_M < road.maxX && z + SHELF_HALF_EXTENT_M > road.minZ && z - SHELF_HALF_EXTENT_M < road.maxZ)) continue
         if (facilities.some((point) => Math.hypot(x - point.x, z - point.z) < 4.5)) continue
         placements.push({ x, z, rotation: side.rotation, variant: (Math.floor(column / 3) + row + group) % 2 === 0 ? 'empty' : 'loaded' })
       }

@@ -1,0 +1,93 @@
+{
+  "reimported": true,
+  "passed": true,
+  "issues": [],
+  "triangles": 15160,
+  "material_count": 6,
+  "box_count": 8,
+  "unique_box_meshes": 2,
+  "gltf_mesh_resources": 6,
+  "gltf_mesh_instances": 12,
+  "gltf_primitive_instances": 31,
+  "dimensions_blender_xyz": [
+    1.2030000686645508,
+    1.0069999694824219,
+    1.1875
+  ],
+  "bounds_min": [
+    -0.6015000343322754,
+    -0.5034999847412109,
+    0.0
+  ],
+  "bounds_max": [
+    0.6015000343322754,
+    0.5034999847412109,
+    1.1875
+  ],
+  "body_srgb": [
+    154,
+    181,
+    246
+  ],
+  "body_linear_factor": [
+    0.32314321398735046,
+    0.46207699179649353,
+    0.9215818643569946,
+    1
+  ],
+  "metallic": 0,
+  "roughness": 0.44999998807907104,
+  "images": [
+    {
+      "name": "markings_atlas",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "name": "webbing_normal",
+      "size": [
+        256,
+        256
+      ]
+    },
+    {
+      "name": "wood_basecolor",
+      "size": [
+        512,
+        512
+      ]
+    }
+  ],
+  "embedded_images": 3,
+  "closed_components": 144,
+  "open_decal_components": 40,
+  "fork_openings": [
+    {
+      "axis": "Y",
+      "offset_m": -0.245,
+      "height_m": 0.075,
+      "clear_through": true
+    },
+    {
+      "axis": "Y",
+      "offset_m": 0.245,
+      "height_m": 0.075,
+      "clear_through": true
+    },
+    {
+      "axis": "X",
+      "offset_m": -0.195,
+      "height_m": 0.075,
+      "clear_through": true
+    },
+    {
+      "axis": "X",
+      "offset_m": 0.195,
+      "height_m": 0.075,
+      "clear_through": true
+    }
+  ],
+  "glb_bytes": 745464
+}

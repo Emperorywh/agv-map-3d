@@ -3,6 +3,7 @@
 每档重新导入并保留材质、贴图、层级和米制变换，车载与地面货架共用派生文件。
 """
 import json
+import sys
 from pathlib import Path
 import bpy
 
@@ -12,6 +13,16 @@ sources = [
     root / 'assets/agv_shelf_20260907_01/shelf_empty.glb',
     root / 'assets/agv_shelf_20260907_01/shelf_loaded.glb',
 ]
+"""
+允许在 Blender 的双横线之后指定资产名称，只重建本次替换的模型。
+不传名称时保留原来的全量行为，指定名称不会改写其他设施的派生文件。
+"""
+selected = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+if selected:
+    unknown = set(selected) - {source.stem for source in sources}
+    if unknown:
+        raise ValueError('未知设施资产：' + ', '.join(sorted(unknown)))
+    sources = [source for source in sources if source.stem in selected]
 report = []
 for source in sources:
     for level, ratio in [(1, 0.22), (2, 0.055)]:

@@ -22,6 +22,11 @@ export const INDUSTRIAL_AGV_MODEL = Object.freeze({
   width: 0.631,
   height: 1.64,
   platformTop: 0.287,
+  /**
+   * 运行时车头为正 X，载荷沿负 X 后移二十厘米，为显示屏与立柱让出空间。
+   * 仅调整车载托盘的局部位置，保持原始货箱尺寸及承载面高度。
+   */
+  cargoOffsetX: -0.20,
   dimensionToleranceM: 0.001,
 })
 

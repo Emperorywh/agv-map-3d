@@ -30,6 +30,11 @@ export const INSTANCE_COLOR_PARTS: ReadonlySet<VehiclePartKind> = new Set(['stat
  */
 export const PICKABLE_PARTS: ReadonlySet<VehiclePartKind> = new Set(['shell', 'glbPaint', 'glbPlatform', 'cargo', ...Object.values(SHELF_MATERIAL_PARTS)])
 export const LOAD_PARTS: ReadonlySet<VehiclePartKind> = new Set(['pallet', 'cargo', 'tape', ...Object.values(SHELF_MATERIAL_PARTS)])
+/**
+ * 完整载荷按共享材质映射识别，兼容原货架和新托盘货箱的部件名称。
+ * 不依赖名称前缀，避免新货箱被当作程序回退而在资源就绪后隐藏。
+ */
+const SHELF_PARTS: ReadonlySet<VehiclePartKind> = new Set(Object.values(SHELF_MATERIAL_PARTS))
 const PROCEDURAL_PARTS = new Set<VehiclePartKind>(['chassis', 'shell', 'wedge', 'platform', 'wheels', 'metal', 'bumper', 'status'])
 
 export interface PartPlacement {
@@ -67,10 +72,11 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
   const cargoHeight = 0.24
   const glb = Object.fromEntries(Object.values(GLB_MATERIAL_PARTS).map((kind) => [kind, at(0, 0, 1, 1, 1)])) as Record<GlbPartKind, PartPlacement>
   /**
-   * 货架原点位于脚底中心，原始一米宽、半米深的底座可直接放到车体承载面。
-   * 不按接口载荷尺寸拉伸资产；运行时只抬升到平台高度，并复用整车中心和转向。
+   * 托盘货物原点位于底面中心，保留约一点二米乘一米的真实底座尺寸。
+   * 不按接口载荷尺寸拉伸资产；抬升到平台高度并按车型配置向车尾偏移。
+   * 箱体、托盘和绑带共用局部偏移，随车辆转向旋转，为前方显示屏立柱留出空间。
    */
-  const shelf = Object.fromEntries(Object.values(SHELF_MATERIAL_PARTS).map((kind) => [kind, at(0, platformTop, 1, 1, 1)])) as Record<ShelfPartKind, PartPlacement>
+  const shelf = Object.fromEntries(Object.values(SHELF_MATERIAL_PARTS).map((kind) => [kind, at(INDUSTRIAL_AGV_MODEL.cargoOffsetX, platformTop, 1, 1, 1)])) as Record<ShelfPartKind, PartPlacement>
   return {
     ...glb,
     ...shelf,
@@ -110,10 +116,10 @@ export function computeVehiclePartLayout(snapshot: VehicleSnapshot, displayState
 export function vehiclePartVisible(kind: VehiclePartKind, layout: VehiclePartLayout): boolean {
   if (!layout.visible) return false
   /**
-   * 完整货架与原托盘纸箱互斥显示，载荷状态未知或空载时两者都隐藏。
+   * 完整托盘货箱与程序纸箱互斥显示，载荷状态未知或空载时两者都隐藏。
    * 同一判断同时供位姿更新和显示状态更新使用，防止仅切换载货状态时出现重叠。
    */
-  if (kind.startsWith('shelf')) return layout.loaded && layout.shelfReady
+  if (SHELF_PARTS.has(kind)) return layout.loaded && layout.shelfReady
   if (kind.startsWith('glb')) return layout.industrial
   if (PROCEDURAL_PARTS.has(kind)) return !layout.industrial
   if (LOAD_PARTS.has(kind)) return layout.loaded && !layout.shelfReady
@@ -192,8 +198,8 @@ export function createVehicleResources(model?: IndustrialModel, shelf?: ShelfMod
     parts[kind] = model?.parts[kind] ?? { geometry: new THREE.BufferGeometry(), material: materials.paint }
   }
   /**
-   * 整队共用一份满载架几何和原材质，每辆车仅增加实例矩阵。
-   * 车载货架绕竖直轴旋转九十度改为横放，近中远景同步烘焙，保持脚底高度不变。
+   * 整队共用一份托盘货物几何和原材质，每辆车仅增加实例矩阵。
+   * 车载货物沿用绕竖直轴九十度的摆放，近中远景同步烘焙，保持底面高度不变。
    * 此处只调整车队独立持有的几何，地面货架继续使用原始朝向。
    * 未就绪时建立空部件以保持槽位结构稳定，内嵌标签贴图随资源统一回收。
    */
